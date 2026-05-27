@@ -8,11 +8,15 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatCurrency(amount: number, currency = 'EUR'): string {
-  return new Intl.NumberFormat('es-ES', {
+  const formatted = new Intl.NumberFormat('es-ES', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
   }).format(amount)
+  // Safety fallback: some environments render the ISO code instead of the symbol
+  if (currency === 'EUR') return formatted.replace(/\bEUR\b/, '€')
+  if (currency === 'USD') return formatted.replace(/\bUSD\b/, '$')
+  return formatted
 }
 
 export function formatDate(d: string | Date): string {

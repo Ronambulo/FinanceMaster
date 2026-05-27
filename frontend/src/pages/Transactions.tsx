@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { txApi, catApi } from '@/lib/api'
+import { txApi, catApi, authApi } from '@/lib/api'
 import type { Transaction, Category } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
@@ -9,8 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Upload, Search, ChevronLeft, ChevronRight, Loader2, Tag, X } from 'lucide-react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Upload, Search, ChevronLeft, ChevronRight, Loader2, Tag, X, Plus, Trash2, AlertTriangle } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 
 function CategoryPicker({ categories, value, onChange }: { categories: Category[]; value: number | null; onChange: (id: number) => void }) {
@@ -85,6 +85,167 @@ function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void })
   )
 }
 
+const TX_TYPES = [
+  { value: 'CARD_TRANSACTION', label: 'Gasto (tarjeta)' },
+  { value: 'TRANSFER_OUTBOUND', label: 'Transferencia saliente' },
+  { value: 'CUSTOMER_INPAYMENT', label: 'Ingreso' },
+  { value: 'TRANSFER_INBOUND', label: 'Transferencia entrante' },
+  { value: 'INTEREST_PAYMENT', label: 'Interés' },
+]
+
+function AddTransactionDialog({ open, onClose, categories }: { open: boolean; onClose: () => void; categories: Category[] }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [form, setForm] = useState({
+    date: new Date().toISOString().slice(0, 10),
+    name: '',
+    amount: '',
+    type: 'CARD_TRANSACTION',
+    category_id: '',
+    description: '',
+  })
+
+  const createMutation = useMutation({
+    mutationFn: () => txApi.create({
+      date: form.date,
+      name: form.name || undefined,
+      amount: form.type.includes('INBOUND') || form.type === 'CUSTOMER_INPAYMENT' || form.type === 'INTEREST_PAYMENT'
+        ? Math.abs(Number(form.amount))
+        : -Math.abs(Number(form.amount)),
+      type: form.type,
+      category_id: form.category_id ? Number(form.category_id) : undefined,
+      description: form.description || undefined,
+      currency: 'EUR',
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries()
+      toast('Transacción añadida', 'success')
+      onClose()
+      setForm({ date: new Date().toISOString().slice(0, 10), name: '', amount: '', type: 'CARD_TRANSACTION', category_id: '', description: '' })
+    },
+    onError: (e: any) => toast(e.message, 'error'),
+  })
+
+  const isIncome = form.type.includes('INBOUND') || form.type === 'CUSTOMER_INPAYMENT' || form.type === 'INTEREST_PAYMENT'
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Nueva transacción manual</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Fecha</Label>
+              <Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Importe (€)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={form.amount}
+                onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                className={isIncome ? 'border-emerald-500/50 focus:border-emerald-400' : 'border-red-500/50 focus:border-red-400'}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Tipo</Label>
+            <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {TX_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Nombre / Comercio</Label>
+            <Input placeholder="Ej: Mercadona, Nómina..." value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Categoría</Label>
+            <Select value={form.category_id} onValueChange={v => setForm(f => ({ ...f, category_id: v }))}>
+              <SelectTrigger><SelectValue placeholder="Sin categoría" /></SelectTrigger>
+              <SelectContent>
+                {categories.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.icon} {c.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Descripción (opcional)</Label>
+            <Input placeholder="Notas adicionales..." value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button
+            onClick={() => form.amount && createMutation.mutate()}
+            disabled={!form.amount || createMutation.isPending}
+          >
+            {createMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Añadir transacción
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DeleteAllDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [confirm, setConfirm] = useState('')
+
+  const deleteMutation = useMutation({
+    mutationFn: authApi.deleteAllData,
+    onSuccess: () => {
+      qc.invalidateQueries()
+      toast('Todos los datos han sido eliminados', 'success')
+      onClose()
+      setConfirm('')
+    },
+    onError: (e: any) => toast(e.message, 'error'),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={v => { onClose(); setConfirm('') }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-400">
+            <AlertTriangle className="h-5 w-5" /> Borrar todos los datos
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Esta acción eliminará <strong className="text-foreground">permanentemente</strong> todas tus transacciones, grupos recurrentes, deudas, metas y categorías personalizadas. <strong className="text-red-400">No se puede deshacer.</strong>
+          </p>
+          <div className="space-y-1.5">
+            <Label>Escribe <strong>BORRAR</strong> para confirmar</Label>
+            <Input
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
+              placeholder="BORRAR"
+              className="border-red-500/50"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { onClose(); setConfirm('') }}>Cancelar</Button>
+          <Button
+            variant="destructive"
+            disabled={confirm !== 'BORRAR' || deleteMutation.isPending}
+            onClick={() => deleteMutation.mutate()}
+          >
+            {deleteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Borrar todo
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function Transactions() {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -92,7 +253,10 @@ export function Transactions() {
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState<string>('')
   const [importOpen, setImportOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false)
   const [editingCat, setEditingCat] = useState<number | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
 
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const { data, isLoading } = useQuery({
@@ -109,13 +273,26 @@ export function Transactions() {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<Transaction> }) => txApi.update(id, data),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+      qc.invalidateQueries({ queryKey: ['by-cat'] })
+      qc.invalidateQueries({ queryKey: ['monthly-trend'] })
+      setEditingCat(null)
+      toast('is_internal_transfer' in (vars.data as any) ? 'Marcada como ingreso/gasto real' : 'Categoría actualizada', 'success')
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => txApi.delete(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['overview'] })
       qc.invalidateQueries({ queryKey: ['by-cat'] })
-      setEditingCat(null)
-      toast('Categoría actualizada', 'success')
+      setConfirmDelete(null)
+      toast('Transacción eliminada', 'success')
     },
+    onError: (e: any) => toast(e.message, 'error'),
   })
 
   const totalPages = data ? Math.ceil(data.total / 25) : 1
@@ -127,9 +304,17 @@ export function Transactions() {
           <h1 className="text-2xl font-bold">Transacciones</h1>
           <p className="text-sm text-muted-foreground">{data?.total ?? 0} transacciones</p>
         </div>
-        <Button onClick={() => setImportOpen(true)}>
-          <Upload className="h-4 w-4 mr-2" /> Importar CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" className="text-red-400 border-red-500/30 hover:bg-red-500/10" onClick={() => setDeleteAllOpen(true)}>
+            <Trash2 className="h-4 w-4 mr-2" /> Borrar todo
+          </Button>
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="h-4 w-4 mr-2" /> Importar CSV
+          </Button>
+          <Button onClick={() => setAddOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" /> Añadir
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -170,11 +355,12 @@ export function Transactions() {
                     <th className="text-left px-4 py-3 font-medium">Descripción</th>
                     <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Categoría</th>
                     <th className="text-right px-4 py-3 font-medium">Importe</th>
+                    <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {data?.items.map(tx => (
-                    <tr key={tx.id} className="border-b border-border/50 hover:bg-accent/30 transition-colors">
+                    <tr key={tx.id} className="border-b border-border/50 hover:bg-accent/30 transition-colors group">
                       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(tx.date)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -189,7 +375,13 @@ export function Transactions() {
                                 <Badge variant="muted" className="text-xs py-0">Sin cat.</Badge>
                               )}
                               {tx.is_internal_transfer && (
-                                <Badge variant="muted" className="text-xs py-0">Interna</Badge>
+                                <button
+                                  title="Transferencia interna (excluida de totales). Haz clic para marcar como ingreso/gasto real."
+                                  onClick={() => updateMutation.mutate({ id: tx.id, data: { is_internal_transfer: false } })}
+                                  className="cursor-pointer"
+                                >
+                                  <Badge variant="muted" className="text-xs py-0 hover:bg-orange-500/20 hover:text-orange-300 transition-colors">🔄 Interna</Badge>
+                                </button>
                               )}
                             </div>
                           </div>
@@ -221,6 +413,32 @@ export function Transactions() {
                       <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${tx.amount >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {tx.amount >= 0 ? '+' : ''}{formatCurrency(tx.amount)}
                       </td>
+                      <td className="px-2 py-3 text-right">
+                        {confirmDelete === tx.id ? (
+                          <div className="flex items-center gap-1 justify-end">
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="h-6 text-xs px-2"
+                              onClick={() => deleteMutation.mutate(tx.id)}
+                              disabled={deleteMutation.isPending}
+                            >
+                              {deleteMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Borrar'}
+                            </Button>
+                            <button onClick={() => setConfirmDelete(null)} className="text-muted-foreground hover:text-foreground">
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDelete(tx.id)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-red-400"
+                            title="Eliminar transacción"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -249,6 +467,8 @@ export function Transactions() {
       )}
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
+      <AddTransactionDialog open={addOpen} onClose={() => setAddOpen(false)} categories={categories || []} />
+      <DeleteAllDialog open={deleteAllOpen} onClose={() => setDeleteAllOpen(false)} />
     </div>
   )
 }

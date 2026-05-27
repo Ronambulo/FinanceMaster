@@ -1,0 +1,21 @@
+name: financemaster-dev
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: financemaster-backend-dev
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      - ./backend/data:/app/backend/data
+      - financemaster_dev_data:/data
+    environment:
+      - DATABASE_URL=sqlite:////data/finance.db
+      - SECRET_KEY=dev-secret-key-not-for-production
+
+volumes:
+  financemaster_dev_data:

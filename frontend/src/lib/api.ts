@@ -27,6 +27,10 @@ export const authApi = {
   login: (data: { email: string; password: string }) =>
     request<{ access_token: string; user: User }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request<User>('/auth/me'),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    request<{ ok: boolean }>('/auth/password', { method: 'PUT', body: JSON.stringify(data) }),
+  deleteAllData: () =>
+    request<{ ok: boolean }>('/auth/data', { method: 'DELETE' }),
 }
 
 // Transactions
@@ -150,9 +154,9 @@ export interface Debt { id: number; name: string; description: string | null; to
 export interface DebtPayment { id: number; amount: number; payment_date: string; transaction_id: number | null; note: string | null }
 export interface Goal { id: number; name: string; type: 'PERCENT' | 'EURO_TARGET'; target_amount: number | null; target_percent: number | null; category: string | null; deadline: string | null; current_amount: number; is_active: boolean; progress_pct: number }
 export interface SavingsAllocation { month: string; savings_pct: number; investment_pct: number; expenses_pct: number }
-export interface DashboardOverview { balance: number; income_month: number; expenses_month: number; savings_month: number; income_total: number; expenses_total: number }
+export interface DashboardOverview { balance: number; income_month: number; expenses_month: number; savings_month: number; income_total: number; expenses_total: number; interest_month: number; interest_total: number }
 export interface CategoryBreakdown { category_id: number | null; category_name: string; category_color: string; category_icon: string; total: number; count: number }
 export interface MonthlyTrend { month: string; income: number; expenses: number; savings: number }
 export interface UpcomingRecurring { id: number; display_name: string; avg_amount: number; next_expected_date: string | null; days_until: number | null; category: Category | null }
-export interface PortfolioPosition { symbol: string; name: string; asset_class: string; shares: number; avg_buy_price: number; total_invested: number; realized_pnl: number; dividends_received: number }
-export interface PortfolioPerformance { total_invested: number; total_realized_pnl: number; total_fees: number; total_dividends: number; positions: PortfolioPosition[]; dividends_by_asset: { symbol: string; name: string; total: number; count: number }[] }
+export interface PortfolioPosition { symbol: string; name: string; asset_class: string; shares: number; avg_buy_price: number; total_invested: number; realized_pnl: number; dividends_received: number; current_price: number | null; market_value: number | null; unrealized_pnl: number | null; unrealized_pnl_pct: number | null }
+export interface PortfolioPerformance { total_invested: number; total_realized_pnl: number; total_fees: number; total_dividends: number; total_market_value: number; total_unrealized_pnl: number; positions: PortfolioPosition[]; dividends_by_asset: { symbol: string; name: string; total: number; count: number }[] }

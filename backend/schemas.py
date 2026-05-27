@@ -237,6 +237,10 @@ class PortfolioPosition(BaseModel):
     total_invested: float
     realized_pnl: float
     dividends_received: float
+    current_price: Optional[float] = None
+    market_value: Optional[float] = None
+    unrealized_pnl: Optional[float] = None
+    unrealized_pnl_pct: Optional[float] = None
 
 class PortfolioDividend(BaseModel):
     symbol: str
@@ -249,6 +253,8 @@ class PortfolioPerformance(BaseModel):
     total_realized_pnl: float
     total_fees: float
     total_dividends: float
+    total_market_value: float = 0.0
+    total_unrealized_pnl: float = 0.0
     positions: List[PortfolioPosition]
     dividends_by_asset: List[PortfolioDividend]
 
@@ -261,6 +267,8 @@ class DashboardOverview(BaseModel):
     savings_month: float
     income_total: float
     expenses_total: float
+    interest_month: float = 0.0
+    interest_total: float = 0.0
 
 class CategoryBreakdown(BaseModel):
     category_id: Optional[int]

@@ -3,11 +3,9 @@ import { dashApi, txApi } from '@/lib/api'
 import { formatCurrency, formatDate, formatMonth } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { TrendingUp, TrendingDown, Wallet, PiggyBank, ArrowRight, Calendar } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts'
+import { TrendingUp, TrendingDown, Wallet, PiggyBank, ArrowRight, Calendar, Percent } from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts'
 import { Link } from 'react-router-dom'
-
-const RADIAN = Math.PI / 180
 
 function StatCard({ title, value, icon: Icon, color, sub }: { title: string; value: string; icon: any; color: string; sub?: string }) {
   return (
@@ -42,6 +40,16 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   )
 }
 
+const PieTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-card border border-border rounded-lg p-2 text-xs shadow-lg">
+      <p className="font-medium">{payload[0].name}</p>
+      <p style={{ color: payload[0].payload.fill }}>{formatCurrency(payload[0].value)}</p>
+    </div>
+  )
+}
+
 export function Dashboard() {
   const { data: overview } = useQuery({ queryKey: ['overview'], queryFn: () => dashApi.overview() })
   const { data: trend } = useQuery({ queryKey: ['trend'], queryFn: () => dashApi.monthlyTrend(6) })
@@ -50,6 +58,7 @@ export function Dashboard() {
   const { data: txs } = useQuery({ queryKey: ['tx-recent'], queryFn: () => txApi.list({ page: 1, page_size: 5, account_category: 'CASH' }) })
 
   const today = new Date()
+  const pieData = (byCat || []).slice(0, 6).map(b => ({ name: b.category_name, value: b.total, fill: b.category_color }))
 
   return (
     <div className="space-y-6">
@@ -59,17 +68,24 @@ export function Dashboard() {
       </div>
 
       {/* Stats row */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
         <StatCard title="Balance total" value={formatCurrency(overview?.balance ?? 0)} icon={Wallet} color="text-foreground" />
         <StatCard title="Ingresos este mes" value={formatCurrency(overview?.income_month ?? 0)} icon={TrendingUp} color="text-emerald-400" />
         <StatCard title="Gastos este mes" value={formatCurrency(overview?.expenses_month ?? 0)} icon={TrendingDown} color="text-red-400" />
         <StatCard title="Ahorro este mes" value={formatCurrency(overview?.savings_month ?? 0)} icon={PiggyBank} color={(overview?.savings_month ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'} />
+        <StatCard
+          title="Intereses este mes"
+          value={formatCurrency(overview?.interest_month ?? 0)}
+          icon={Percent}
+          color="text-amber-400"
+          sub={`Total: ${formatCurrency(overview?.interest_total ?? 0)}`}
+        />
       </div>
 
       {/* Charts row */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-5">
         {/* Bar chart */}
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle className="text-sm font-medium">Ingresos vs Gastos (6 meses)</CardTitle>
           </CardHeader>
@@ -87,25 +103,46 @@ export function Dashboard() {
         </Card>
 
         {/* Pie chart */}
-        <Card>
+        <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-sm font-medium">Gastos por categoría</CardTitle>
           </CardHeader>
-          <CardContent className="h-56">
-            {byCat && byCat.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={byCat.slice(0, 6)} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="total" nameKey="category_name">
-                    {byCat.slice(0, 6).map((entry, i) => (
-                      <Cell key={i} fill={entry.category_color} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                  <Legend formatter={(v) => <span className="text-xs">{v}</span>} />
-                </PieChart>
-              </ResponsiveContainer>
+          <CardContent>
+            {pieData.length > 0 ? (
+              <div className="flex flex-col gap-3">
+                <div className="h-44">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={72}
+                        paddingAngle={2}
+                        dataKey="value"
+                        nameKey="name"
+                      >
+                        {pieData.map((entry, i) => (
+                          <Cell key={i} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<PieTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* Custom legend below chart */}
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                  {pieData.map((entry, i) => (
+                    <div key={i} className="flex items-center gap-1.5 min-w-0">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: entry.fill }} />
+                      <span className="text-xs text-muted-foreground truncate">{entry.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ) : (
-              <div className="h-full flex items-center justify-center text-sm text-muted-foreground">Sin datos</div>
+              <div className="h-44 flex items-center justify-center text-sm text-muted-foreground">Sin datos</div>
             )}
           </CardContent>
         </Card>

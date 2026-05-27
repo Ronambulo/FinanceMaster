@@ -12,6 +12,8 @@ import { Recurring } from '@/pages/Recurring'
 import { Debts } from '@/pages/Debts'
 import { Goals } from '@/pages/Goals'
 import { Settings } from '@/pages/Settings'
+import { useEffect } from 'react'
+import { applyTheme, THEME_KEY, ACCENT_KEY } from '@/lib/theme'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -23,6 +25,12 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  useEffect(() => {
+    const themeId = localStorage.getItem(THEME_KEY) || 'dark-blue'
+    const accentId = localStorage.getItem(ACCENT_KEY) || 'blue'
+    applyTheme(themeId, accentId)
+  }, [])
+
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>

@@ -1,11 +1,14 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { portfolioApi } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { TrendingUp, TrendingDown, DollarSign, Gift, Loader2 } from 'lucide-react'
-import { useState } from 'react'
+import { Loader2, Pencil, Check, X } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import type { PortfolioPosition } from '@/lib/api'
 
 const ASSET_LABELS: Record<string, string> = {
   STOCK: '📈 Acciones',
@@ -13,17 +16,114 @@ const ASSET_LABELS: Record<string, string> = {
   DERIVATIVE: '⚡ Derivados',
 }
 
+const PRICE_OVERRIDES_KEY = 'fm_price_overrides'
+
+function getPriceOverrides(): Record<string, number> {
+  try { return JSON.parse(localStorage.getItem(PRICE_OVERRIDES_KEY) || '{}') } catch { return {} }
+}
+
+function setPriceOverride(symbol: string, price: number | null) {
+  const overrides = getPriceOverrides()
+  if (price === null) {
+    delete overrides[symbol]
+  } else {
+    overrides[symbol] = price
+  }
+  localStorage.setItem(PRICE_OVERRIDES_KEY, JSON.stringify(overrides))
+}
+
+function EditablePrice({ symbol, currentPrice, onSave }: { symbol: string; currentPrice: number | null; onSave: () => void }) {
+  const overrides = getPriceOverrides()
+  const overrideVal = overrides[symbol]
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState(String(overrideVal ?? currentPrice ?? ''))
+
+  const displayed = overrideVal != null ? overrideVal : currentPrice
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1 justify-end">
+        <Input
+          type="number"
+          step="0.01"
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          className="h-6 w-24 text-xs text-right"
+          autoFocus
+        />
+        <button
+          className="text-emerald-400 hover:text-emerald-300"
+          onClick={() => {
+            const n = parseFloat(val)
+            if (!isNaN(n) && n > 0) {
+              setPriceOverride(symbol, n)
+            } else {
+              setPriceOverride(symbol, null)
+            }
+            setEditing(false)
+            onSave()
+          }}
+        >
+          <Check className="h-3.5 w-3.5" />
+        </button>
+        <button className="text-muted-foreground hover:text-foreground" onClick={() => setEditing(false)}>
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1 justify-end group/price">
+      <span className={overrideVal != null ? 'text-amber-400' : ''}>
+        {displayed != null ? formatCurrency(displayed) : <span className="text-muted-foreground text-xs">—</span>}
+      </span>
+      {overrideVal != null && <span className="text-xs text-amber-400/60" title="Precio manual">✎</span>}
+      <button
+        className="opacity-0 group-hover/price:opacity-100 transition-opacity ml-0.5 text-muted-foreground hover:text-foreground"
+        onClick={() => { setVal(String(overrideVal ?? currentPrice ?? '')); setEditing(true) }}
+        title="Editar precio actual"
+      >
+        <Pencil className="h-3 w-3" />
+      </button>
+    </div>
+  )
+}
+
+function applyOverrides(positions: PortfolioPosition[]): PortfolioPosition[] {
+  const overrides = getPriceOverrides()
+  return positions.map(p => {
+    const override = overrides[p.symbol]
+    if (override != null && p.shares > 0.0001) {
+      const market_value = round2(p.shares * override)
+      const unrealized_pnl = round2(market_value - p.total_invested)
+      const unrealized_pnl_pct = p.total_invested > 0 ? round2((unrealized_pnl / p.total_invested) * 100) : 0
+      return { ...p, current_price: override, market_value, unrealized_pnl, unrealized_pnl_pct }
+    }
+    return p
+  })
+}
+
+function round2(v: number) { return Math.round(v * 100) / 100 }
+
 export function Portfolio() {
   const { data: perf, isLoading } = useQuery({ queryKey: ['portfolio'], queryFn: portfolioApi.performance })
   const { data: history } = useQuery({ queryKey: ['portfolio-history'], queryFn: () => portfolioApi.history({ page_size: 50 }) })
   const [tab, setTab] = useState('positions')
+  const [, refresh] = useState(0)
 
   if (isLoading) return (
     <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
   )
 
-  const openPositions = perf?.positions.filter(p => p.shares > 0.0001) || []
-  const closedPositions = perf?.positions.filter(p => p.shares <= 0.0001 && p.realized_pnl !== 0) || []
+  const rawPositions = perf?.positions || []
+  const positions = applyOverrides(rawPositions)
+
+  const openPositions = positions.filter(p => p.shares > 0.0001)
+  const closedPositions = positions.filter(p => p.shares <= 0.0001 && p.realized_pnl !== 0)
+
+  const totalMarketValue = openPositions.reduce((s, p) => s + (p.market_value ?? p.total_invested), 0)
+  const totalUnrealized = openPositions.reduce((s, p) => s + (p.unrealized_pnl ?? 0), 0)
 
   return (
     <div className="space-y-6">
@@ -33,25 +133,30 @@ export function Portfolio() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card><CardContent className="p-5">
-          <p className="text-xs text-muted-foreground mb-1">Total invertido</p>
-          <p className="text-2xl font-bold">{formatCurrency(perf?.total_invested ?? 0)}</p>
+          <p className="text-xs text-muted-foreground mb-1">Valor de mercado actual</p>
+          <p className="text-2xl font-bold">{totalMarketValue > 0 ? formatCurrency(totalMarketValue) : '—'}</p>
+          <p className="text-xs text-muted-foreground mt-1">Coste: {formatCurrency(perf?.total_invested ?? 0)}</p>
         </CardContent></Card>
         <Card><CardContent className="p-5">
-          <p className="text-xs text-muted-foreground mb-1">P&L Realizado</p>
-          <p className={`text-2xl font-bold ${(perf?.total_realized_pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            {(perf?.total_realized_pnl ?? 0) >= 0 ? '+' : ''}{formatCurrency(perf?.total_realized_pnl ?? 0)}
+          <p className="text-xs text-muted-foreground mb-1">P&L No realizado</p>
+          <p className={`text-2xl font-bold ${totalUnrealized >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {totalMarketValue > 0
+              ? `${totalUnrealized >= 0 ? '+' : ''}${formatCurrency(totalUnrealized)}`
+              : '—'}
           </p>
+          <p className="text-xs text-muted-foreground mt-1">P&L Realizado: {(perf?.total_realized_pnl ?? 0) >= 0 ? '+' : ''}{formatCurrency(perf?.total_realized_pnl ?? 0)}</p>
         </CardContent></Card>
         <Card><CardContent className="p-5">
-          <p className="text-xs text-muted-foreground mb-1">Total dividendos</p>
+          <p className="text-xs text-muted-foreground mb-1">Dividendos recibidos</p>
           <p className="text-2xl font-bold text-emerald-400">+{formatCurrency(perf?.total_dividends ?? 0)}</p>
+          <p className="text-xs text-muted-foreground mt-1">Comisiones: -{formatCurrency(perf?.total_fees ?? 0)}</p>
         </CardContent></Card>
-        <Card><CardContent className="p-5">
-          <p className="text-xs text-muted-foreground mb-1">Comisiones pagadas</p>
-          <p className="text-2xl font-bold text-red-400">-{formatCurrency(perf?.total_fees ?? 0)}</p>
-        </CardContent></Card>
+      </div>
+
+      <div className="text-xs text-muted-foreground bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+        💡 Los precios en tiempo real se obtienen de Yahoo Finance y se convierten automáticamente a EUR. Puedes editar el precio haciendo hover sobre la columna "Precio actual (€)" y clicando el lápiz — se muestra en amarillo.
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -71,14 +176,15 @@ export function Portfolio() {
                     <tr className="border-b border-border text-muted-foreground">
                       <th className="text-left px-4 py-3 font-medium">Activo</th>
                       <th className="text-right px-4 py-3 font-medium">Acciones</th>
-                      <th className="text-right px-4 py-3 font-medium">Precio medio</th>
-                      <th className="text-right px-4 py-3 font-medium">Total invertido</th>
-                      <th className="text-right px-4 py-3 font-medium hidden md:table-cell">P&L Realizado</th>
+                      <th className="text-right px-4 py-3 font-medium hidden sm:table-cell">Precio medio</th>
+                      <th className="text-right px-4 py-3 font-medium hidden md:table-cell">Precio actual (€)</th>
+                      <th className="text-right px-4 py-3 font-medium">Valor mercado</th>
+                      <th className="text-right px-4 py-3 font-medium hidden lg:table-cell">P&L no realizado</th>
                     </tr>
                   </thead>
                   <tbody>
                     {openPositions.map(p => (
-                      <tr key={p.symbol} className="border-b border-border/50 hover:bg-accent/30">
+                      <tr key={p.symbol} className="border-b border-border/50 hover:bg-accent/30 group">
                         <td className="px-4 py-3">
                           <p className="font-medium">{p.name}</p>
                           <div className="flex gap-1 mt-0.5">
@@ -86,16 +192,34 @@ export function Portfolio() {
                             <Badge variant="secondary" className="text-xs">{ASSET_LABELS[p.asset_class] || p.asset_class}</Badge>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right">{p.shares.toFixed(4)}</td>
-                        <td className="px-4 py-3 text-right">{formatCurrency(p.avg_buy_price)}</td>
-                        <td className="px-4 py-3 text-right font-semibold">{formatCurrency(p.total_invested)}</td>
-                        <td className={`px-4 py-3 text-right hidden md:table-cell ${p.realized_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {p.realized_pnl !== 0 ? `${p.realized_pnl >= 0 ? '+' : ''}${formatCurrency(p.realized_pnl)}` : '—'}
+                        <td className="px-4 py-3 text-right font-mono">{p.shares.toFixed(6)}</td>
+                        <td className="px-4 py-3 text-right text-muted-foreground hidden sm:table-cell">{formatCurrency(p.avg_buy_price)}</td>
+                        <td className="px-4 py-3 text-right hidden md:table-cell">
+                          <EditablePrice
+                            symbol={p.symbol}
+                            currentPrice={p.current_price}
+                            onSave={() => refresh(r => r + 1)}
+                          />
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold">
+                          {p.market_value != null ? formatCurrency(p.market_value) : formatCurrency(p.total_invested)}
+                        </td>
+                        <td className="px-4 py-3 text-right hidden lg:table-cell">
+                          {p.unrealized_pnl != null ? (
+                            <div>
+                              <span className={p.unrealized_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                {p.unrealized_pnl >= 0 ? '+' : ''}{formatCurrency(p.unrealized_pnl)}
+                              </span>
+                              <p className={`text-xs ${p.unrealized_pnl_pct != null && p.unrealized_pnl_pct >= 0 ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
+                                {p.unrealized_pnl_pct != null ? `${p.unrealized_pnl_pct >= 0 ? '+' : ''}${p.unrealized_pnl_pct.toFixed(2)}%` : ''}
+                              </p>
+                            </div>
+                          ) : <span className="text-muted-foreground text-xs">—</span>}
                         </td>
                       </tr>
                     ))}
                     {openPositions.length === 0 && (
-                      <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Sin posiciones abiertas</td></tr>
+                      <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Sin posiciones abiertas</td></tr>
                     )}
                   </tbody>
                 </table>

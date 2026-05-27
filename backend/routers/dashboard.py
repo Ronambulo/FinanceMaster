@@ -16,6 +16,7 @@ EXPENSE_TYPES = {
     "CARD_TRANSACTION", "CARD_TRANSACTION_INTERNATIONAL",
     "TRANSFER_INSTANT_OUTBOUND", "TRANSFER_OUTBOUND",
 }
+INTEREST_TYPES = {"INTEREST_PAYMENT"}
 
 
 def _month_range(year: int, month: int):
@@ -57,7 +58,14 @@ def overview(
     savings_month = round(income_month - expenses_month, 2)
     income_total = _sum(cash_txs, INCOME_TYPES)
     expenses_total = _sum(cash_txs, EXPENSE_TYPES)
-    balance = round(income_total - expenses_total, 2)
+    interest_month = _sum(cash_txs, INTEREST_TYPES, start, end)
+    interest_total = _sum(cash_txs, INTEREST_TYPES)
+
+    # Real cash balance = sum of ALL signed amounts (CASH + TRADING BUY/SELL affect the cash account)
+    balance_raw = db.query(func.sum(models.Transaction.amount)).filter(
+        models.Transaction.user_id == current_user.id
+    ).scalar()
+    balance = round(balance_raw or 0.0, 2)
 
     return schemas.DashboardOverview(
         balance=balance,
@@ -66,6 +74,8 @@ def overview(
         savings_month=savings_month,
         income_total=income_total,
         expenses_total=expenses_total,
+        interest_month=interest_month,
+        interest_total=interest_total,
     )
 
 

@@ -137,14 +137,19 @@ def auto_categorize(
             return rule.category_id, True, False
 
     # 2. Internal transfer detection
+    # Only flag as internal if the username has ≥2 words (full name) OR the counterparty
+    # name is an exact match — avoids false positives with single-word usernames like "Enrique"
     if user_own_name and counterparty_name:
         own_lower = user_own_name.lower().strip()
         cp_lower = counterparty_name.lower().strip()
-        if own_lower in cp_lower or cp_lower in own_lower:
-            if amount > 0:
-                cat_name = "Transferencia Entrante"
-            else:
-                cat_name = "Transferencia Saliente"
+        own_words = own_lower.split()
+        is_internal = False
+        if len(own_words) >= 2 and (own_lower in cp_lower or cp_lower in own_lower):
+            is_internal = True
+        elif own_lower == cp_lower:
+            is_internal = True
+        if is_internal:
+            cat_name = "Transferencia Entrante" if amount > 0 else "Transferencia Saliente"
             cat = _get_system_cat_by_name(db, cat_name)
             return (cat.id if cat else None), True, True
 

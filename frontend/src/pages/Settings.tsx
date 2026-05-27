@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { catApi } from '@/lib/api'
-import type { Category, CategoryRule } from '@/lib/api'
+import { catApi, authApi } from '@/lib/api'
+import type { Category } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,8 +11,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Plus, Trash2, Settings as SettingsIcon } from 'lucide-react'
+import { Plus, Trash2, Settings as SettingsIcon, Lock, Palette, Loader2, Check } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
+import { THEMES, ACCENT_COLORS, THEME_KEY, ACCENT_KEY, applyTheme } from '@/lib/theme'
 
 const CATEGORY_TYPES = [
   { value: 'expense', label: 'Gasto' },
@@ -22,6 +23,8 @@ const CATEGORY_TYPES = [
   { value: 'internal', label: 'Interna' },
 ]
 
+
+// ── Category form ─────────────────────────────────────────────────────────────
 function CategoryForm({ onSave, onCancel }: { onSave: (d: Partial<Category>) => void; onCancel: () => void }) {
   const [form, setForm] = useState({ name: '', icon: '💰', color: '#6366f1', type: 'expense' })
   return (
@@ -62,6 +65,7 @@ function CategoryForm({ onSave, onCancel }: { onSave: (d: Partial<Category>) => 
   )
 }
 
+// ── Settings component ────────────────────────────────────────────────────────
 export function Settings() {
   const user = useAuthStore(s => s.user)
   const qc = useQueryClient()
@@ -69,6 +73,13 @@ export function Settings() {
   const [newCatOpen, setNewCatOpen] = useState(false)
   const [newRuleOpen, setNewRuleOpen] = useState(false)
   const [ruleForm, setRuleForm] = useState({ keyword: '', category_id: '', field: 'name', priority: '0' })
+
+  // Theme state
+  const [activeTheme, setActiveTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'dark-blue')
+  const [activeAccent, setActiveAccent] = useState(() => localStorage.getItem(ACCENT_KEY) || 'blue')
+
+  // Password change state
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
 
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const { data: rules } = useQuery({ queryKey: ['rules'], queryFn: catApi.listRules })
@@ -90,9 +101,31 @@ export function Settings() {
     mutationFn: catApi.deleteRule,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['rules'] }); toast('Regla eliminada', 'success') },
   })
+  const changePasswordMutation = useMutation({
+    mutationFn: () => authApi.changePassword({ current_password: pwForm.current, new_password: pwForm.next }),
+    onSuccess: () => {
+      toast('Contraseña cambiada correctamente', 'success')
+      setPwForm({ current: '', next: '', confirm: '' })
+    },
+    onError: (e: any) => toast(e.message, 'error'),
+  })
+
+  const handleThemeChange = (themeId: string) => {
+    setActiveTheme(themeId)
+    localStorage.setItem(THEME_KEY, themeId)
+    applyTheme(themeId, activeAccent)
+  }
+
+  const handleAccentChange = (accentId: string) => {
+    setActiveAccent(accentId)
+    localStorage.setItem(ACCENT_KEY, accentId)
+    applyTheme(activeTheme, accentId)
+  }
 
   const userCats = categories?.filter(c => !c.is_system) || []
   const systemCats = categories?.filter(c => c.is_system) || []
+
+  const pwValid = pwForm.current && pwForm.next && pwForm.next === pwForm.confirm && pwForm.next.length >= 6
 
   return (
     <div className="space-y-6">
@@ -105,12 +138,19 @@ export function Settings() {
       </div>
 
       <Tabs defaultValue="categories">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="categories">Mis categorías ({userCats.length})</TabsTrigger>
           <TabsTrigger value="rules">Reglas ({rules?.length || 0})</TabsTrigger>
-          <TabsTrigger value="system">Categorías del sistema</TabsTrigger>
+          <TabsTrigger value="system">Sistema</TabsTrigger>
+          <TabsTrigger value="appearance">
+            <Palette className="h-3.5 w-3.5 mr-1.5" />Apariencia
+          </TabsTrigger>
+          <TabsTrigger value="security">
+            <Lock className="h-3.5 w-3.5 mr-1.5" />Seguridad
+          </TabsTrigger>
         </TabsList>
 
+        {/* Categories */}
         <TabsContent value="categories" className="space-y-4 mt-4">
           <div className="flex justify-end">
             <Button onClick={() => setNewCatOpen(true)}><Plus className="h-4 w-4 mr-2" /> Nueva categoría</Button>
@@ -141,6 +181,7 @@ export function Settings() {
           </div>
         </TabsContent>
 
+        {/* Rules */}
         <TabsContent value="rules" className="space-y-4 mt-4">
           <div className="flex items-start justify-between">
             <p className="text-sm text-muted-foreground max-w-md">Las reglas se aplican durante la importación: si el nombre de la transacción contiene la palabra clave, se asigna la categoría indicada.</p>
@@ -168,6 +209,7 @@ export function Settings() {
           </div>
         </TabsContent>
 
+        {/* System categories */}
         <TabsContent value="system" className="mt-4">
           <div className="grid gap-2">
             {systemCats.map(c => (
@@ -179,6 +221,110 @@ export function Settings() {
               </div>
             ))}
           </div>
+        </TabsContent>
+
+        {/* Appearance */}
+        <TabsContent value="appearance" className="mt-4 space-y-6">
+          <Card>
+            <CardHeader><CardTitle className="text-sm font-medium">Tema</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {THEMES.map(theme => (
+                  <button
+                    key={theme.id}
+                    onClick={() => handleThemeChange(theme.id)}
+                    className={`relative rounded-xl overflow-hidden border-2 transition-all ${
+                      activeTheme === theme.id ? 'border-primary scale-105 shadow-lg shadow-primary/20' : 'border-border hover:border-primary/50'
+                    }`}
+                  >
+                    <div className={`h-16 w-full ${theme.preview}`} />
+                    <div className="p-2 bg-card text-left">
+                      <p className="text-xs font-medium">{theme.name}</p>
+                    </div>
+                    {activeTheme === theme.id && (
+                      <div className="absolute top-2 right-2 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
+                        <Check className="h-3 w-3 text-primary-foreground" />
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-sm font-medium">Color de acento</CardTitle></CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-3">
+                {ACCENT_COLORS.map(accent => {
+                  const bg = `hsl(${accent.h}, ${accent.s}, ${accent.l})`
+                  return (
+                    <button
+                      key={accent.id}
+                      onClick={() => handleAccentChange(accent.id)}
+                      title={accent.name}
+                      className={`relative w-10 h-10 rounded-full border-2 transition-all hover:scale-110 ${
+                        activeAccent === accent.id ? 'border-white scale-110 shadow-lg' : 'border-transparent'
+                      }`}
+                      style={{ backgroundColor: bg }}
+                    >
+                      {activeAccent === accent.id && (
+                        <Check className="h-4 w-4 text-white absolute inset-0 m-auto" />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">El color de acento afecta a botones, enlaces y elementos destacados.</p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Security */}
+        <TabsContent value="security" className="mt-4">
+          <Card>
+            <CardHeader><CardTitle className="text-sm font-medium flex items-center gap-2"><Lock className="h-4 w-4" /> Cambiar contraseña</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>Contraseña actual</Label>
+                <Input
+                  type="password"
+                  placeholder="••••••••"
+                  value={pwForm.current}
+                  onChange={e => setPwForm(f => ({ ...f, current: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Nueva contraseña</Label>
+                <Input
+                  type="password"
+                  placeholder="Mínimo 6 caracteres"
+                  value={pwForm.next}
+                  onChange={e => setPwForm(f => ({ ...f, next: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Confirmar nueva contraseña</Label>
+                <Input
+                  type="password"
+                  placeholder="Repite la nueva contraseña"
+                  value={pwForm.confirm}
+                  onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))}
+                  className={pwForm.confirm && pwForm.next !== pwForm.confirm ? 'border-red-500' : ''}
+                />
+                {pwForm.confirm && pwForm.next !== pwForm.confirm && (
+                  <p className="text-xs text-red-400">Las contraseñas no coinciden</p>
+                )}
+              </div>
+              <Button
+                disabled={!pwValid || changePasswordMutation.isPending}
+                onClick={() => changePasswordMutation.mutate()}
+              >
+                {changePasswordMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Cambiar contraseña
+              </Button>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 

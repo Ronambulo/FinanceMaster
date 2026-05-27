@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime as _dt, date
 from typing import Optional
 from sqlalchemy import (
     Boolean, Column, DateTime, Date, Float, ForeignKey,
@@ -39,7 +39,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_dt.utcnow)
     is_active = Column(Boolean, default=True)
 
     transactions = relationship("Transaction", back_populates="user", cascade="all, delete-orphan")
@@ -105,7 +105,7 @@ class Transaction(Base):
     is_auto_categorized = Column(Boolean, default=False)
     is_internal_transfer = Column(Boolean, default=False)
     recurring_group_id = Column(Integer, ForeignKey("recurring_groups.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_dt.utcnow)
 
     __table_args__ = (UniqueConstraint("user_id", "external_id", name="uq_user_external_id"),)
 
@@ -126,10 +126,11 @@ class RecurringGroup(Base):
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     next_expected_date = Column(Date, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_dt.utcnow)
 
     user = relationship("User", back_populates="recurring_groups")
     transactions = relationship("Transaction", back_populates="recurring_group")
+    category = relationship("Category", foreign_keys=[category_id])
 
 
 class Debt(Base):
@@ -142,7 +143,7 @@ class Debt(Base):
     direction = Column(SAEnum(DebtDirection), nullable=False)
     due_date = Column(Date, nullable=True)
     is_settled = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_dt.utcnow)
 
     user = relationship("User", back_populates="debts")
     payments = relationship("DebtPayment", back_populates="debt", cascade="all, delete-orphan")
@@ -173,7 +174,7 @@ class Goal(Base):
     deadline = Column(Date, nullable=True)
     current_amount = Column(Float, default=0.0)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_dt.utcnow)
 
     user = relationship("User", back_populates="goals")
 
