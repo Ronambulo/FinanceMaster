@@ -1,0 +1,36 @@
+name: financemaster
+
+services:
+  financemaster:
+    image: ghcr.io/ronambulo/financemaster:latest
+    container_name: financemaster
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - /DATA/AppData/financemaster:/data
+    environment:
+      - SECRET_KEY=cambia-esto-por-una-clave-secreta-larga-y-aleatoria
+      - DATABASE_URL=sqlite:////data/finance.db
+
+x-casaos:
+  architectures:
+    - amd64
+    - arm64
+  main: financemaster
+  description:
+    en_us: Personal finance app — import Trade Republic CSVs, track expenses, manage investments portfolio, detect recurring payments, control debts and savings goals.
+    es_es: App de finanzas personales — importa CSVs de Trade Republic, controla gastos, gestiona tu portfolio de inversiones, detecta pagos recurrentes, deudas y objetivos de ahorro.
+  tagline:
+    en_us: Your finances, under control
+    es_es: Tus finanzas, bajo control
+  developer: Ronambulo
+  author: Ronambulo
+  icon: https://raw.githubusercontent.com/Ronambulo/financemaster/main/icon.svg
+  thumbnail: ""
+  title:
+    en_us: FinanceMaster
+  index: /
+  port_map: "8000"
+  scheme: http
+  store_app_id: financemaster
