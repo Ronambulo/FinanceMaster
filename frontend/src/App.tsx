@@ -11,6 +11,7 @@ import { Portfolio } from '@/pages/Portfolio'
 import { Recurring } from '@/pages/Recurring'
 import { Debts } from '@/pages/Debts'
 import { Goals } from '@/pages/Goals'
+import { Monthly } from '@/pages/Monthly'
 import { Settings } from '@/pages/Settings'
 import { useEffect } from 'react'
 import { applyTheme, THEME_KEY, ACCENT_KEY } from '@/lib/theme'
@@ -26,8 +27,8 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   useEffect(() => {
-    const themeId = localStorage.getItem(THEME_KEY) || 'dark-blue'
-    const accentId = localStorage.getItem(ACCENT_KEY) || 'blue'
+    const themeId  = localStorage.getItem(THEME_KEY)  || 'trade-republic'
+    const accentId = localStorage.getItem(ACCENT_KEY) || 'lime'
     applyTheme(themeId, accentId)
   }, [])
 
@@ -45,6 +46,7 @@ export default function App() {
               <Route path="recurrentes" element={<Recurring />} />
               <Route path="deudas" element={<Debts />} />
               <Route path="objetivos" element={<Goals />} />
+              <Route path="monthly" element={<Monthly />} />
               <Route path="ajustes" element={<Settings />} />
             </Route>
           </Routes>

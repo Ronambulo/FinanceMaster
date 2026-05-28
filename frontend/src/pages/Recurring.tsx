@@ -44,7 +44,7 @@ export function Recurring() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Pagos Recurrentes</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Pagos Recurrentes</h1>
           <p className="text-sm text-muted-foreground">{groups?.length ?? 0} compromisos detectados</p>
         </div>
         <Button variant="outline" onClick={() => detectMutation.mutate()} disabled={detectMutation.isPending}>
@@ -57,15 +57,15 @@ export function Recurring() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card><CardContent className="p-5">
           <p className="text-xs text-muted-foreground mb-1">Total mensual</p>
-          <p className="text-2xl font-bold text-red-400">-{formatCurrency(totalMonthly)}</p>
+          <p className="text-xl font-semibold tracking-tight text-negative">-{formatCurrency(totalMonthly)}</p>
         </CardContent></Card>
         <Card><CardContent className="p-5">
           <p className="text-xs text-muted-foreground mb-1">Compromisos activos</p>
-          <p className="text-2xl font-bold">{groups?.filter(g => g.is_active).length ?? 0}</p>
+          <p className="text-xl font-semibold tracking-tight">{groups?.filter(g => g.is_active).length ?? 0}</p>
         </CardContent></Card>
         <Card><CardContent className="p-5">
           <p className="text-xs text-muted-foreground mb-1">Próximo pago</p>
-          <p className="text-2xl font-bold text-sm">
+          <p className="text-xl font-semibold tracking-tight text-sm">
             {groups?.find(g => g.is_active && g.next_expected_date)
               ? formatDate(groups.find(g => g.is_active && g.next_expected_date)!.next_expected_date!)
               : '—'
@@ -86,9 +86,9 @@ export function Recurring() {
             return (
               <Card key={g.id} className={!g.is_active ? 'opacity-50' : ''}>
                 <CardContent className="p-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{g.category?.icon || '💳'}</span>
-                    <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-2xl shrink-0">{g.category?.icon || '💳'}</span>
+                    <div className="flex-1 min-w-0" style={{ minWidth: '140px' }}>
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-semibold truncate">{g.display_name}</p>
                         <Badge variant="secondary" className="text-xs">{periodLabel(g.period_days)}</Badge>
@@ -107,20 +107,18 @@ export function Recurring() {
                         <span>{g.transaction_count} pagos detectados</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <p className="font-bold text-red-400 text-lg">-{formatCurrency(g.avg_amount || 0)}</p>
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost" size="icon"
-                          onClick={() => toggleMutation.mutate({ id: g.id, is_active: !g.is_active })}
-                          title={g.is_active ? 'Desactivar' : 'Activar'}
-                        >
-                          <RefreshCw className={`h-4 w-4 ${g.is_active ? 'text-primary' : 'text-muted-foreground'}`} />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(g.id)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
+                    <div className="flex items-center gap-2 ml-auto shrink-0">
+                      <p className="font-bold text-negative text-base">-{formatCurrency(g.avg_amount || 0)}</p>
+                      <Button
+                        variant="ghost" size="icon"
+                        onClick={() => toggleMutation.mutate({ id: g.id, is_active: !g.is_active })}
+                        title={g.is_active ? 'Desactivar' : 'Activar'}
+                      >
+                        <RefreshCw className={`h-4 w-4 ${g.is_active ? 'text-primary' : 'text-muted-foreground'}`} />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(g.id)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
                     </div>
                   </div>
                 </CardContent>

@@ -69,6 +69,8 @@ export const dashApi = {
     request<MonthlyTrend[]>(`/dashboard/monthly-trend?months=${months}`),
   upcoming: (days = 30) =>
     request<UpcomingRecurring[]>(`/dashboard/upcoming?days=${days}`),
+  monthlyDetail: (year: number, month: number) =>
+    request<MonthlyDetailRow[]>(`/dashboard/monthly-detail?year=${year}&month=${month}`),
 }
 
 // Categories
@@ -132,6 +134,22 @@ export const portfolioApi = {
     Object.entries(params || {}).forEach(([k, v]) => q.set(k, String(v)))
     return request<TransactionListResponse>(`/portfolio/history?${q}`)
   },
+  priceHistory: (symbols: string[], period = '1y') =>
+    request<PriceHistory[]>(`/portfolio/price-history?symbols=${symbols.join(',')}&period=${period}`),
+}
+
+// Budgets
+export const budgetApi = {
+  list: () => request<Budget[]>('/budgets'),
+  create: (data: Partial<Budget>) =>
+    request<Budget>('/budgets', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: number, data: Partial<Budget>) =>
+    request<Budget>(`/budgets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: number) => request<void>(`/budgets/${id}`, { method: 'DELETE' }),
+  status: (month?: string) => {
+    const q = month ? `?month=${month}` : ''
+    return request<BudgetStatus[]>(`/budgets/status${q}`)
+  },
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -145,7 +163,7 @@ export interface Transaction {
   amount: number; fee: number | null; tax: number | null; currency: string
   description: string | null; counterparty_name: string | null; mcc_code: string | null
   category_id: number | null; category: Category | null
-  is_auto_categorized: boolean; is_internal_transfer: boolean; recurring_group_id: number | null
+  is_auto_categorized: boolean; is_internal_transfer: boolean; exclude_from_stats: boolean; recurring_group_id: number | null
 }
 export interface TransactionListResponse { items: Transaction[]; total: number; page: number; page_size: number }
 export interface ImportResult { imported: number; skipped_duplicates: number; errors: number }
@@ -160,3 +178,8 @@ export interface MonthlyTrend { month: string; income: number; expenses: number;
 export interface UpcomingRecurring { id: number; display_name: string; avg_amount: number; next_expected_date: string | null; days_until: number | null; category: Category | null }
 export interface PortfolioPosition { symbol: string; name: string; asset_class: string; shares: number; avg_buy_price: number; total_invested: number; realized_pnl: number; dividends_received: number; current_price: number | null; market_value: number | null; unrealized_pnl: number | null; unrealized_pnl_pct: number | null }
 export interface PortfolioPerformance { total_invested: number; total_realized_pnl: number; total_fees: number; total_dividends: number; total_market_value: number; total_unrealized_pnl: number; positions: PortfolioPosition[]; dividends_by_asset: { symbol: string; name: string; total: number; count: number }[] }
+export interface PricePoint { date: string; close: number }
+export interface PriceHistory { symbol: string; points: PricePoint[] }
+export interface Budget { id: number; category_id: number | null; category: Category | null; amount: number; month: string | null; is_recurring: boolean }
+export interface BudgetStatus { budget_id: number; category_id: number | null; category_name: string; category_color: string; category_icon: string; budgeted: number; spent: number; remaining: number; pct_used: number }
+export interface MonthlyDetailRow { id: number; date: string; name: string | null; category_id: number | null; category_name: string; category_color: string; category_icon: string; amount: number; exclude_from_stats: boolean }

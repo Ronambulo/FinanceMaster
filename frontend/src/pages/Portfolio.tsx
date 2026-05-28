@@ -4,11 +4,16 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Loader2, Pencil, Check, X } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import type { PortfolioPosition } from '@/lib/api'
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, Legend,
+} from 'recharts'
 
 const ASSET_LABELS: Record<string, string> = {
   STOCK: '📈 Acciones',
@@ -52,7 +57,7 @@ function EditablePrice({ symbol, currentPrice, onSave }: { symbol: string; curre
           autoFocus
         />
         <button
-          className="text-emerald-400 hover:text-emerald-300"
+          className="text-primary hover:text-primary/80"
           onClick={() => {
             const n = parseFloat(val)
             if (!isNaN(n) && n > 0) {
@@ -86,6 +91,151 @@ function EditablePrice({ symbol, currentPrice, onSave }: { symbol: string; curre
       >
         <Pencil className="h-3 w-3" />
       </button>
+    </div>
+  )
+}
+
+/* ─── Deterministic HSL color from ticker symbol ─────────────── */
+function symbolColor(sym: string): string {
+  let hash = 0
+  for (let i = 0; i < sym.length; i++) hash = sym.charCodeAt(i) + ((hash << 5) - hash)
+  const h = Math.abs(hash) % 360
+  return `hsl(${h}, 70%, 60%)`
+}
+
+/* ─── Price history chart ─────────────────────────────────────── */
+const PERIODS = [
+  { value: '1mo', label: '1M' },
+  { value: '3mo', label: '3M' },
+  { value: '6mo', label: '6M' },
+  { value: '1y',  label: '1A' },
+  { value: '2y',  label: '2A' },
+  { value: '5y',  label: '5A' },
+]
+
+function PriceChart({ symbols }: { symbols: string[] }) {
+  const [period, setPeriod] = useState('1y')
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['price-history', symbols.join(','), period],
+    queryFn: () => portfolioApi.priceHistory(symbols, period),
+    enabled: symbols.length > 0,
+    staleTime: 5 * 60_000, // 5 min — Yahoo Finance data
+  })
+
+  type ChartRow = Record<string, number | string>
+
+  // Merge all series into one array keyed by date
+  const chartData = useMemo((): ChartRow[] => {
+    if (!data) return []
+    const dateMap: Record<string, Record<string, number>> = {}
+    for (const series of data) {
+      for (const pt of series.points) {
+        if (!dateMap[pt.date]) dateMap[pt.date] = {}
+        dateMap[pt.date][series.symbol] = pt.close
+      }
+    }
+    return Object.entries(dateMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, vals]) => ({ date, ...vals } as ChartRow))
+  }, [data])
+
+  // Normalised (base-100) chart data so different-priced stocks are comparable
+  const baseValues: Record<string, number> = useMemo(() => {
+    if (!chartData.length) return {}
+    const base: Record<string, number> = {}
+    for (const sym of symbols) {
+      const first = chartData.find(d => d[sym] !== undefined)
+      if (first) base[sym] = first[sym] as number
+    }
+    return base
+  }, [chartData, symbols])
+
+  const normalised = useMemo((): ChartRow[] =>
+    chartData.map(row => {
+      const out: ChartRow = { date: row.date }
+      for (const sym of symbols) {
+        const base = baseValues[sym]
+        const val  = row[sym] as number | undefined
+        if (base && val !== undefined) out[sym] = parseFloat(((val / base) * 100).toFixed(2))
+      }
+      return out
+    }), [chartData, baseValues, symbols])
+
+  const ChartTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null
+    return (
+      <div className="rounded-lg border border-white/10 bg-[hsl(228_22%_7%)] p-3 text-xs shadow-xl">
+        <p className="font-medium text-foreground/70 mb-1.5">{label}</p>
+        {payload.map((p: any) => (
+          <p key={p.dataKey} className="flex items-center gap-1.5" style={{ color: p.stroke }}>
+            <span className="inline-block w-2 h-2 rounded-full" style={{ background: p.stroke }} />
+            {p.dataKey}: <span className="font-semibold ml-auto pl-3">{p.value}%</span>
+          </p>
+        ))}
+      </div>
+    )
+  }
+
+  if (symbols.length === 0) {
+    return <p className="py-8 text-center text-muted-foreground text-sm">Sin posiciones abiertas</p>
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">Rendimiento relativo base 100 — comparativa entre activos</p>
+        <div className="flex gap-1">
+          {PERIODS.map(p => (
+            <button
+              key={p.value}
+              onClick={() => setPeriod(p.value)}
+              className={`text-xs px-2 py-1 rounded transition-colors ${
+                period === p.value
+                  ? 'bg-primary/20 text-primary font-medium'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+      ) : (
+        <ResponsiveContainer width="100%" height={260}>
+          <LineChart data={normalised} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+            <XAxis
+              dataKey="date"
+              tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }}
+              axisLine={false} tickLine={false}
+              tickFormatter={d => d.slice(5)} // show MM-DD
+              interval="preserveStartEnd"
+            />
+            <YAxis
+              tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }}
+              axisLine={false} tickLine={false}
+              tickFormatter={v => `${v}`}
+              domain={['auto', 'auto']}
+            />
+            <Tooltip content={<ChartTooltip />} />
+            <Legend wrapperStyle={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }} />
+            {symbols.map(sym => (
+              <Line
+                key={sym}
+                type="monotone"
+                dataKey={sym}
+                stroke={symbolColor(sym)}
+                strokeWidth={1.8}
+                dot={false}
+                connectNulls
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      )}
     </div>
   )
 }
@@ -128,7 +278,7 @@ export function Portfolio() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Portfolio de Inversiones</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Portfolio de Inversiones</h1>
         <p className="text-sm text-muted-foreground">Seguimiento de tus activos financieros</p>
       </div>
 
@@ -136,12 +286,12 @@ export function Portfolio() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card><CardContent className="p-5">
           <p className="text-xs text-muted-foreground mb-1">Valor de mercado actual</p>
-          <p className="text-2xl font-bold">{totalMarketValue > 0 ? formatCurrency(totalMarketValue) : '—'}</p>
+          <p className="text-xl font-semibold tracking-tight">{totalMarketValue > 0 ? formatCurrency(totalMarketValue) : '—'}</p>
           <p className="text-xs text-muted-foreground mt-1">Coste: {formatCurrency(perf?.total_invested ?? 0)}</p>
         </CardContent></Card>
         <Card><CardContent className="p-5">
           <p className="text-xs text-muted-foreground mb-1">P&L No realizado</p>
-          <p className={`text-2xl font-bold ${totalUnrealized >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+          <p className={`text-xl font-semibold tracking-tight ${totalUnrealized >= 0 ? 'text-positive' : 'text-negative'}`}>
             {totalMarketValue > 0
               ? `${totalUnrealized >= 0 ? '+' : ''}${formatCurrency(totalUnrealized)}`
               : '—'}
@@ -150,7 +300,7 @@ export function Portfolio() {
         </CardContent></Card>
         <Card><CardContent className="p-5">
           <p className="text-xs text-muted-foreground mb-1">Dividendos recibidos</p>
-          <p className="text-2xl font-bold text-emerald-400">+{formatCurrency(perf?.total_dividends ?? 0)}</p>
+          <p className="text-xl font-semibold tracking-tight text-positive">+{formatCurrency(perf?.total_dividends ?? 0)}</p>
           <p className="text-xs text-muted-foreground mt-1">Comisiones: -{formatCurrency(perf?.total_fees ?? 0)}</p>
         </CardContent></Card>
       </div>
@@ -160,17 +310,63 @@ export function Portfolio() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="positions">Posiciones abiertas ({openPositions.length})</TabsTrigger>
-          <TabsTrigger value="closed">Posiciones cerradas ({closedPositions.length})</TabsTrigger>
-          <TabsTrigger value="dividends">Dividendos</TabsTrigger>
-          <TabsTrigger value="history">Historial</TabsTrigger>
-        </TabsList>
+        {/* Scrollable tab list on mobile */}
+        <div className="overflow-x-auto pb-0.5">
+          <TabsList className="w-max min-w-full sm:w-auto">
+            <TabsTrigger value="positions">Posiciones ({openPositions.length})</TabsTrigger>
+            <TabsTrigger value="closed">Cerradas ({closedPositions.length})</TabsTrigger>
+            <TabsTrigger value="dividends">Dividendos</TabsTrigger>
+            <TabsTrigger value="history">Historial</TabsTrigger>
+            <TabsTrigger value="charts">📈 Gráficas</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="positions">
           <Card>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              {/* Mobile cards */}
+              <div className="sm:hidden divide-y divide-border/50">
+                {openPositions.map(p => (
+                  <div key={p.symbol} className="px-4 py-3.5 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm truncate">{p.name}</p>
+                        <div className="flex gap-1 mt-0.5">
+                          <Badge variant="muted" className="text-xs">{p.symbol}</Badge>
+                          <Badge variant="secondary" className="text-xs">{ASSET_LABELS[p.asset_class] || p.asset_class}</Badge>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="font-semibold text-sm">
+                          {p.market_value != null ? formatCurrency(p.market_value) : formatCurrency(p.total_invested)}
+                        </p>
+                        {p.unrealized_pnl != null && (
+                          <p className={`text-xs font-medium ${p.unrealized_pnl >= 0 ? 'text-positive' : 'text-negative'}`}>
+                            {p.unrealized_pnl >= 0 ? '+' : ''}{formatCurrency(p.unrealized_pnl)}
+                            {p.unrealized_pnl_pct != null && (
+                              <span className="ml-1 opacity-80">
+                                ({p.unrealized_pnl_pct >= 0 ? '+' : ''}{p.unrealized_pnl_pct.toFixed(1)}%)
+                              </span>
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>{p.shares.toFixed(4)} acc. · P.med. {formatCurrency(p.avg_buy_price)}</span>
+                      {p.current_price && (
+                        <span>Actual: {formatCurrency(p.current_price)}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {openPositions.length === 0 && (
+                  <p className="px-4 py-8 text-center text-muted-foreground text-sm">Sin posiciones abiertas</p>
+                )}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground">
@@ -207,10 +403,10 @@ export function Portfolio() {
                         <td className="px-4 py-3 text-right hidden lg:table-cell">
                           {p.unrealized_pnl != null ? (
                             <div>
-                              <span className={p.unrealized_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                              <span className={p.unrealized_pnl >= 0 ? 'text-positive' : 'text-negative'}>
                                 {p.unrealized_pnl >= 0 ? '+' : ''}{formatCurrency(p.unrealized_pnl)}
                               </span>
-                              <p className={`text-xs ${p.unrealized_pnl_pct != null && p.unrealized_pnl_pct >= 0 ? 'text-emerald-400/70' : 'text-red-400/70'}`}>
+                              <p className={`text-xs ${p.unrealized_pnl_pct != null && p.unrealized_pnl_pct >= 0 ? 'text-positive/70' : 'text-negative/70'}`}>
                                 {p.unrealized_pnl_pct != null ? `${p.unrealized_pnl_pct >= 0 ? '+' : ''}${p.unrealized_pnl_pct.toFixed(2)}%` : ''}
                               </p>
                             </div>
@@ -246,7 +442,7 @@ export function Portfolio() {
                           <p className="font-medium">{p.name}</p>
                           <Badge variant="muted" className="text-xs">{p.symbol}</Badge>
                         </td>
-                        <td className={`px-4 py-3 text-right font-semibold ${p.realized_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <td className={`px-4 py-3 text-right font-semibold ${p.realized_pnl >= 0 ? 'text-positive' : 'text-negative'}`}>
                           {p.realized_pnl >= 0 ? '+' : ''}{formatCurrency(p.realized_pnl)}
                         </td>
                       </tr>
@@ -281,7 +477,7 @@ export function Portfolio() {
                           <Badge variant="muted" className="text-xs">{d.symbol}</Badge>
                         </td>
                         <td className="px-4 py-3 text-right text-muted-foreground">{d.count}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-emerald-400">+{formatCurrency(d.total)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-positive">+{formatCurrency(d.total)}</td>
                       </tr>
                     ))}
                     {(perf?.dividends_by_asset.length === 0) && (
@@ -297,7 +493,28 @@ export function Portfolio() {
         <TabsContent value="history">
           <Card>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              {/* Mobile cards */}
+              <div className="sm:hidden divide-y divide-border/50">
+                {history?.items.map(tx => (
+                  <div key={tx.id} className="flex items-center gap-3 px-4 py-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="font-medium text-sm truncate">{tx.name}</p>
+                        <Badge variant={tx.type === 'BUY' ? 'default' : tx.type === 'SELL' ? 'destructive' : 'success'} className="text-xs">
+                          {tx.type === 'BUY' ? 'Compra' : tx.type === 'SELL' ? 'Venta' : tx.type}
+                        </Badge>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{formatDate(tx.date)}</span>
+                    </div>
+                    <p className={`text-sm font-semibold shrink-0 ${tx.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
+                      {tx.amount >= 0 ? '+' : ''}{formatCurrency(tx.amount)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground">
@@ -322,7 +539,7 @@ export function Portfolio() {
                         </td>
                         <td className="px-4 py-3 text-right text-muted-foreground hidden md:table-cell">{tx.shares?.toFixed(4)}</td>
                         <td className="px-4 py-3 text-right text-muted-foreground hidden md:table-cell">{tx.price ? formatCurrency(tx.price) : '—'}</td>
-                        <td className={`px-4 py-3 text-right font-semibold ${tx.amount >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <td className={`px-4 py-3 text-right font-semibold ${tx.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
                           {tx.amount >= 0 ? '+' : ''}{formatCurrency(tx.amount)}
                         </td>
                       </tr>
@@ -330,6 +547,13 @@ export function Portfolio() {
                   </tbody>
                 </table>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        <TabsContent value="charts">
+          <Card>
+            <CardContent className="p-5">
+              <PriceChart symbols={openPositions.map(p => p.symbol)} />
             </CardContent>
           </Card>
         </TabsContent>

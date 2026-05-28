@@ -132,7 +132,7 @@ export function Settings() {
       <div className="flex items-center gap-3">
         <SettingsIcon className="h-6 w-6" />
         <div>
-          <h1 className="text-2xl font-bold">Ajustes</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Ajustes</h1>
           <p className="text-sm text-muted-foreground">{user?.email}</p>
         </div>
       </div>
@@ -313,7 +313,7 @@ export function Settings() {
                   className={pwForm.confirm && pwForm.next !== pwForm.confirm ? 'border-red-500' : ''}
                 />
                 {pwForm.confirm && pwForm.next !== pwForm.confirm && (
-                  <p className="text-xs text-red-400">Las contraseñas no coinciden</p>
+                  <p className="text-xs text-negative">Las contraseñas no coinciden</p>
                 )}
               </div>
               <Button

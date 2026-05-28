@@ -29,8 +29,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             'bg-red-950 border-red-700 text-red-200': t.type === 'error',
             'bg-card border-border text-foreground': t.type === 'info',
           })}>
-            {t.type === 'success' && <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-400" />}
-            {t.type === 'error' && <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-red-400" />}
+            {t.type === 'success' && <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-primary" />}
+            {t.type === 'error' && <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-negative" />}
             <span className="flex-1">{t.message}</span>
             <button onClick={() => dismiss(t.id)} className="opacity-60 hover:opacity-100"><X className="h-4 w-4" /></button>
           </div>

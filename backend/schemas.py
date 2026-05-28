@@ -81,6 +81,7 @@ class TransactionUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     is_internal_transfer: Optional[bool] = None
+    exclude_from_stats: Optional[bool] = None
 
 class TransactionOut(BaseModel):
     id: int
@@ -105,6 +106,7 @@ class TransactionOut(BaseModel):
     category: Optional[CategoryOut]
     is_auto_categorized: bool
     is_internal_transfer: bool
+    exclude_from_stats: bool = False
     recurring_group_id: Optional[int]
     model_config = {"from_attributes": True}
 
@@ -291,3 +293,57 @@ class UpcomingRecurring(BaseModel):
     next_expected_date: Optional[date]
     days_until: Optional[int]
     category: Optional[CategoryOut]
+
+
+# ── Budgets ───────────────────────────────────────────────────────────────────
+class BudgetCreate(BaseModel):
+    category_id: Optional[int] = None
+    amount: float
+    month: Optional[str] = None   # "2024-01"; None when is_recurring=True
+    is_recurring: bool = True
+
+class BudgetUpdate(BaseModel):
+    category_id: Optional[int] = None
+    amount: Optional[float] = None
+    month: Optional[str] = None
+    is_recurring: Optional[bool] = None
+
+class BudgetOut(BaseModel):
+    id: int
+    category_id: Optional[int]
+    category: Optional[CategoryOut]
+    amount: float
+    month: Optional[str]
+    is_recurring: bool
+    model_config = {"from_attributes": True}
+
+class BudgetStatus(BaseModel):
+    budget_id: int
+    category_id: Optional[int]
+    category_name: str
+    category_color: str
+    category_icon: str
+    budgeted: float
+    spent: float
+    remaining: float
+    pct_used: float  # 0–100+
+
+class MonthlyDetailRow(BaseModel):
+    """Single transaction row for the monthly detail view."""
+    id: int
+    date: date
+    name: Optional[str]
+    category_id: Optional[int]
+    category_name: str
+    category_color: str
+    category_icon: str
+    amount: float
+    exclude_from_stats: bool
+
+class PricePoint(BaseModel):
+    date: str
+    close: float
+
+class PriceHistory(BaseModel):
+    symbol: str
+    points: List[PricePoint]

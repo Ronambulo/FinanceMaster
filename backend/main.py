@@ -16,9 +16,10 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine
 from . import models
-from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard
+from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets
 from .services.categorizer import seed_system_categories
 from .database import SessionLocal
+from sqlalchemy import text
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -40,10 +41,22 @@ app.include_router(debts.router)
 app.include_router(goals.router)
 app.include_router(portfolio.router)
 app.include_router(dashboard.router)
+app.include_router(budgets.router)
 
 
 @app.on_event("startup")
 def on_startup():
+    # Incremental migrations for columns added after initial schema
+    with engine.connect() as conn:
+        for stmt in [
+            "ALTER TABLE transactions ADD COLUMN exclude_from_stats BOOLEAN DEFAULT FALSE",
+        ]:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass  # Column already exists
+
     db = SessionLocal()
     try:
         seed_system_categories(db)

@@ -49,6 +49,7 @@ class User(Base):
     debts = relationship("Debt", back_populates="user", cascade="all, delete-orphan")
     goals = relationship("Goal", back_populates="user", cascade="all, delete-orphan")
     savings_allocations = relationship("SavingsAllocation", back_populates="user", cascade="all, delete-orphan")
+    budgets = relationship("Budget", back_populates="user", cascade="all, delete-orphan")
 
 
 class Category(Base):
@@ -104,6 +105,7 @@ class Transaction(Base):
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     is_auto_categorized = Column(Boolean, default=False)
     is_internal_transfer = Column(Boolean, default=False)
+    exclude_from_stats = Column(Boolean, default=False)
     recurring_group_id = Column(Integer, ForeignKey("recurring_groups.id"), nullable=True)
     created_at = Column(DateTime, default=_dt.utcnow)
 
@@ -177,6 +179,21 @@ class Goal(Base):
     created_at = Column(DateTime, default=_dt.utcnow)
 
     user = relationship("User", back_populates="goals")
+
+
+class Budget(Base):
+    __tablename__ = "budgets"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    amount = Column(Float, nullable=False)
+    # month = "2024-01" for a specific month, NULL when is_recurring=True
+    month = Column(String, nullable=True)
+    is_recurring = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_dt.utcnow)
+
+    user = relationship("User", back_populates="budgets")
+    category = relationship("Category")
 
 
 class SavingsAllocation(Base):

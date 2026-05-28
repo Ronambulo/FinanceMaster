@@ -2,7 +2,7 @@ from datetime import date, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, extract
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from .. import models, schemas, auth
 from ..database import get_db
 
@@ -205,3 +205,46 @@ def upcoming_recurring(
             category=schemas.CategoryOut.model_validate(g.category) if g.category else None,
         ))
     return result
+
+
+@router.get("/monthly-detail", response_model=List[schemas.MonthlyDetailRow])
+def monthly_detail(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """All cash expense/income transactions for a given month, with exclude_from_stats flag."""
+    today = date.today()
+    y = year or today.year
+    m = month or today.month
+    start, end = _month_range(y, m)
+
+    txs = (
+        db.query(models.Transaction)
+        .options(joinedload(models.Transaction.category))
+        .filter(
+            models.Transaction.user_id == current_user.id,
+            models.Transaction.account_category == "CASH",
+            models.Transaction.is_internal_transfer == False,
+            models.Transaction.date >= start,
+            models.Transaction.date <= end,
+        )
+        .order_by(models.Transaction.date.desc())
+        .all()
+    )
+
+    return [
+        schemas.MonthlyDetailRow(
+            id=tx.id,
+            date=tx.date,
+            name=tx.name or tx.description or tx.type,
+            category_id=tx.category_id,
+            category_name=tx.category.name if tx.category else "Sin categoría",
+            category_color=tx.category.color if tx.category else "#94a3b8",
+            category_icon=tx.category.icon if tx.category else "❓",
+            amount=tx.amount,
+            exclude_from_stats=tx.exclude_from_stats or False,
+        )
+        for tx in txs
+    ]

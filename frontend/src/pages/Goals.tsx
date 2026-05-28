@@ -42,7 +42,7 @@ function GoalCard({ goal, onDelete, onUpdate }: { goal: Goal; onDelete: (id: num
                     </div>
                   ) : (
                     <span className="text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => setEditAmt(true)}>
-                      Acumulado: <span className="text-emerald-400 font-medium">{formatCurrency(goal.current_amount)}</span>
+                      Acumulado: <span className="text-primary font-medium">{formatCurrency(goal.current_amount)}</span>
                     </span>
                   )}
                 </div>
@@ -163,7 +163,7 @@ export function Goals() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Objetivos</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Objetivos</h1>
           <p className="text-sm text-muted-foreground">Metas de ahorro e inversión</p>
         </div>
         <Button onClick={() => setNewOpen(true)}><Plus className="h-4 w-4 mr-2" /> Nuevo objetivo</Button>
@@ -177,7 +177,7 @@ export function Goals() {
         <CardContent className="space-y-4">
           <div className="grid sm:grid-cols-3 gap-4">
             {[
-              { key: 'savings_pct', label: 'Ahorro', icon: '💰', color: 'text-emerald-400' },
+              { key: 'savings_pct', label: 'Ahorro', icon: '💰', color: 'text-primary' },
               { key: 'investment_pct', label: 'Inversión', icon: '📈', color: 'text-blue-400' },
               { key: 'expenses_pct', label: 'Gastos', icon: '💳', color: 'text-amber-400' },
             ].map(({ key, label, icon, color }) => (
@@ -196,7 +196,7 @@ export function Goals() {
             ))}
           </div>
           <div className="flex items-center justify-between">
-            <p className={`text-sm ${total !== 100 ? 'text-red-400' : 'text-muted-foreground'}`}>
+            <p className={`text-sm ${total !== 100 ? 'text-negative' : 'text-muted-foreground'}`}>
               Total: {total}% {total !== 100 && '(debe sumar 100%)'}
             </p>
             <Button size="sm" disabled={total !== 100} onClick={() => saveAllocation.mutate(currentAlloc)}>
@@ -205,7 +205,7 @@ export function Goals() {
           </div>
           {/* Visual bar */}
           <div className="h-3 rounded-full overflow-hidden flex">
-            <div className="bg-emerald-500 transition-all" style={{ width: `${currentAlloc.savings_pct}%` }} />
+            <div className="bg-primary transition-all" style={{ width: `${currentAlloc.savings_pct}%` }} />
             <div className="bg-blue-500 transition-all" style={{ width: `${currentAlloc.investment_pct}%` }} />
             <div className="bg-amber-500 transition-all" style={{ width: `${currentAlloc.expenses_pct}%` }} />
           </div>

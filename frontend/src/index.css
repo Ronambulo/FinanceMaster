@@ -4,36 +4,124 @@
 
 @layer base {
   :root {
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 14%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 11%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 222 47% 11%;
-    --secondary: 217 33% 20%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 217 33% 20%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217 33% 20%;
-    --input: 217 33% 20%;
-    --ring: 217 91% 60%;
-    --radius: 0.75rem;
+    /* ── Default palette (Trade Republic dark + Lima accent) ──
+       These are CSS fallbacks; applyTheme() in theme.ts overrides them at runtime
+       based on the user's saved preference (localStorage). */
+
+    --background:        228 22% 5%;
+    --foreground:        0 0% 94%;
+    --card:              228 18% 9%;
+    --card-foreground:   0 0% 94%;
+    --popover:           228 20% 7%;
+    --popover-foreground:0 0% 94%;
+
+    /* Accent — updated by applyTheme(); default = TR lime green */
+    --primary:           87 100% 72%;
+    --primary-foreground:228 22% 5%;
+
+    --secondary:         228 14% 14%;
+    --secondary-foreground:0 0% 85%;
+    --muted:             228 14% 12%;
+    --muted-foreground:  220 9% 46%;
+    --accent:            228 14% 14%;
+    --accent-foreground: 0 0% 90%;
+    --destructive:       3 88% 62%;
+    --destructive-foreground:0 0% 98%;
+    --border:            228 14% 15%;
+    --input:             228 14% 14%;
+    --ring:              87 100% 72%;
+    --radius:            0.875rem;
+
+    /* Semantic financial tokens — updated by applyTheme() */
+    --positive:  87 100% 72%;   /* lime green = gain / income */
+    --negative:  3 88% 62%;     /* coral red  = loss / expense */
+    --warning:   38 95% 58%;    /* amber      = caution */
   }
 }
 
 @layer base {
   * { @apply border-border; }
-  body { @apply bg-background text-foreground; font-family: 'Inter', system-ui, sans-serif; }
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { @apply bg-transparent; }
-  ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: -apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Subtle scrollbar ── */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.6);
+  }
 }
 
-.positive { @apply text-emerald-400; }
-.negative { @apply text-red-400; }
+/* ── Glassmorphism utilities ── */
+@layer utilities {
+  .glass {
+    background: rgba(255, 255, 255, 0.035);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+  }
+
+  /* Lift-and-glow hover for cards */
+  .card-hover {
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 0.2s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.1);
+  }
+
+  /* Semantic color utility classes */
+  .positive { color: hsl(var(--positive)); }
+  .negative { color: hsl(var(--negative)); }
+
+  /* Staggered animation helpers */
+  .delay-75  { animation-delay: 75ms; }
+  .delay-150 { animation-delay: 150ms; }
+  .delay-225 { animation-delay: 225ms; }
+  .delay-300 { animation-delay: 300ms; }
+  .delay-375 { animation-delay: 375ms; }
+}
+
+/* ── Animation keyframes ── */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes number-pop {
+  from { opacity: 0; transform: scale(0.94) translateY(4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes accordion-down {
+  from { height: 0; }
+  to   { height: var(--radix-accordion-content-height); }
+}
+
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to   { height: 0; }
+}

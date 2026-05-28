@@ -71,16 +71,18 @@ function DebtCard({ debt, onAddPayment, onDelete }: { debt: Debt; onAddPayment: 
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-4 text-sm mb-2">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm mb-2">
               <span className="text-muted-foreground">Total: <span className="text-foreground font-medium">{formatCurrency(debt.total_amount)}</span></span>
-              <span className="text-muted-foreground">Pagado: <span className="text-emerald-400 font-medium">{formatCurrency(debt.paid_amount)}</span></span>
-              <span className="text-muted-foreground">Pendiente: <span className="text-red-400 font-medium">{formatCurrency(debt.remaining_amount)}</span></span>
+              <span className="text-muted-foreground">Pagado: <span className="text-positive font-medium">{formatCurrency(debt.paid_amount)}</span></span>
+              <span className="text-muted-foreground">Pendiente: <span className="text-negative font-medium">{formatCurrency(debt.remaining_amount)}</span></span>
             </div>
-            <Progress value={pct} className="h-1.5" indicatorClassName="bg-emerald-500" />
+            <Progress value={pct} className="h-1.5" indicatorClassName="bg-primary" />
           </div>
           <div className="flex gap-1 shrink-0">
             {!debt.is_settled && (
-              <Button variant="outline" size="sm" onClick={() => onAddPayment(debt)}>+ Pago</Button>
+              <Button variant="outline" size="sm" onClick={() => onAddPayment(debt)}>
+                <span className="hidden xs:inline">+ </span>Pago
+              </Button>
             )}
             <Button variant="ghost" size="icon" onClick={() => setExpanded(!expanded)}>
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -95,7 +97,7 @@ function DebtCard({ debt, onAddPayment, onDelete }: { debt: Debt; onAddPayment: 
             {debt.payments.map(p => (
               <div key={p.id} className="flex justify-between text-xs text-muted-foreground">
                 <span>{formatDate(p.payment_date)}{p.note ? ` — ${p.note}` : ''}</span>
-                <span className="text-emerald-400 font-medium">+{formatCurrency(p.amount)}</span>
+                <span className="text-primary font-medium">+{formatCurrency(p.amount)}</span>
               </div>
             ))}
           </div>
@@ -136,7 +138,7 @@ export function Debts() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Deudas</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Deudas</h1>
           <p className="text-sm text-muted-foreground">Control de lo que debes y te deben</p>
         </div>
         <Button onClick={() => setNewDebtOpen(true)}><Plus className="h-4 w-4 mr-2" /> Nueva deuda</Button>
@@ -145,11 +147,11 @@ export function Debts() {
       <div className="grid gap-4 sm:grid-cols-2">
         <Card><CardContent className="p-5">
           <p className="text-xs text-muted-foreground mb-1">Yo debo (pendiente)</p>
-          <p className="text-2xl font-bold text-red-400">-{formatCurrency(totalIOwe)}</p>
+          <p className="text-xl font-semibold tracking-tight text-negative">-{formatCurrency(totalIOwe)}</p>
         </CardContent></Card>
         <Card><CardContent className="p-5">
           <p className="text-xs text-muted-foreground mb-1">Me deben (pendiente)</p>
-          <p className="text-2xl font-bold text-emerald-400">+{formatCurrency(totalOwedToMe)}</p>
+          <p className="text-xl font-semibold tracking-tight text-primary">+{formatCurrency(totalOwedToMe)}</p>
         </CardContent></Card>
       </div>
 
