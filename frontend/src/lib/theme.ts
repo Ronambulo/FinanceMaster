@@ -110,8 +110,26 @@ export const ACCENT_COLORS = [
   { id: 'red',    name: 'Rojo',       h: '0',   s: '75%',  l: '55%' },
 ]
 
-export const THEME_KEY  = 'fm_theme'
-export const ACCENT_KEY = 'fm_accent'
+export const THEME_KEY       = 'fm_theme'
+export const ACCENT_KEY      = 'fm_accent'
+export const CHART_COLORS_KEY = 'fm_chart_colors'
+
+export interface ChartColors { income: string; expense: string; savings: string }
+
+export function getChartColors(): Partial<ChartColors> | null {
+  try {
+    const s = localStorage.getItem(CHART_COLORS_KEY)
+    if (s) return JSON.parse(s)
+  } catch {}
+  return null
+}
+export function saveChartColors(colors: Partial<ChartColors>): void {
+  const cur = getChartColors() || {}
+  localStorage.setItem(CHART_COLORS_KEY, JSON.stringify({ ...cur, ...colors }))
+}
+export function resetChartColors(): void {
+  localStorage.removeItem(CHART_COLORS_KEY)
+}
 
 /** Returns true when the accent color is light enough that dark text is needed on it */
 function isLightAccent(accent: { l: string }): boolean {

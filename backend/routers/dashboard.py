@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+﻿from datetime import date, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, extract
@@ -117,9 +117,9 @@ def by_category(
         cat = db.query(models.Category).filter(models.Category.id == cat_id).first() if cat_id else None
         result.append(schemas.CategoryBreakdown(
             category_id=cat_id,
-            category_name=cat.name if cat else "Sin categoría",
+            category_name=cat.name if cat else "Sin categorÃ­a",
             category_color=cat.color if cat else "#94a3b8",
-            category_icon=cat.icon if cat else "❓",
+            category_icon=cat.icon if cat else "â“",
             total=round(total, 2),
             count=cnt,
         ))
@@ -245,11 +245,12 @@ def monthly_detail(
             date=tx.date,
             name=tx.name or tx.description or tx.type,
             category_id=tx.category_id,
-            category_name=tx.category.name if tx.category else "Sin categoría",
+            category_name=tx.category.name if tx.category else "Sin categorÃ­a",
             category_color=tx.category.color if tx.category else "#94a3b8",
-            category_icon=tx.category.icon if tx.category else "❓",
+            category_icon=tx.category.icon if tx.category else "â“",
             amount=tx.amount,
             exclude_from_stats=tx.exclude_from_stats or False,
         )
         for tx in txs
     ]
+

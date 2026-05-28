@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import type { PortfolioPosition } from '@/lib/api'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Legend,
+  ResponsiveContainer, Legend, ReferenceLine,
 } from 'recharts'
 
 const ASSET_LABELS: Record<string, string> = {
@@ -113,13 +113,15 @@ const PERIODS = [
   { value: '5y',  label: '5A' },
 ]
 
-function PriceChart({ positions }: { positions: PortfolioPosition[] }) {
+function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosition[]; totalInvested?: number }) {
   const [period, setPeriod]         = useState('1y')
   const [cumulative, setCumulative] = useState(false)
 
-  const symbols = positions.map(p => p.symbol)
-  const nameOf  = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.name || p.symbol])), [positions])
+  const symbols  = positions.map(p => p.symbol)
+  const nameOf   = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.name || p.symbol])), [positions])
   const sharesOf = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.shares])), [positions])
+  // current_price from backend is already in EUR; divide by latest Yahoo close to get USD→EUR factor
+  const priceEurOf = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.current_price])), [positions])
 
   const { data, isLoading } = useQuery({
     queryKey: ['price-history', symbols.join(','), period],
@@ -167,7 +169,23 @@ function PriceChart({ positions }: { positions: PortfolioPosition[] }) {
       return out
     }), [chartData, baseValues, symbols])
 
-  // Cumulative portfolio value = Σ(shares × price) per date
+  // USD→EUR conversion factor per symbol: latest Yahoo close vs known EUR price from backend
+  const fxOf = useMemo((): Record<string, number> => {
+    if (!data) return {}
+    const out: Record<string, number> = {}
+    for (const series of data) {
+      const eurPrice = priceEurOf[series.symbol]
+      const last = series.points[series.points.length - 1]?.close
+      if (eurPrice != null && last && last > 0) {
+        out[series.symbol] = eurPrice / last
+      } else {
+        out[series.symbol] = 1
+      }
+    }
+    return out
+  }, [data, priceEurOf])
+
+  // Cumulative portfolio value = Σ(shares × price × fxFactor) per date
   const cumulativeData = useMemo((): ChartRow[] => {
     const result: ChartRow[] = []
     for (const row of chartData) {
@@ -175,12 +193,15 @@ function PriceChart({ positions }: { positions: PortfolioPosition[] }) {
       let hasAny = false
       for (const sym of symbols) {
         const price = row[sym] as number | undefined
-        if (price !== undefined) { total += sharesOf[sym] * price; hasAny = true }
+        if (price !== undefined) {
+          total += sharesOf[sym] * price * (fxOf[sym] ?? 1)
+          hasAny = true
+        }
       }
       if (hasAny) result.push({ date: row.date, total: parseFloat(total.toFixed(2)) })
     }
     return result
-  }, [chartData, symbols, sharesOf])
+  }, [chartData, symbols, sharesOf, fxOf])
 
   const displayData = cumulative ? cumulativeData : normalisedData
 
@@ -281,23 +302,40 @@ function PriceChart({ positions }: { positions: PortfolioPosition[] }) {
             <YAxis
               tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
               axisLine={false} tickLine={false}
-              tickFormatter={v => cumulative ? `${(v / 1000).toFixed(0)}k` : `${v}`}
-              domain={cumulative ? ['auto', 'auto'] : ['auto', 'auto']}
-              width={cumulative ? 44 : 36}
+              tickFormatter={v => {
+                if (!cumulative) return String(v)
+                const a = Math.abs(v)
+                if (a >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
+                if (a >= 10_000)   return `${(v / 1_000).toFixed(0)}k`
+                if (a >= 1_000)    return `${(v / 1_000).toFixed(1)}k`
+                return String(Math.round(v))
+              }}
+              domain={['auto', 'auto']}
+              width={50}
             />
             <Tooltip content={<ChartTooltip />} />
             {cumulative ? (
-              <Line
-                type="monotone"
-                dataKey="total"
-                name="total"
-                stroke="hsl(var(--primary))"
-                strokeWidth={2}
-                dot={false}
-                connectNulls
-              />
+              <>
+                <ReferenceLine
+                  y={totalInvested}
+                  stroke="rgba(255,255,255,0.18)"
+                  strokeDasharray="5 4"
+                  ifOverflow="extendDomain"
+                  label={{ value: `Invertido ${Math.round(totalInvested)} €`, position: 'insideTopRight', fontSize: 10, fill: 'rgba(255,255,255,0.4)' }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="total"
+                  name="total"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
+                />
+              </>
             ) : (
               <>
+                <ReferenceLine y={100} stroke="rgba(255,255,255,0.12)" strokeDasharray="5 4" />
                 <Legend content={<CustomLegend />} />
                 {symbols.map(sym => (
                   <Line
@@ -339,7 +377,7 @@ function round2(v: number) { return Math.round(v * 100) / 100 }
 export function Portfolio() {
   const { data: perf, isLoading } = useQuery({ queryKey: ['portfolio'], queryFn: portfolioApi.performance })
   const { data: history } = useQuery({ queryKey: ['portfolio-history'], queryFn: () => portfolioApi.history({ page_size: 50 }) })
-  const [tab, setTab] = useState('positions')
+  const [tab, setTab] = useState('charts')
   const [, refresh] = useState(0)
 
   if (isLoading) return (
@@ -393,11 +431,11 @@ export function Portfolio() {
         {/* Scrollable tab list on mobile */}
         <div className="overflow-x-auto pb-0.5">
           <TabsList className="w-max min-w-full sm:w-auto">
-            <TabsTrigger value="positions">Posiciones ({openPositions.length})</TabsTrigger>
-            <TabsTrigger value="closed">Cerradas ({closedPositions.length})</TabsTrigger>
-            <TabsTrigger value="dividends">Dividendos</TabsTrigger>
-            <TabsTrigger value="history">Historial</TabsTrigger>
             <TabsTrigger value="charts">📈 Gráficas</TabsTrigger>
+            <TabsTrigger value="positions">Posiciones ({openPositions.length})</TabsTrigger>
+            <TabsTrigger value="dividends">Dividendos</TabsTrigger>
+            <TabsTrigger value="closed">Cerradas ({closedPositions.length})</TabsTrigger>
+            <TabsTrigger value="history">Historial</TabsTrigger>
           </TabsList>
         </div>
 
@@ -633,7 +671,7 @@ export function Portfolio() {
         <TabsContent value="charts">
           <Card>
             <CardContent className="p-5">
-              <PriceChart positions={openPositions} />
+              <PriceChart positions={openPositions} totalInvested={perf?.total_invested ?? 0} />
             </CardContent>
           </Card>
         </TabsContent>

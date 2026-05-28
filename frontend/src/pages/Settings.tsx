@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/toast'
 import { Plus, Trash2, Settings as SettingsIcon, Lock, Palette, Loader2, Check } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { THEMES, ACCENT_COLORS, THEME_KEY, ACCENT_KEY, applyTheme } from '@/lib/theme'
+import { THEMES, ACCENT_COLORS, THEME_KEY, ACCENT_KEY, applyTheme, getChartColors, saveChartColors, resetChartColors } from '@/lib/theme'
+import type { ChartColors } from '@/lib/theme'
 
 const CATEGORY_TYPES = [
   { value: 'expense', label: 'Gasto' },
@@ -78,6 +79,9 @@ export function Settings() {
   const [activeTheme, setActiveTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'dark-blue')
   const [activeAccent, setActiveAccent] = useState(() => localStorage.getItem(ACCENT_KEY) || 'blue')
 
+  // Chart colors state
+  const [chartColors, setChartColors] = useState<Partial<ChartColors>>(() => getChartColors() || {})
+
   // Password change state
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
 
@@ -120,6 +124,17 @@ export function Settings() {
     setActiveAccent(accentId)
     localStorage.setItem(ACCENT_KEY, accentId)
     applyTheme(activeTheme, accentId)
+  }
+
+  const handleChartColorChange = (key: keyof ChartColors, value: string) => {
+    const next = { ...chartColors, [key]: value }
+    setChartColors(next)
+    saveChartColors({ [key]: value })
+  }
+
+  const handleResetChartColors = () => {
+    resetChartColors()
+    setChartColors({})
   }
 
   const userCats = categories?.filter(c => !c.is_system) || []
@@ -276,6 +291,32 @@ export function Settings() {
                 })}
               </div>
               <p className="text-xs text-muted-foreground mt-3">El color de acento afecta a botones, enlaces y elementos destacados.</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-sm font-medium">Colores de gráficas</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {([
+                { key: 'income'  as keyof ChartColors, label: 'Ingresos', default: '#a3e635' },
+                { key: 'expense' as keyof ChartColors, label: 'Gastos',   default: '#ef5350' },
+                { key: 'savings' as keyof ChartColors, label: 'Ahorro',   default: '#6366f1' },
+              ] as { key: keyof ChartColors; label: string; default: string }[]).map(item => (
+                <div key={item.key} className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={chartColors[item.key] || item.default}
+                    onChange={e => handleChartColorChange(item.key, e.target.value)}
+                    className="h-9 w-12 rounded border border-input cursor-pointer bg-transparent shrink-0"
+                  />
+                  <Label className="flex-1 cursor-pointer">{item.label}</Label>
+                  <div className="w-4 h-4 rounded-full border border-border" style={{ backgroundColor: chartColors[item.key] || item.default }} />
+                </div>
+              ))}
+              <Button variant="outline" size="sm" onClick={handleResetChartColors} className="mt-1">
+                Restablecer predeterminados
+              </Button>
+              <p className="text-xs text-muted-foreground">Se aplica a las líneas de la gráfica de tendencia en Mensual.</p>
             </CardContent>
           </Card>
         </TabsContent>

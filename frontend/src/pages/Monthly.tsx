@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
 import { dashApi, budgetApi, catApi, txApi, recurringApi } from '@/lib/api'
 import type { Category } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -21,18 +21,16 @@ import {
   ResponsiveContainer, Legend,
 } from 'recharts'
 import { cn } from '@/lib/utils'
+import { getChartColors } from '@/lib/theme'
 
 /* ─── helpers ─────────────────────────────────────────────────── */
 function monthLabel(year: number, month: number) {
   return new Date(year, month - 1, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
 }
 
-function shortMonth(str: string) {
-  // str = "2024-01"
-  const [y, m] = str.split('-')
-  return new Date(Number(y), Number(m) - 1, 1)
-    .toLocaleDateString('es-ES', { month: 'short' })
-    .replace('.', '')
+function cycleLabel(dateStr: string) {
+  const d = new Date(dateStr + 'T12:00:00')
+  return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }).replace('.', '')
 }
 
 /* ─── Semáforo de presupuesto ─────────────────────────────────── */
@@ -50,9 +48,10 @@ function trafficBg(pct: number) {
 /* ─── Tooltip del gráfico ─────────────────────────────────────── */
 const ChartTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null
+  const periodLabel = payload[0]?.payload?.periodLabel || label
   return (
     <div className="rounded-lg border border-white/10 bg-[hsl(228_22%_7%)] p-3 text-xs shadow-xl">
-      <p className="font-medium text-foreground/80 mb-2">{label}</p>
+      <p className="font-medium text-foreground/80 mb-2">{periodLabel}</p>
       {payload.map((p: any) => (
         <p key={p.name} className="flex items-center gap-1.5" style={{ color: p.stroke }}>
           <span className="inline-block w-2 h-2 rounded-full" style={{ background: p.stroke }} />
@@ -134,82 +133,115 @@ function AddBudgetDialog({
 export function Monthly() {
   const qc = useQueryClient()
   const { toast } = useToast()
-  const today = new Date()
-  const [year, setYear]   = useState(today.getFullYear())
-  const [month, setMonth] = useState(today.getMonth() + 1)
+  const today = useMemo(() => new Date(), [])
+  const [cycleOffset, setCycleOffset] = useState(0)  // 0 = latest cycle, -1 = previous, etc.
   const [addOpen, setAddOpen] = useState(false)
   const [txSearch, setTxSearch]     = useState('')
   const [txTypeGroup, setTxTypeGroup] = useState('')  // '' | 'income' | 'expense'
 
-  const monthStr = `${year}-${String(month).padStart(2, '0')}`
+  /* ── Categories (needed before payroll detection) ── */
+  const { data: categories } = useQuery({
+    queryKey: ['categories'],
+    queryFn: catApi.list,
+  })
 
-  function prevMonth() {
-    if (month === 1) { setMonth(12); setYear(y => y - 1) }
-    else setMonth(m => m - 1)
-  }
-  function nextMonth() {
-    const isCurrentMonth = year === today.getFullYear() && month === today.getMonth() + 1
-    if (isCurrentMonth) return
-    if (month === 12) { setMonth(1); setYear(y => y + 1) }
-    else setMonth(m => m + 1)
-  }
+  /* ── Payroll detection: look for "nómina" category, fall back to CUSTOMER_INPAYMENT ── */
+  const nominaCategory = useMemo(() => {
+    return categories?.find(c => {
+      const n = c.name.toLowerCase()
+      return n.includes('nomina') || n.includes('nómina') || n.includes('salario') || n.includes('sueldo')
+    }) ?? null
+  }, [categories])
 
-  /* ── Payroll detection ─── */
   const { data: payrollData } = useQuery({
-    queryKey: ['payroll-transactions'],
-    queryFn: () => txApi.list({ type: 'CUSTOMER_INPAYMENT', account_category: 'CASH', page_size: 100 }),
+    queryKey: ['payroll-transactions', nominaCategory?.id ?? 'none'],
+    queryFn: () => txApi.list({
+      ...(nominaCategory
+        ? { category_id: nominaCategory.id.toString() }
+        : { type: 'CUSTOMER_INPAYMENT' }),
+      account_category: 'CASH',
+      page_size: 100,
+    }),
+    enabled: categories !== undefined,  // wait for categories so we use the right filter from the start
     staleTime: 5 * 60_000,
   })
 
-  // One payroll date per calendar month (earliest CUSTOMER_INPAYMENT in each month)
+  // Every nómina transaction is a cycle boundary — use all unique dates sorted
   const payrollDates = useMemo(() => {
     if (!payrollData?.items) return []
-    const byMonth: Record<string, string> = {}
-    const sorted = [...payrollData.items].sort((a, b) => a.date.localeCompare(b.date))
-    for (const tx of sorted) {
-      const key = tx.date.slice(0, 7)
-      if (!byMonth[key]) byMonth[key] = tx.date
-    }
-    return Object.values(byMonth).sort()
+    return [...new Set(payrollData.items.map(tx => tx.date))].sort()
   }, [payrollData])
 
-  // Compute the payroll-cycle period for the selected display month
-  const { periodStart, periodEnd, isPayrollCycle } = useMemo(() => {
-    const prevMonthDate = new Date(year, month - 2, 1)
-    const prevMonthStr  = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
-    const inPrevMonth   = payrollDates.filter(d => d.startsWith(prevMonthStr))
-    const inMonth       = payrollDates.filter(d => d.startsWith(monthStr))
+  // Build one cycle entry per payroll period: from this nómina to the day before the next.
+  // The latest (open) cycle extends 45 days past today so manually-entered future expenses appear.
+  const cycles = useMemo(() => {
+    if (!payrollDates.length) return []
+    return payrollDates.map((start, i) => {
+      if (i + 1 < payrollDates.length) {
+        const d = new Date(payrollDates[i + 1] + 'T12:00:00')
+        d.setDate(d.getDate() - 1)
+        return { start, end: d.toISOString().slice(0, 10), isOpen: false }
+      }
+      // Open cycle: extend well past today to capture future-dated manual entries
+      const future = new Date(today)
+      future.setDate(future.getDate() + 45)
+      return { start, end: future.toISOString().slice(0, 10), isOpen: true }
+    })
+  }, [payrollDates, today])
 
-    if (inPrevMonth.length === 0) {
-      // Fall back to calendar month (no payroll data before this month)
-      const isNow = year === today.getFullYear() && month === today.getMonth() + 1
+  const selectedCycleIdx = cycles.length > 0
+    ? Math.max(0, cycles.length - 1 + cycleOffset)
+    : -1
+
+  function prevCycle() { setCycleOffset(o => Math.max(-(cycles.length - 1), o - 1)) }
+  function nextCycle()  { setCycleOffset(o => Math.min(0, o + 1)) }
+  const isLatestCycle = cycleOffset >= 0
+
+  const { periodStart, periodEnd, isPayrollCycle, monthStr, cycleMonthLabel } = useMemo(() => {
+    if (selectedCycleIdx < 0 || !cycles.length) {
+      // Fallback: current calendar month (no payroll data yet)
+      const m  = today.getMonth() + 1
+      const y  = today.getFullYear()
+      const ms = `${y}-${String(m).padStart(2, '0')}`
       return {
-        periodStart: `${monthStr}-01`,
-        periodEnd:   isNow ? today.toISOString().slice(0, 10) : new Date(year, month, 0).toISOString().slice(0, 10),
+        periodStart:    `${ms}-01`,
+        periodEnd:      today.toISOString().slice(0, 10),
         isPayrollCycle: false,
+        monthStr:       ms,
+        cycleMonthLabel: monthLabel(y, m),
       }
     }
-
-    const start = inPrevMonth[inPrevMonth.length - 1]  // last payroll in previous month
-
-    let end: string
-    if (inMonth.length > 0) {
-      // Payroll arrived this month → period ends day before
-      const d = new Date(inMonth[0] + 'T12:00:00')
-      d.setDate(d.getDate() - 1)
-      end = d.toISOString().slice(0, 10)
-    } else {
-      const isNow = year === today.getFullYear() && month === today.getMonth() + 1
-      end = isNow ? today.toISOString().slice(0, 10) : new Date(year, month, 0).toISOString().slice(0, 10)
+    const cycle     = cycles[selectedCycleIdx]
+    const startDate = new Date(cycle.start + 'T12:00:00')
+    const ms = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`
+    return {
+      periodStart:    cycle.start,
+      periodEnd:      cycle.end,
+      isPayrollCycle: true,
+      monthStr:       ms,
+      cycleMonthLabel: monthLabel(startDate.getFullYear(), startDate.getMonth() + 1),
     }
+  }, [cycles, selectedCycleIdx, today])
 
-    return { periodStart: start, periodEnd: end, isPayrollCycle: true }
-  }, [payrollDates, year, month, monthStr, today])
-
-  const { data: trend } = useQuery({
-    queryKey: ['monthly-trend', 12],
-    queryFn: () => dashApi.monthlyTrend(12),
+  // Cycle-based trend chart: fetch detail for each of the last 10 cycles
+  const visibleCycles = cycles.slice(-10)
+  const cycleQueries = useQueries({
+    queries: visibleCycles.map(c => ({
+      queryKey: ['monthly-detail', c.start, c.end],
+      queryFn:  () => dashApi.monthlyDetail({ date_from: c.start, date_to: c.end }),
+      staleTime: 5 * 60_000,
+    })),
   })
+
+  // Chart colors (read once on mount; re-reads on page navigation)
+  const [incomeColor, expenseColor, savingsColor] = useMemo(() => {
+    const c = getChartColors()
+    return [
+      c?.income  || 'hsl(var(--positive))',
+      c?.expense || 'hsl(var(--negative))',
+      c?.savings || 'hsl(var(--primary))',
+    ]
+  }, [])
 
   const { data: detail, isLoading: loadingDetail } = useQuery({
     queryKey: ['monthly-detail', periodStart, periodEnd],
@@ -246,11 +278,6 @@ export function Monthly() {
     queryFn: budgetApi.list,
   })
 
-  const { data: categories } = useQuery({
-    queryKey: ['categories'],
-    queryFn: catApi.list,
-  })
-
   const toggleMutation = useMutation({
     mutationFn: ({ id, exclude }: { id: number; exclude: boolean }) =>
       txApi.update(id, { exclude_from_stats: exclude }),
@@ -270,12 +297,19 @@ export function Monthly() {
     },
   })
 
-  const chartData = trend?.map(t => ({
-    month: shortMonth(t.month),
-    Ingresos: t.income,
-    Gastos: t.expenses,
-    Ahorro: t.savings,
-  })) ?? []
+  const chartData = visibleCycles.map((cycle, i) => {
+    const rows     = cycleQueries[i]?.data ?? []
+    const included = rows.filter(r => !r.exclude_from_stats)
+    const income   = included.filter(r => r.amount > 0).reduce((s, r) => s + r.amount, 0)
+    const expenses = included.filter(r => r.amount < 0).reduce((s, r) => s + Math.abs(r.amount), 0)
+    const startLbl = cycleLabel(cycle.start)
+    const endLbl   = cycle.isOpen ? 'hoy' : cycleLabel(cycle.end)
+    return {
+      month: startLbl,
+      periodLabel: `${startLbl} — ${endLbl}`,
+      Ingresos: income, Gastos: expenses, Ahorro: income - expenses,
+    }
+  })
 
   // Totals from raw detail (respecting exclude_from_stats)
   const included = detail?.filter(r => !r.exclude_from_stats) ?? []
@@ -294,25 +328,22 @@ export function Monthly() {
     return rows
   }, [detail, txSearch, txTypeGroup])
 
-  const isCurrentOrFuture = year > today.getFullYear() ||
-    (year === today.getFullYear() && month >= today.getMonth() + 1)
-
   return (
     <div className="space-y-6 animate-fade-up">
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Resumen mensual</h1>
-          <p className="text-sm text-muted-foreground capitalize">{monthLabel(year, month)}</p>
-          {isPayrollCycle && periodStart && periodEnd && (
+          <p className="text-sm text-muted-foreground capitalize">{cycleMonthLabel}</p>
+          {periodStart && periodEnd && (
             <p className="text-xs text-muted-foreground/60 mt-0.5">
-              {formatDate(periodStart)} — {formatDate(periodEnd)}
+              {formatDate(periodStart)} — {isPayrollCycle && cycles[selectedCycleIdx]?.isOpen ? 'hoy' : formatDate(periodEnd)}
             </p>
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-          <Button variant="outline" size="icon" onClick={nextMonth} disabled={isCurrentOrFuture}>
+          <Button variant="outline" size="icon" onClick={prevCycle} disabled={selectedCycleIdx <= 0}><ChevronLeft className="h-4 w-4" /></Button>
+          <Button variant="outline" size="icon" onClick={nextCycle} disabled={isLatestCycle}>
             <ChevronRight className="h-4 w-4" />
           </Button>
           <Button onClick={() => setAddOpen(true)}><Plus className="h-4 w-4 mr-2" />Presupuesto</Button>
@@ -344,7 +375,7 @@ export function Monthly() {
       {/* ── Gráfica tendencia 12 meses ── */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Tendencia 12 meses</CardTitle>
+          <CardTitle className="text-sm font-medium text-muted-foreground">Tendencia por tramos</CardTitle>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={200}>
@@ -354,9 +385,9 @@ export function Monthly() {
                 tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
               <Tooltip content={<ChartTooltip />} />
               <Legend wrapperStyle={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }} />
-              <Line type="monotone" dataKey="Ingresos" stroke="hsl(var(--positive))" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Gastos"   stroke="hsl(var(--negative))" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Ahorro"   stroke="hsl(var(--primary))"  strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+              <Line type="monotone" dataKey="Ingresos" stroke={incomeColor}  strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Gastos"   stroke={expenseColor} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Ahorro"   stroke={savingsColor} strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
             </LineChart>
           </ResponsiveContainer>
         </CardContent>
