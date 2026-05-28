@@ -287,13 +287,13 @@ export function Dashboard() {
       {/* ── Charts ── */}
       <div className="grid gap-5 lg:grid-cols-5">
         {/* Area / Bar chart */}
-        <Card className="lg:col-span-3 animate-fade-up" style={{ animationDelay: '100ms' }}>
-          <CardHeader className="pb-2">
+        <Card className="lg:col-span-3 animate-fade-up flex flex-col" style={{ animationDelay: '100ms' }}>
+          <CardHeader className="pb-2 shrink-0">
             <CardTitle className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
               Ingresos vs Gastos · 6 meses
             </CardTitle>
           </CardHeader>
-          <CardContent className="h-52 px-2">
+          <CardContent className="flex-1 px-2 pb-4 min-h-0">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trend || []} margin={{ left: -10, right: 4 }}>
                 <defs>

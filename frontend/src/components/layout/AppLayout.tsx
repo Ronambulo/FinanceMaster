@@ -78,9 +78,11 @@ export function AppLayout() {
         {/* Mobile top bar */}
         <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-background/95 backdrop-blur-sm sticky top-0 z-40">
           <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-lg bg-primary/10 ring-1 ring-primary/25 flex items-center justify-center">
-              <span className="text-[10px] font-bold text-primary tracking-tight">FM</span>
-            </div>
+            <img
+              src="/icon.png"
+              alt="FinanceMaster"
+              className="h-11 w-11 rounded-lg object-contain"
+            />
             <span className="text-sm font-semibold tracking-tight">FinanceMaster</span>
           </div>
           <button
@@ -91,13 +93,13 @@ export function AppLayout() {
           </button>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-6">
+        <main className="flex-1 overflow-y-auto p-4 pb-32 md:p-6 md:pb-6">
           <Outlet />
         </main>
       </div>
 
       {/* ── Mobile bottom nav — 6 columnas fijas ── */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 h-[62px] border-t border-border bg-background/95 backdrop-blur-xl">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 h-[78px] border-t border-border bg-background/95 backdrop-blur-xl">
         <div className="grid h-full grid-cols-6">
           {mobileNav.map(({ to, icon: Icon, label }) => (
             <NavLink
@@ -112,7 +114,7 @@ export function AppLayout() {
               {({ isActive }) => (
                 <>
                   <Icon
-                    className="h-[18px] w-[18px] transition-all duration-150"
+                    className="h-[26px] w-[26px] transition-all duration-150"
                     style={isActive ? { filter: 'drop-shadow(0 0 6px currentColor)' } : undefined}
                   />
                   <span>{label}</span>

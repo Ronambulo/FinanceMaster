@@ -23,10 +23,12 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     <div className="flex h-full flex-col bg-background border-r border-border">
       {/* ── Logo ── */}
       <div className="flex items-center gap-3 px-5 py-6">
-        {/* FM monogram */}
-        <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/30">
-          <span className="text-xs font-bold text-primary tracking-tight">FM</span>
-        </div>
+        {/* App icon */}
+        <img
+          src="/icon.png"
+          alt="FinanceMaster"
+          className="h-12 w-12 shrink-0 rounded-lg object-contain"
+        />
         <div className="leading-tight">
           <span className="block text-sm font-semibold text-foreground tracking-tight">FinanceMaster</span>
           <span className="block text-[10px] text-muted-foreground/70 uppercase tracking-widest">Personal Finance</span>
