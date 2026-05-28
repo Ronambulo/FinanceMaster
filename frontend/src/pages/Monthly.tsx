@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { dashApi, budgetApi, catApi, txApi, recurringApi } from '@/lib/api'
 import type { Category } from '@/lib/api'
@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/toast'
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Loader2,
-  TrendingUp, TrendingDown, Eye, EyeOff, RefreshCw, Calendar,
+  TrendingUp, TrendingDown, Eye, EyeOff, RefreshCw, Calendar, Search,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
@@ -135,9 +135,11 @@ export function Monthly() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const today = new Date()
-  const [year, setYear] = useState(today.getFullYear())
+  const [year, setYear]   = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth() + 1)
   const [addOpen, setAddOpen] = useState(false)
+  const [txSearch, setTxSearch]     = useState('')
+  const [txTypeGroup, setTxTypeGroup] = useState('')  // '' | 'income' | 'expense'
 
   const monthStr = `${year}-${String(month).padStart(2, '0')}`
 
@@ -152,14 +154,67 @@ export function Monthly() {
     else setMonth(m => m + 1)
   }
 
+  /* ── Payroll detection ─── */
+  const { data: payrollData } = useQuery({
+    queryKey: ['payroll-transactions'],
+    queryFn: () => txApi.list({ type: 'CUSTOMER_INPAYMENT', account_category: 'CASH', page_size: 100 }),
+    staleTime: 5 * 60_000,
+  })
+
+  // One payroll date per calendar month (earliest CUSTOMER_INPAYMENT in each month)
+  const payrollDates = useMemo(() => {
+    if (!payrollData?.items) return []
+    const byMonth: Record<string, string> = {}
+    const sorted = [...payrollData.items].sort((a, b) => a.date.localeCompare(b.date))
+    for (const tx of sorted) {
+      const key = tx.date.slice(0, 7)
+      if (!byMonth[key]) byMonth[key] = tx.date
+    }
+    return Object.values(byMonth).sort()
+  }, [payrollData])
+
+  // Compute the payroll-cycle period for the selected display month
+  const { periodStart, periodEnd, isPayrollCycle } = useMemo(() => {
+    const prevMonthDate = new Date(year, month - 2, 1)
+    const prevMonthStr  = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
+    const inPrevMonth   = payrollDates.filter(d => d.startsWith(prevMonthStr))
+    const inMonth       = payrollDates.filter(d => d.startsWith(monthStr))
+
+    if (inPrevMonth.length === 0) {
+      // Fall back to calendar month (no payroll data before this month)
+      const isNow = year === today.getFullYear() && month === today.getMonth() + 1
+      return {
+        periodStart: `${monthStr}-01`,
+        periodEnd:   isNow ? today.toISOString().slice(0, 10) : new Date(year, month, 0).toISOString().slice(0, 10),
+        isPayrollCycle: false,
+      }
+    }
+
+    const start = inPrevMonth[inPrevMonth.length - 1]  // last payroll in previous month
+
+    let end: string
+    if (inMonth.length > 0) {
+      // Payroll arrived this month → period ends day before
+      const d = new Date(inMonth[0] + 'T12:00:00')
+      d.setDate(d.getDate() - 1)
+      end = d.toISOString().slice(0, 10)
+    } else {
+      const isNow = year === today.getFullYear() && month === today.getMonth() + 1
+      end = isNow ? today.toISOString().slice(0, 10) : new Date(year, month, 0).toISOString().slice(0, 10)
+    }
+
+    return { periodStart: start, periodEnd: end, isPayrollCycle: true }
+  }, [payrollDates, year, month, monthStr, today])
+
   const { data: trend } = useQuery({
     queryKey: ['monthly-trend', 12],
     queryFn: () => dashApi.monthlyTrend(12),
   })
 
   const { data: detail, isLoading: loadingDetail } = useQuery({
-    queryKey: ['monthly-detail', year, month],
-    queryFn: () => dashApi.monthlyDetail(year, month),
+    queryKey: ['monthly-detail', periodStart, periodEnd],
+    queryFn: () => dashApi.monthlyDetail({ date_from: periodStart, date_to: periodEnd }),
+    enabled: !!(periodStart && periodEnd),
   })
 
   const { data: budgetStatus } = useQuery({
@@ -200,7 +255,7 @@ export function Monthly() {
     mutationFn: ({ id, exclude }: { id: number; exclude: boolean }) =>
       txApi.update(id, { exclude_from_stats: exclude }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['monthly-detail', year, month] })
+      qc.invalidateQueries({ queryKey: ['monthly-detail', periodStart, periodEnd] })
       qc.invalidateQueries({ queryKey: ['budget-status', monthStr] })
     },
     onError: (e: any) => toast(e.message, 'error'),
@@ -222,10 +277,22 @@ export function Monthly() {
     Ahorro: t.savings,
   })) ?? []
 
-  // Computed totals from detail (respecting exclude_from_stats)
+  // Totals from raw detail (respecting exclude_from_stats)
   const included = detail?.filter(r => !r.exclude_from_stats) ?? []
   const totalIncome   = included.filter(r => r.amount > 0).reduce((s, r) => s + r.amount, 0)
   const totalExpenses = included.filter(r => r.amount < 0).reduce((s, r) => s + Math.abs(r.amount), 0)
+
+  // Filtered view for the transaction list
+  const filteredDetail = useMemo(() => {
+    let rows = detail ?? []
+    if (txSearch) {
+      const s = txSearch.toLowerCase()
+      rows = rows.filter(r => r.name?.toLowerCase().includes(s) || r.category_name.toLowerCase().includes(s))
+    }
+    if (txTypeGroup === 'income')  rows = rows.filter(r => r.amount > 0)
+    if (txTypeGroup === 'expense') rows = rows.filter(r => r.amount < 0)
+    return rows
+  }, [detail, txSearch, txTypeGroup])
 
   const isCurrentOrFuture = year > today.getFullYear() ||
     (year === today.getFullYear() && month >= today.getMonth() + 1)
@@ -237,6 +304,11 @@ export function Monthly() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Resumen mensual</h1>
           <p className="text-sm text-muted-foreground capitalize">{monthLabel(year, month)}</p>
+          {isPayrollCycle && periodStart && periodEnd && (
+            <p className="text-xs text-muted-foreground/60 mt-0.5">
+              {formatDate(periodStart)} — {formatDate(periodEnd)}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
@@ -342,15 +414,37 @@ export function Monthly() {
         </Card>
       )}
 
-      {/* ── Transacciones del mes con toggle ── */}
+      {/* ── Transacciones del período con toggle ── */}
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Transacciones del mes
-            <span className="ml-2 font-normal text-muted-foreground/60">
-              (ojo = excluida del cálculo)
-            </span>
-          </CardTitle>
+        <CardHeader className="pb-2 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Transacciones del período
+            </CardTitle>
+            <span className="text-xs text-muted-foreground/50">ojo = excluida del cálculo</span>
+          </div>
+          {/* Filters */}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Buscar..."
+                className="pl-8 h-8 text-sm"
+                value={txSearch}
+                onChange={e => setTxSearch(e.target.value)}
+              />
+            </div>
+            <Select value={txTypeGroup || 'all'} onValueChange={v => setTxTypeGroup(v === 'all' ? '' : v)}>
+              <SelectTrigger className="h-8 sm:w-36 text-sm">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="income">↑ Ingresos</SelectItem>
+                <SelectItem value="expense">↓ Gastos</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {loadingDetail ? (
@@ -359,7 +453,7 @@ export function Monthly() {
             <>
               {/* Mobile */}
               <div className="sm:hidden divide-y divide-border/50">
-                {detail?.map(row => (
+                {filteredDetail.map(row => (
                   <div key={row.id} className={cn('flex items-center gap-3 px-4 py-3', row.exclude_from_stats && 'opacity-40')}>
                     <span className="text-lg shrink-0">{row.category_icon}</span>
                     <div className="flex-1 min-w-0">
@@ -397,7 +491,7 @@ export function Monthly() {
                     </tr>
                   </thead>
                   <tbody>
-                    {detail?.map(row => (
+                    {filteredDetail.map(row => (
                       <tr
                         key={row.id}
                         className={cn(
@@ -430,8 +524,10 @@ export function Monthly() {
                     ))}
                   </tbody>
                 </table>
-                {detail?.length === 0 && (
-                  <p className="text-center py-8 text-muted-foreground text-sm">Sin transacciones este mes</p>
+                {filteredDetail.length === 0 && (
+                  <p className="text-center py-8 text-muted-foreground text-sm">
+                    {(detail?.length ?? 0) > 0 ? 'Sin resultados para los filtros activos' : 'Sin transacciones en este período'}
+                  </p>
                 )}
               </div>
             </>

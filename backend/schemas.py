@@ -120,6 +120,8 @@ class TransactionListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+    income_sum: float = 0.0
+    expense_sum: float = 0.0
 
 
 # ── Recurring ────────────────────────────────────────────────────────────────

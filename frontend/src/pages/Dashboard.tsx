@@ -208,8 +208,16 @@ export function Dashboard() {
   const { data: txs       } = useQuery({ queryKey: ['tx-recent'], queryFn: () => txApi.list({ page: 1, page_size: 5, account_category: 'CASH' }) })
   const { data: goals     } = useQuery({ queryKey: ['goals'],     queryFn: goalApi.list })
 
+  // Vibrant palette designed for dark backgrounds — overrides flat/gray category colors
+  const PIE_PALETTE = ['#818cf8', '#34d399', '#fbbf24', '#f472b6', '#38bdf8', '#fb923c']
+
   const today   = new Date()
-  const pieData = (byCat || []).slice(0, 6).map(b => ({ name: b.category_name, value: b.total, fill: b.category_color }))
+  const pieData = (byCat || []).slice(0, 6).map((b, i) => ({
+    name: b.category_name,
+    value: b.total,
+    fill: PIE_PALETTE[i % PIE_PALETTE.length],
+  }))
+  const totalPie = pieData.reduce((s, e) => s + e.value, 0)
 
   const balance      = overview?.balance        ?? 0
   const incomeMonth  = overview?.income_month   ?? 0
@@ -251,7 +259,11 @@ export function Dashboard() {
           value={formatCurrency(interestMonth)}
           icon={Percent}
           positive={null}
-          sub={`Total acumulado: ${formatCurrency(interestTotal)}`}
+          sub={
+            balance > 0 && interestMonth > 0
+              ? `≈${((interestMonth * 12) / balance * 100).toFixed(2)}% TAE · Total: ${formatCurrency(interestTotal)}`
+              : `Total acumulado: ${formatCurrency(interestTotal)}`
+          }
           delay={150}
         />
         <MetricCard
@@ -340,41 +352,55 @@ export function Dashboard() {
               Gastos por categoría
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pb-4">
             {pieData.length > 0 ? (
-              <div className="flex flex-col gap-3">
-                <div className="h-40">
+              <div className="space-y-3">
+                {/* Donut + center label overlay */}
+                <div className="relative h-44">
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                    <div className="text-center">
+                      <p className="text-base font-bold text-foreground leading-tight">{formatCurrency(totalPie)}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest">este mes</p>
+                    </div>
+                  </div>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
                         data={pieData}
                         cx="50%"
                         cy="50%"
-                        innerRadius={42}
-                        outerRadius={68}
-                        paddingAngle={3}
+                        innerRadius={52}
+                        outerRadius={76}
+                        paddingAngle={2}
                         dataKey="value"
-                        nameKey="name"
+                        startAngle={90}
+                        endAngle={-270}
                         strokeWidth={0}
                       >
                         {pieData.map((entry, i) => (
-                          <Cell key={i} fill={entry.fill} opacity={0.9} />
+                          <Cell key={i} fill={entry.fill} opacity={0.85} />
                         ))}
                       </Pie>
                       <Tooltip content={<PieTooltip />} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                  {pieData.map((entry, i) => (
-                    <div key={i} className="flex items-center gap-2 min-w-0">
-                      <span
-                        className="inline-block h-2 w-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: entry.fill }}
-                      />
-                      <span className="text-[11px] text-muted-foreground truncate">{entry.name}</span>
-                    </div>
-                  ))}
+                {/* Legend: dot · name · amount · % */}
+                <div className="space-y-1.5">
+                  {pieData.map((entry, i) => {
+                    const pct = totalPie > 0 ? Math.round((entry.value / totalPie) * 100) : 0
+                    return (
+                      <div key={i} className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: entry.fill }}
+                        />
+                        <span className="text-[11px] text-muted-foreground truncate flex-1">{entry.name}</span>
+                        <span className="text-[11px] font-medium tabular-nums">{formatCurrency(entry.value)}</span>
+                        <span className="text-[10px] text-muted-foreground/60 w-7 text-right tabular-nums">{pct}%</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             ) : (
@@ -393,7 +419,7 @@ export function Dashboard() {
               Próximos pagos recurrentes
             </CardTitle>
             <Link
-              to="/recurrentes"
+              to="/monthly"
               className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors"
             >
               Ver todos <ArrowRight className="h-3 w-3" />

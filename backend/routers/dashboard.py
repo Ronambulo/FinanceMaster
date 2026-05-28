@@ -211,14 +211,19 @@ def upcoming_recurring(
 def monthly_detail(
     year: Optional[int] = None,
     month: Optional[int] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
-    """All cash expense/income transactions for a given month, with exclude_from_stats flag."""
-    today = date.today()
-    y = year or today.year
-    m = month or today.month
-    start, end = _month_range(y, m)
+    """All cash expense/income transactions for a given period, with exclude_from_stats flag."""
+    if date_from and date_to:
+        start, end = date_from, date_to
+    else:
+        today = date.today()
+        y = year or today.year
+        m = month or today.month
+        start, end = _month_range(y, m)
 
     txs = (
         db.query(models.Transaction)

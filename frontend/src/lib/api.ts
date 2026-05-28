@@ -69,8 +69,14 @@ export const dashApi = {
     request<MonthlyTrend[]>(`/dashboard/monthly-trend?months=${months}`),
   upcoming: (days = 30) =>
     request<UpcomingRecurring[]>(`/dashboard/upcoming?days=${days}`),
-  monthlyDetail: (year: number, month: number) =>
-    request<MonthlyDetailRow[]>(`/dashboard/monthly-detail?year=${year}&month=${month}`),
+  monthlyDetail: (params: { year?: number; month?: number; date_from?: string; date_to?: string }) => {
+    const q = new URLSearchParams()
+    if (params.year)      q.set('year',      String(params.year))
+    if (params.month)     q.set('month',     String(params.month))
+    if (params.date_from) q.set('date_from', params.date_from)
+    if (params.date_to)   q.set('date_to',   params.date_to)
+    return request<MonthlyDetailRow[]>(`/dashboard/monthly-detail?${q}`)
+  },
 }
 
 // Categories
@@ -165,7 +171,7 @@ export interface Transaction {
   category_id: number | null; category: Category | null
   is_auto_categorized: boolean; is_internal_transfer: boolean; exclude_from_stats: boolean; recurring_group_id: number | null
 }
-export interface TransactionListResponse { items: Transaction[]; total: number; page: number; page_size: number }
+export interface TransactionListResponse { items: Transaction[]; total: number; page: number; page_size: number; income_sum: number; expense_sum: number }
 export interface ImportResult { imported: number; skipped_duplicates: number; errors: number }
 export interface RecurringGroup { id: number; normalized_name: string; display_name: string; avg_amount: number | null; period_days: number | null; category_id: number | null; category: Category | null; next_expected_date: string | null; is_active: boolean; transaction_count: number }
 export interface Debt { id: number; name: string; description: string | null; total_amount: number; direction: 'I_OWE' | 'OWED_TO_ME'; due_date: string | null; is_settled: boolean; paid_amount: number; remaining_amount: number; payments: DebtPayment[] }

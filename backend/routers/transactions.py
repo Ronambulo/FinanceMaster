@@ -1,6 +1,7 @@
 from datetime import date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from .. import models, schemas, auth
@@ -11,13 +12,25 @@ from ..services.recurring_detector import detect_recurring
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
+INCOME_TYPES = {
+    "CUSTOMER_INPAYMENT", "TRANSFER_INSTANT_INBOUND", "TRANSFER_INBOUND",
+    "INTEREST_PAYMENT", "DIVIDEND", "STOCKPERK",
+}
+EXPENSE_TYPES = {
+    "CARD_TRANSACTION", "CARD_TRANSACTION_INTERNATIONAL",
+    "TRANSFER_INSTANT_OUTBOUND", "TRANSFER_OUTBOUND",
+}
 
-def _build_query(db, user_id, search, category_id, tx_type, date_from, date_to, account_cat):
-    q = (
-        db.query(models.Transaction)
-        .options(joinedload(models.Transaction.category))
-        .filter(models.Transaction.user_id == user_id)
-    )
+
+def _build_query(db, user_id, search, category_id, tx_type, type_group, date_from, date_to, account_cat, with_joins=True):
+    if with_joins:
+        q = (
+            db.query(models.Transaction)
+            .options(joinedload(models.Transaction.category))
+            .filter(models.Transaction.user_id == user_id)
+        )
+    else:
+        q = db.query(models.Transaction).filter(models.Transaction.user_id == user_id)
     if search:
         q = q.filter(
             models.Transaction.name.ilike(f"%{search}%") |
@@ -27,6 +40,10 @@ def _build_query(db, user_id, search, category_id, tx_type, date_from, date_to, 
         q = q.filter(models.Transaction.category_id == category_id)
     if tx_type:
         q = q.filter(models.Transaction.type == tx_type)
+    if type_group == "income":
+        q = q.filter(models.Transaction.type.in_(INCOME_TYPES))
+    elif type_group == "expense":
+        q = q.filter(models.Transaction.type.in_(EXPENSE_TYPES))
     if date_from:
         q = q.filter(models.Transaction.date >= date_from)
     if date_to:
@@ -41,6 +58,7 @@ def list_transactions(
     search: Optional[str] = None,
     category_id: Optional[int] = None,
     type: Optional[str] = None,
+    type_group: Optional[str] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     account_category: Optional[str] = None,
@@ -49,10 +67,14 @@ def list_transactions(
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
-    q = _build_query(db, current_user.id, search, category_id, type, date_from, date_to, account_category)
+    q = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=True)
+    # Aggregate sums without joins (more efficient)
+    aq = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=False)
+    income_sum = round(aq.filter(models.Transaction.amount > 0).with_entities(func.sum(models.Transaction.amount)).scalar() or 0, 2)
+    expense_sum = round(aq.filter(models.Transaction.amount < 0).with_entities(func.sum(func.abs(models.Transaction.amount))).scalar() or 0, 2)
     total = q.count()
     items = q.order_by(models.Transaction.date.desc(), models.Transaction.datetime.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return schemas.TransactionListResponse(items=items, total=total, page=page, page_size=page_size)
+    return schemas.TransactionListResponse(items=items, total=total, page=page, page_size=page_size, income_sum=income_sum, expense_sum=expense_sum)
 
 
 @router.post("", response_model=schemas.TransactionOut)

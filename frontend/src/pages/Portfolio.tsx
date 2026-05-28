@@ -113,19 +113,24 @@ const PERIODS = [
   { value: '5y',  label: '5A' },
 ]
 
-function PriceChart({ symbols }: { symbols: string[] }) {
-  const [period, setPeriod] = useState('1y')
+function PriceChart({ positions }: { positions: PortfolioPosition[] }) {
+  const [period, setPeriod]         = useState('1y')
+  const [cumulative, setCumulative] = useState(false)
+
+  const symbols = positions.map(p => p.symbol)
+  const nameOf  = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.name || p.symbol])), [positions])
+  const sharesOf = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.shares])), [positions])
 
   const { data, isLoading } = useQuery({
     queryKey: ['price-history', symbols.join(','), period],
     queryFn: () => portfolioApi.priceHistory(symbols, period),
     enabled: symbols.length > 0,
-    staleTime: 5 * 60_000, // 5 min — Yahoo Finance data
+    staleTime: 5 * 60_000,
   })
 
   type ChartRow = Record<string, number | string>
 
-  // Merge all series into one array keyed by date
+  // Merge all price series into one array keyed by date
   const chartData = useMemo((): ChartRow[] => {
     if (!data) return []
     const dateMap: Record<string, Record<string, number>> = {}
@@ -140,9 +145,9 @@ function PriceChart({ symbols }: { symbols: string[] }) {
       .map(([date, vals]) => ({ date, ...vals } as ChartRow))
   }, [data])
 
-  // Normalised (base-100) chart data so different-priced stocks are comparable
-  const baseValues: Record<string, number> = useMemo(() => {
-    if (!chartData.length) return {}
+  // Base-100 normalised (for comparison mode)
+  const baseValues = useMemo(() => {
+    if (!chartData.length) return {} as Record<string, number>
     const base: Record<string, number> = {}
     for (const sym of symbols) {
       const first = chartData.find(d => d[sym] !== undefined)
@@ -151,7 +156,7 @@ function PriceChart({ symbols }: { symbols: string[] }) {
     return base
   }, [chartData, symbols])
 
-  const normalised = useMemo((): ChartRow[] =>
+  const normalisedData = useMemo((): ChartRow[] =>
     chartData.map(row => {
       const out: ChartRow = { date: row.date }
       for (const sym of symbols) {
@@ -162,16 +167,55 @@ function PriceChart({ symbols }: { symbols: string[] }) {
       return out
     }), [chartData, baseValues, symbols])
 
+  // Cumulative portfolio value = Σ(shares × price) per date
+  const cumulativeData = useMemo((): ChartRow[] => {
+    const result: ChartRow[] = []
+    for (const row of chartData) {
+      let total = 0
+      let hasAny = false
+      for (const sym of symbols) {
+        const price = row[sym] as number | undefined
+        if (price !== undefined) { total += sharesOf[sym] * price; hasAny = true }
+      }
+      if (hasAny) result.push({ date: row.date, total: parseFloat(total.toFixed(2)) })
+    }
+    return result
+  }, [chartData, symbols, sharesOf])
+
+  const displayData = cumulative ? cumulativeData : normalisedData
+
   const ChartTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null
     return (
-      <div className="rounded-lg border border-white/10 bg-[hsl(228_22%_7%)] p-3 text-xs shadow-xl">
-        <p className="font-medium text-foreground/70 mb-1.5">{label}</p>
+      <div className="rounded-lg border border-white/10 bg-[hsl(228_22%_7%)] p-3 text-xs shadow-xl min-w-[160px]">
+        <p className="font-medium text-foreground/70 mb-2">{label}</p>
         {payload.map((p: any) => (
-          <p key={p.dataKey} className="flex items-center gap-1.5" style={{ color: p.stroke }}>
-            <span className="inline-block w-2 h-2 rounded-full" style={{ background: p.stroke }} />
-            {p.dataKey}: <span className="font-semibold ml-auto pl-3">{p.value}%</span>
+          <p key={p.dataKey} className="flex items-center justify-between gap-3" style={{ color: p.stroke }}>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: p.stroke }} />
+              <span className="truncate max-w-[100px]">
+                {cumulative ? 'Cartera total' : (nameOf[p.dataKey] || p.dataKey)}
+              </span>
+            </span>
+            <span className="font-semibold tabular-nums">
+              {cumulative ? `${formatCurrency(p.value)}` : `${p.value >= 100 ? '+' : ''}${(p.value - 100).toFixed(2)}%`}
+            </span>
           </p>
+        ))}
+      </div>
+    )
+  }
+
+  // Custom legend using names instead of tickers
+  const CustomLegend = ({ payload }: any) => {
+    if (!payload?.length) return null
+    return (
+      <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center mt-2">
+        {payload.map((entry: any) => (
+          <span key={entry.dataKey} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span className="inline-block w-3 h-0.5 rounded" style={{ backgroundColor: entry.color }} />
+            {nameOf[entry.dataKey] || entry.dataKey}
+          </span>
         ))}
       </div>
     )
@@ -182,18 +226,30 @@ function PriceChart({ symbols }: { symbols: string[] }) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Rendimiento relativo base 100 — comparativa entre activos</p>
+    <div className="space-y-3">
+      {/* Controls */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
+          <button
+            onClick={() => setCumulative(false)}
+            className={`text-xs px-3 py-1 rounded-md transition-colors ${!cumulative ? 'bg-primary/20 text-primary font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Comparativa
+          </button>
+          <button
+            onClick={() => setCumulative(true)}
+            className={`text-xs px-3 py-1 rounded-md transition-colors ${cumulative ? 'bg-primary/20 text-primary font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Valor total
+          </button>
+        </div>
         <div className="flex gap-1">
           {PERIODS.map(p => (
             <button
               key={p.value}
               onClick={() => setPeriod(p.value)}
               className={`text-xs px-2 py-1 rounded transition-colors ${
-                period === p.value
-                  ? 'bg-primary/20 text-primary font-medium'
-                  : 'text-muted-foreground hover:text-foreground'
+                period === p.value ? 'bg-primary/20 text-primary font-medium' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               {p.label}
@@ -201,38 +257,62 @@ function PriceChart({ symbols }: { symbols: string[] }) {
           ))}
         </div>
       </div>
+      <p className="text-[11px] text-muted-foreground">
+        {cumulative
+          ? 'Valor aproximado de la cartera a lo largo del tiempo (acciones actuales × precio histórico)'
+          : 'Rendimiento relativo base 100 — comparativa entre activos'}
+      </p>
 
       {isLoading ? (
         <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : (
-        <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={normalised} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+        <ResponsiveContainer width="100%" height={300}>
+          <LineChart data={displayData} margin={{ top: 8, right: 16, left: -8, bottom: 0 }}>
             <XAxis
               dataKey="date"
-              tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }}
+              tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
               axisLine={false} tickLine={false}
-              tickFormatter={d => d.slice(5)} // show MM-DD
+              tickFormatter={d => {
+                const [y, m] = (d as string).split('-')
+                return `${m}/${y.slice(2)}`
+              }}
               interval="preserveStartEnd"
             />
             <YAxis
-              tick={{ fontSize: 9, fill: 'hsl(var(--muted-foreground))' }}
+              tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
               axisLine={false} tickLine={false}
-              tickFormatter={v => `${v}`}
-              domain={['auto', 'auto']}
+              tickFormatter={v => cumulative ? `${(v / 1000).toFixed(0)}k` : `${v}`}
+              domain={cumulative ? ['auto', 'auto'] : ['auto', 'auto']}
+              width={cumulative ? 44 : 36}
             />
             <Tooltip content={<ChartTooltip />} />
-            <Legend wrapperStyle={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }} />
-            {symbols.map(sym => (
+            {cumulative ? (
               <Line
-                key={sym}
                 type="monotone"
-                dataKey={sym}
-                stroke={symbolColor(sym)}
-                strokeWidth={1.8}
+                dataKey="total"
+                name="total"
+                stroke="hsl(var(--primary))"
+                strokeWidth={2}
                 dot={false}
                 connectNulls
               />
-            ))}
+            ) : (
+              <>
+                <Legend content={<CustomLegend />} />
+                {symbols.map(sym => (
+                  <Line
+                    key={sym}
+                    type="monotone"
+                    dataKey={sym}
+                    name={sym}
+                    stroke={symbolColor(sym)}
+                    strokeWidth={1.8}
+                    dot={false}
+                    connectNulls
+                  />
+                ))}
+              </>
+            )}
           </LineChart>
         </ResponsiveContainer>
       )}
@@ -553,7 +633,7 @@ export function Portfolio() {
         <TabsContent value="charts">
           <Card>
             <CardContent className="p-5">
-              <PriceChart symbols={openPositions.map(p => p.symbol)} />
+              <PriceChart positions={openPositions} />
             </CardContent>
           </Card>
         </TabsContent>

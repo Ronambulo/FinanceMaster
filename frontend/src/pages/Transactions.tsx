@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { txApi, catApi, authApi } from '@/lib/api'
 import type { Transaction, Category } from '@/lib/api'
@@ -9,9 +9,19 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Upload, Search, ChevronLeft, ChevronRight, Loader2, Tag, X, Plus, Trash2, AlertTriangle } from 'lucide-react'
+import { Upload, Search, ChevronLeft, ChevronRight, Loader2, Tag, X, Plus, Trash2, AlertTriangle, Filter } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+
+/* ── helpers ─────────────────────────────────────────────────────── */
+function monthLastDay(year: number, month: number) {
+  return new Date(year, month, 0).getDate()
+}
+
+const TYPE_GROUPS = [
+  { value: 'income',  label: '↑ Ingresos' },
+  { value: 'expense', label: '↓ Gastos' },
+]
 
 function CategoryPicker({ categories, value, onChange }: { categories: Category[]; value: number | null; onChange: (id: number) => void }) {
   return (
@@ -249,24 +259,51 @@ function DeleteAllDialog({ open, onClose }: { open: boolean; onClose: () => void
 export function Transactions() {
   const qc = useQueryClient()
   const { toast } = useToast()
-  const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
+  const [page, setPage]           = useState(1)
+  const [search, setSearch]       = useState('')
   const [catFilter, setCatFilter] = useState<string>('')
-  const [importOpen, setImportOpen] = useState(false)
-  const [addOpen, setAddOpen] = useState(false)
+  const [monthFilter, setMonthFilter] = useState<string>('')  // "YYYY-MM" or ""
+  const [typeGroup, setTypeGroup] = useState<string>('')       // "" | "income" | "expense"
+  const [importOpen, setImportOpen]   = useState(false)
+  const [addOpen, setAddOpen]         = useState(false)
   const [deleteAllOpen, setDeleteAllOpen] = useState(false)
-  const [editingCat, setEditingCat] = useState<number | null>(null)
+  const [editingCat, setEditingCat]   = useState<number | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
+
+  // Generate month options: last 36 months
+  const monthOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = []
+    const now = new Date()
+    for (let i = 0; i < 36; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const y = d.getFullYear()
+      const m = d.getMonth() + 1
+      const value = `${y}-${String(m).padStart(2, '0')}`
+      const label = d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
+      opts.push({ value, label })
+    }
+    return opts
+  }, [])
+
+  // Compute date range from month filter
+  const dateFrom = monthFilter ? `${monthFilter}-01` : undefined
+  const dateTo = monthFilter ? (() => {
+    const [y, m] = monthFilter.split('-').map(Number)
+    return `${y}-${String(m).padStart(2, '0')}-${String(monthLastDay(y, m)).padStart(2, '0')}`
+  })() : undefined
 
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const { data, isLoading } = useQuery({
-    queryKey: ['transactions', page, search, catFilter],
+    queryKey: ['transactions', page, search, catFilter, monthFilter, typeGroup],
     queryFn: () => txApi.list({
       page,
       page_size: 25,
       account_category: 'CASH',
-      ...(search ? { search } : {}),
-      ...(catFilter ? { category_id: catFilter } : {}),
+      ...(search     ? { search }                : {}),
+      ...(catFilter  ? { category_id: catFilter } : {}),
+      ...(dateFrom   ? { date_from: dateFrom }    : {}),
+      ...(dateTo     ? { date_to: dateTo }        : {}),
+      ...(typeGroup  ? { type_group: typeGroup }  : {}),
     }),
     placeholderData: prev => prev,
   })
@@ -297,12 +334,29 @@ export function Transactions() {
 
   const totalPages = data ? Math.ceil(data.total / 25) : 1
 
+  const hasActiveFilters = !!(monthFilter || typeGroup || catFilter || search)
+  const selectedCatName = catFilter && categories ? categories.find(c => c.id.toString() === catFilter)?.name : null
+  const selectedMonthLabel = monthFilter ? monthOptions.find(o => o.value === monthFilter)?.label : null
+  const selectedTypeLabel = typeGroup ? TYPE_GROUPS.find(g => g.value === typeGroup)?.label : null
+
   return (
     <div className="space-y-4">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
+        <div className="flex items-baseline gap-3 flex-wrap">
           <h1 className="text-xl font-semibold tracking-tight">Transacciones</h1>
-          <p className="text-sm text-muted-foreground">{data?.total ?? 0} transacciones</p>
+          <div className="flex items-center gap-2 text-sm">
+            {(data?.income_sum ?? 0) > 0 && (
+              <span className="text-positive font-medium">+{formatCurrency(data!.income_sum)}</span>
+            )}
+            {(data?.income_sum ?? 0) > 0 && (data?.expense_sum ?? 0) > 0 && (
+              <span className="text-muted-foreground/40">·</span>
+            )}
+            {(data?.expense_sum ?? 0) > 0 && (
+              <span className="text-negative font-medium">-{formatCurrency(data!.expense_sum)}</span>
+            )}
+          </div>
+          <span className="text-xs text-muted-foreground">{data?.total ?? 0} resultados</span>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" className="text-negative border-negative/20 hover:bg-negative/10" onClick={() => setDeleteAllOpen(true)}>
@@ -318,27 +372,104 @@ export function Transactions() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nombre o descripción..."
-            className="pl-9"
-            value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1) }}
-          />
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
+          {/* Search */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nombre o descripción..."
+              className="pl-9"
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
+            />
+          </div>
+          {/* Month */}
+          <Select value={monthFilter || 'all'} onValueChange={v => { setMonthFilter(v === 'all' ? '' : v); setPage(1) }}>
+            <SelectTrigger className="sm:w-44">
+              <SelectValue placeholder="Todos los meses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los meses</SelectItem>
+              {monthOptions.map(o => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {/* Type group */}
+          <Select value={typeGroup || 'all'} onValueChange={v => { setTypeGroup(v === 'all' ? '' : v); setPage(1) }}>
+            <SelectTrigger className="sm:w-36">
+              <SelectValue placeholder="Todos los tipos" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los tipos</SelectItem>
+              {TYPE_GROUPS.map(g => (
+                <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {/* Category */}
+          <Select value={catFilter || 'all'} onValueChange={v => { setCatFilter(v === 'all' ? '' : v); setPage(1) }}>
+            <SelectTrigger className="sm:w-44">
+              <SelectValue placeholder="Todas las categorías" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas las categorías</SelectItem>
+              {categories?.map(c => (
+                <SelectItem key={c.id} value={c.id.toString()}>{c.icon} {c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <Select value={catFilter} onValueChange={v => { setCatFilter(v === 'all' ? '' : v); setPage(1) }}>
-          <SelectTrigger className="sm:w-48">
-            <SelectValue placeholder="Todas las categorías" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas las categorías</SelectItem>
-            {categories?.map(c => (
-              <SelectItem key={c.id} value={c.id.toString()}>{c.icon} {c.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+
+        {/* Active filter pills */}
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            {selectedMonthLabel && (
+              <button
+                onClick={() => { setMonthFilter(''); setPage(1) }}
+                className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
+              >
+                📅 {selectedMonthLabel}
+                <X className="h-3 w-3 ml-0.5" />
+              </button>
+            )}
+            {selectedTypeLabel && (
+              <button
+                onClick={() => { setTypeGroup(''); setPage(1) }}
+                className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
+              >
+                {selectedTypeLabel}
+                <X className="h-3 w-3 ml-0.5" />
+              </button>
+            )}
+            {selectedCatName && (
+              <button
+                onClick={() => { setCatFilter(''); setPage(1) }}
+                className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
+              >
+                {categories?.find(c => c.id.toString() === catFilter)?.icon} {selectedCatName}
+                <X className="h-3 w-3 ml-0.5" />
+              </button>
+            )}
+            {search && (
+              <button
+                onClick={() => { setSearch(''); setPage(1) }}
+                className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
+              >
+                🔍 &ldquo;{search}&rdquo;
+                <X className="h-3 w-3 ml-0.5" />
+              </button>
+            )}
+            <button
+              onClick={() => { setSearch(''); setCatFilter(''); setMonthFilter(''); setTypeGroup(''); setPage(1) }}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors ml-1"
+            >
+              Limpiar todo
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Table / Card list */}
