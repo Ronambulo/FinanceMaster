@@ -25,7 +25,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       <div className="flex items-center gap-3 px-5 py-6">
         {/* App icon */}
         <img
-          src="/icon.png"
+          src="https://raw.githubusercontent.com/Ronambulo/FinanceMaster/refs/heads/main/frontend/icon.png"
           alt="FinanceMaster"
           className="h-12 w-12 shrink-0 rounded-lg object-contain"
         />

@@ -79,7 +79,7 @@ export function AppLayout() {
         <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-background/95 backdrop-blur-sm sticky top-0 z-40">
           <div className="flex items-center gap-2">
             <img
-              src="/icon.png"
+              src="https://raw.githubusercontent.com/Ronambulo/FinanceMaster/refs/heads/main/frontend/icon.png"
               alt="FinanceMaster"
               className="h-11 w-11 rounded-lg object-contain"
             />
