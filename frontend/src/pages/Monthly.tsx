@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
-import { dashApi, budgetApi, catApi, txApi, recurringApi } from '@/lib/api'
+import { dashApi, budgetApi, txApi, recurringApi } from '@/lib/api'
+import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 import type { Category } from '@/lib/api'
+import { catApi } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -133,95 +135,30 @@ function AddBudgetDialog({
 export function Monthly() {
   const qc = useQueryClient()
   const { toast } = useToast()
-  const today = useMemo(() => new Date(), [])
   const [cycleOffset, setCycleOffset] = useState(0)  // 0 = latest cycle, -1 = previous, etc.
   const [addOpen, setAddOpen] = useState(false)
   const [txSearch, setTxSearch]     = useState('')
   const [txTypeGroup, setTxTypeGroup] = useState('')  // '' | 'income' | 'expense'
 
-  /* ── Categories (needed before payroll detection) ── */
+  /* ── Categories (still needed for the budget dialog) ── */
   const { data: categories } = useQuery({
     queryKey: ['categories'],
     queryFn: catApi.list,
   })
 
-  /* ── Payroll detection: look for "nómina" category, fall back to CUSTOMER_INPAYMENT ── */
-  const nominaCategory = useMemo(() => {
-    return categories?.find(c => {
-      const n = c.name.toLowerCase()
-      return n.includes('nomina') || n.includes('nómina') || n.includes('salario') || n.includes('sueldo')
-    }) ?? null
-  }, [categories])
-
-  const { data: payrollData } = useQuery({
-    queryKey: ['payroll-transactions', nominaCategory?.id ?? 'none'],
-    queryFn: () => txApi.list({
-      ...(nominaCategory
-        ? { category_id: nominaCategory.id.toString() }
-        : { type: 'CUSTOMER_INPAYMENT' }),
-      account_category: 'CASH',
-      page_size: 100,
-    }),
-    enabled: categories !== undefined,  // wait for categories so we use the right filter from the start
-    staleTime: 5 * 60_000,
-  })
-
-  // Every nómina transaction is a cycle boundary — use all unique dates sorted
-  const payrollDates = useMemo(() => {
-    if (!payrollData?.items) return []
-    return [...new Set(payrollData.items.map(tx => tx.date))].sort()
-  }, [payrollData])
-
-  // Build one cycle entry per payroll period: from this nómina to the day before the next.
-  // The latest (open) cycle extends 45 days past today so manually-entered future expenses appear.
-  const cycles = useMemo(() => {
-    if (!payrollDates.length) return []
-    return payrollDates.map((start, i) => {
-      if (i + 1 < payrollDates.length) {
-        const d = new Date(payrollDates[i + 1] + 'T12:00:00')
-        d.setDate(d.getDate() - 1)
-        return { start, end: d.toISOString().slice(0, 10), isOpen: false }
-      }
-      // Open cycle: extend well past today to capture future-dated manual entries
-      const future = new Date(today)
-      future.setDate(future.getDate() + 45)
-      return { start, end: future.toISOString().slice(0, 10), isOpen: true }
-    })
-  }, [payrollDates, today])
-
-  const selectedCycleIdx = cycles.length > 0
-    ? Math.max(0, cycles.length - 1 + cycleOffset)
-    : -1
+  /* ── Payroll cycle (shared logic) ── */
+  const {
+    cycles, selectedCycleIdx, isLatestCycle,
+    periodStart, periodEnd, isPayrollCycle, monthStr, cycleRangeLabel,
+  } = usePayrollCycle(cycleOffset)
 
   function prevCycle() { setCycleOffset(o => Math.max(-(cycles.length - 1), o - 1)) }
   function nextCycle()  { setCycleOffset(o => Math.min(0, o + 1)) }
-  const isLatestCycle = cycleOffset >= 0
 
-  const { periodStart, periodEnd, isPayrollCycle, monthStr, cycleMonthLabel } = useMemo(() => {
-    if (selectedCycleIdx < 0 || !cycles.length) {
-      // Fallback: current calendar month (no payroll data yet)
-      const m  = today.getMonth() + 1
-      const y  = today.getFullYear()
-      const ms = `${y}-${String(m).padStart(2, '0')}`
-      return {
-        periodStart:    `${ms}-01`,
-        periodEnd:      today.toISOString().slice(0, 10),
-        isPayrollCycle: false,
-        monthStr:       ms,
-        cycleMonthLabel: monthLabel(y, m),
-      }
-    }
-    const cycle     = cycles[selectedCycleIdx]
-    const startDate = new Date(cycle.start + 'T12:00:00')
-    const ms = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}`
-    return {
-      periodStart:    cycle.start,
-      periodEnd:      cycle.end,
-      isPayrollCycle: true,
-      monthStr:       ms,
-      cycleMonthLabel: monthLabel(startDate.getFullYear(), startDate.getMonth() + 1),
-    }
-  }, [cycles, selectedCycleIdx, today])
+  // Derive month label from cycleRangeLabel (first part) or fall back to full label
+  const cycleMonthLabel = isPayrollCycle
+    ? cycleRangeLabel
+    : ((() => { const d = new Date(); return monthLabel(d.getFullYear(), d.getMonth() + 1) })())
 
   // Cycle-based trend chart: fetch detail for each of the last 10 cycles
   const visibleCycles = cycles.slice(-10)
@@ -337,7 +274,7 @@ export function Monthly() {
           <p className="text-sm text-muted-foreground capitalize">{cycleMonthLabel}</p>
           {periodStart && periodEnd && (
             <p className="text-xs text-muted-foreground/60 mt-0.5">
-              {formatDate(periodStart)} — {isPayrollCycle && cycles[selectedCycleIdx]?.isOpen ? 'hoy' : formatDate(periodEnd)}
+              {formatDate(periodStart)} — {isPayrollCycle && isLatestCycle ? 'hoy' : formatDate(periodEnd)}
             </p>
           )}
         </div>
@@ -352,19 +289,25 @@ export function Monthly() {
 
       {/* ── KPI cards ── */}
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card><CardContent className="p-5">
+        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-positive/[0.05] blur-2xl" />
+          <CardContent className="relative z-10 p-5">
           <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1.5">
             <TrendingUp className="h-3 w-3" /> Ingresos del mes
           </p>
           <p className="text-xl font-semibold text-positive">+{formatCurrency(totalIncome)}</p>
         </CardContent></Card>
-        <Card><CardContent className="p-5">
+        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-negative/[0.05] blur-2xl" />
+          <CardContent className="relative z-10 p-5">
           <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1.5">
             <TrendingDown className="h-3 w-3" /> Gastos del mes
           </p>
           <p className="text-xl font-semibold text-negative">-{formatCurrency(totalExpenses)}</p>
         </CardContent></Card>
-        <Card><CardContent className="p-5">
+        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-primary/[0.05] blur-2xl" />
+          <CardContent className="relative z-10 p-5">
           <p className="text-xs text-muted-foreground mb-1">Ahorro neto</p>
           <p className={cn('text-xl font-semibold', totalIncome - totalExpenses >= 0 ? 'text-positive' : 'text-negative')}>
             {totalIncome - totalExpenses >= 0 ? '+' : ''}{formatCurrency(totalIncome - totalExpenses)}
@@ -373,11 +316,12 @@ export function Monthly() {
       </div>
 
       {/* ── Gráfica tendencia 12 meses ── */}
-      <Card>
-        <CardHeader className="pb-2">
+      <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+        <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
+        <CardHeader className="relative z-10 pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">Tendencia por tramos</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="relative z-10">
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={chartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
               <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
@@ -395,11 +339,12 @@ export function Monthly() {
 
       {/* ── Presupuestos por categoría ── */}
       {(budgetStatus && budgetStatus.length > 0) && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-amber-500/[0.04] blur-3xl" />
+          <CardHeader className="relative z-10 flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Presupuestos</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="relative z-10 space-y-4">
             {budgetStatus.map(b => (
               <div key={b.budget_id} className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
@@ -446,8 +391,9 @@ export function Monthly() {
       )}
 
       {/* ── Transacciones del período con toggle ── */}
-      <Card>
-        <CardHeader className="pb-2 space-y-2">
+      <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+        <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
+        <CardHeader className="relative z-10 pb-2 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Transacciones del período
@@ -477,7 +423,7 @@ export function Monthly() {
             </Select>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="relative z-10 p-0">
           {loadingDetail ? (
             <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
           ) : (
@@ -593,15 +539,21 @@ export function Monthly() {
 
           return (
             <div className="grid gap-3 sm:grid-cols-3">
-              <Card><CardContent className="p-4">
+              <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+                <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-negative/[0.05] blur-2xl" />
+                <CardContent className="relative z-10 p-4">
                 <p className="text-xs text-muted-foreground mb-1">Coste mensual fijo</p>
                 <p className="text-lg font-semibold text-negative">-{formatCurrency(totalMonthly)}</p>
               </CardContent></Card>
-              <Card><CardContent className="p-4">
+              <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+                <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-primary/[0.05] blur-2xl" />
+                <CardContent className="relative z-10 p-4">
                 <p className="text-xs text-muted-foreground mb-1">Compromisos activos</p>
                 <p className="text-lg font-semibold">{activeCount}</p>
               </CardContent></Card>
-              <Card><CardContent className="p-4">
+              <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+                <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-amber-500/[0.05] blur-2xl" />
+                <CardContent className="relative z-10 p-4">
                 <p className="text-xs text-muted-foreground mb-1">Próximo pago</p>
                 <p className="text-lg font-semibold text-sm">
                   {nextGroup ? formatDate(nextGroup.next_expected_date!) : '—'}
@@ -630,8 +582,9 @@ export function Monthly() {
               }
 
               return (
-                <Card key={g.id} className={!g.is_active ? 'opacity-50' : ''}>
-                  <CardContent className="p-3">
+                <Card key={g.id} className={cn("relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]", !g.is_active && 'opacity-50')}>
+                  <div className="pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full bg-negative/[0.02] blur-3xl" />
+                  <CardContent className="relative z-10 p-3">
                     <div className="flex items-center gap-3 flex-wrap">
                       <span className="text-xl shrink-0">{g.category?.icon || '💳'}</span>
                       <div className="flex-1 min-w-0" style={{ minWidth: '120px' }}>

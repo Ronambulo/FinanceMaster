@@ -2,6 +2,7 @@ import { useState, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { txApi, catApi, authApi } from '@/lib/api'
 import type { Transaction, Category } from '@/lib/api'
+import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,9 +10,12 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Upload, Search, ChevronLeft, ChevronRight, Loader2, Tag, X, Plus, Trash2, AlertTriangle, Filter } from 'lucide-react'
+import { Upload, Search, ChevronLeft, ChevronRight, ChevronDown, Loader2, Tag, X, Plus, Trash2, AlertTriangle, Filter, Sparkles } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { TransactionIcon } from '@/components/TransactionIcon'
+
+import { cn } from '@/lib/utils'
 
 /* ── helpers ─────────────────────────────────────────────────────── */
 function monthLastDay(year: number, month: number) {
@@ -262,39 +266,62 @@ export function Transactions() {
   const [page, setPage]           = useState(1)
   const [search, setSearch]       = useState('')
   const [catFilter, setCatFilter] = useState<string>('')
-  const [monthFilter, setMonthFilter] = useState<string>('')  // "YYYY-MM" or ""
+  // cycleFilter: '' = all, 'idx:N' = payroll cycle index N, 'month:YYYY-MM' = calendar fallback
+  const [cycleFilter, setCycleFilter] = useState<string>('')
   const [typeGroup, setTypeGroup] = useState<string>('')       // "" | "income" | "expense"
   const [importOpen, setImportOpen]   = useState(false)
   const [addOpen, setAddOpen]         = useState(false)
   const [deleteAllOpen, setDeleteAllOpen] = useState(false)
-  const [editingCat, setEditingCat]   = useState<number | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
 
-  // Generate month options: last 36 months
-  const monthOptions = useMemo(() => {
-    const opts: { value: string; label: string }[] = []
+  /* ── Payroll cycles for the period filter ── */
+  const { cycles: payrollCycles } = usePayrollCycle(0)
+
+  // Build cycle options (newest first) — fall back to calendar months when no payroll data
+  const cycleOptions = useMemo(() => {
+    if (payrollCycles.length > 0) {
+      // Payroll mode: list each tramo newest → oldest
+      return [...payrollCycles].reverse().map((c, reverseIdx) => {
+        const idx = payrollCycles.length - 1 - reverseIdx
+        const startD = new Date(c.start + 'T12:00:00')
+        const endD   = new Date(c.end   + 'T12:00:00')
+        const fmt = (d: Date) =>
+          d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }).replace('.', '')
+        const endLabel = c.isOpen ? 'hoy' : fmt(endD)
+        return {
+          value: `idx:${idx}`,
+          label: `${fmt(startD)} — ${endLabel}`,
+          dateFrom: c.start,
+          dateTo:   c.end,
+        }
+      })
+    }
+    // Calendar fallback: last 36 months
+    const opts: { value: string; label: string; dateFrom: string; dateTo: string }[] = []
     const now = new Date()
     for (let i = 0; i < 36; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const y = d.getFullYear()
-      const m = d.getMonth() + 1
-      const value = `${y}-${String(m).padStart(2, '0')}`
-      const label = d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
-      opts.push({ value, label })
+      const d  = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const y  = d.getFullYear()
+      const m  = d.getMonth() + 1
+      const ms = `${y}-${String(m).padStart(2, '0')}`
+      opts.push({
+        value:    `month:${ms}`,
+        label:    d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }),
+        dateFrom: `${ms}-01`,
+        dateTo:   `${ms}-${String(monthLastDay(y, m)).padStart(2, '0')}`,
+      })
     }
     return opts
-  }, [])
+  }, [payrollCycles])
 
-  // Compute date range from month filter
-  const dateFrom = monthFilter ? `${monthFilter}-01` : undefined
-  const dateTo = monthFilter ? (() => {
-    const [y, m] = monthFilter.split('-').map(Number)
-    return `${y}-${String(m).padStart(2, '0')}-${String(monthLastDay(y, m)).padStart(2, '0')}`
-  })() : undefined
+  // Resolve date range from selected cycleFilter
+  const selectedCycleOption = cycleFilter ? cycleOptions.find(o => o.value === cycleFilter) : null
+  const dateFrom = selectedCycleOption?.dateFrom
+  const dateTo   = selectedCycleOption?.dateTo
 
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const { data, isLoading } = useQuery({
-    queryKey: ['transactions', page, search, catFilter, monthFilter, typeGroup],
+    queryKey: ['transactions', page, search, catFilter, cycleFilter, typeGroup],
     queryFn: () => txApi.list({
       page,
       page_size: 25,
@@ -315,7 +342,6 @@ export function Transactions() {
       qc.invalidateQueries({ queryKey: ['overview'] })
       qc.invalidateQueries({ queryKey: ['by-cat'] })
       qc.invalidateQueries({ queryKey: ['monthly-trend'] })
-      setEditingCat(null)
       toast('is_internal_transfer' in (vars.data as any) ? 'Marcada como ingreso/gasto real' : 'Categoría actualizada', 'success')
     },
   })
@@ -334,10 +360,11 @@ export function Transactions() {
 
   const totalPages = data ? Math.ceil(data.total / 25) : 1
 
-  const hasActiveFilters = !!(monthFilter || typeGroup || catFilter || search)
-  const selectedCatName = catFilter && categories ? categories.find(c => c.id.toString() === catFilter)?.name : null
-  const selectedMonthLabel = monthFilter ? monthOptions.find(o => o.value === monthFilter)?.label : null
-  const selectedTypeLabel = typeGroup ? TYPE_GROUPS.find(g => g.value === typeGroup)?.label : null
+  const hasActiveFilters = !!(cycleFilter || typeGroup || catFilter || search)
+  const selectedCatName   = catFilter && categories ? categories.find(c => c.id.toString() === catFilter)?.name : null
+  const selectedCycleLabel = selectedCycleOption?.label ?? null
+  const selectedTypeLabel  = typeGroup ? TYPE_GROUPS.find(g => g.value === typeGroup)?.label : null
+  const isPayrollMode = payrollCycles.length > 0
 
   return (
     <div className="space-y-4">
@@ -372,8 +399,10 @@ export function Transactions() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-col sm:flex-row gap-2">
+      <div className="relative overflow-hidden flex flex-col gap-3 bg-white/[0.02] border border-white/[0.05] p-3 rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.5)] animate-fade-in">
+        <div className="pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full bg-primary/[0.04] blur-3xl" />
+        <div className="relative z-10 flex flex-col gap-3">
+          <div className="flex flex-col sm:flex-row gap-2">
           {/* Search */}
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -384,14 +413,14 @@ export function Transactions() {
               onChange={e => { setSearch(e.target.value); setPage(1) }}
             />
           </div>
-          {/* Month */}
-          <Select value={monthFilter || 'all'} onValueChange={v => { setMonthFilter(v === 'all' ? '' : v); setPage(1) }}>
-            <SelectTrigger className="sm:w-44">
-              <SelectValue placeholder="Todos los meses" />
+          {/* Cycle / Month filter */}
+          <Select value={cycleFilter || 'all'} onValueChange={v => { setCycleFilter(v === 'all' ? '' : v); setPage(1) }}>
+            <SelectTrigger className="sm:w-52">
+              <SelectValue placeholder={isPayrollMode ? 'Todos los tramos' : 'Todos los meses'} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos los meses</SelectItem>
-              {monthOptions.map(o => (
+              <SelectItem value="all">{isPayrollMode ? 'Todos los tramos' : 'Todos los meses'}</SelectItem>
+              {cycleOptions.map(o => (
                 <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
               ))}
             </SelectContent>
@@ -426,12 +455,12 @@ export function Transactions() {
         {hasActiveFilters && (
           <div className="flex flex-wrap items-center gap-1.5">
             <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            {selectedMonthLabel && (
+            {selectedCycleLabel && (
               <button
-                onClick={() => { setMonthFilter(''); setPage(1) }}
+                onClick={() => { setCycleFilter(''); setPage(1) }}
                 className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
               >
-                📅 {selectedMonthLabel}
+                {isPayrollMode ? '💳' : '📅'} {selectedCycleLabel}
                 <X className="h-3 w-3 ml-0.5" />
               </button>
             )}
@@ -463,61 +492,87 @@ export function Transactions() {
               </button>
             )}
             <button
-              onClick={() => { setSearch(''); setCatFilter(''); setMonthFilter(''); setTypeGroup(''); setPage(1) }}
+              onClick={() => { setSearch(''); setCatFilter(''); setCycleFilter(''); setTypeGroup(''); setPage(1) }}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors ml-1"
             >
               Limpiar todo
             </button>
           </div>
         )}
+        </div>
       </div>
 
       {/* Table / Card list */}
-      <Card>
-        <CardContent className="p-0">
+      <div className="relative rounded-2xl border border-white/[0.07] bg-card/40 backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,0.5)] overflow-hidden animate-fade-up">
+        <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.03] blur-3xl" />
+        <div className="relative z-10">
           {isLoading ? (
             <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
           ) : (
             <>
               {/* Mobile card list */}
-              <div className="sm:hidden divide-y divide-border/50">
+              <div className="sm:hidden flex flex-col">
                 {data?.items.map(tx => (
-                  <div key={tx.id} className="flex items-center gap-3 px-4 py-3">
-                    <span className="text-xl shrink-0">{tx.category?.icon || '💳'}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{tx.name || tx.description || tx.type}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                        <span className="text-xs text-muted-foreground">{formatDate(tx.date)}</span>
-                        {tx.category && (
-                          <span className="text-xs font-medium" style={{ color: tx.category.color }}>
-                            · {tx.category.name}
-                          </span>
-                        )}
-                        {tx.is_internal_transfer && (
-                          <span className="text-xs text-muted-foreground">· 🔄 Interna</span>
-                        )}
-                      </div>
+                  <div key={tx.id} className="flex gap-3 px-4 py-3.5 border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors last:border-0">
+                    <div className="flex h-10 w-10 mt-0.5 shrink-0 items-center justify-center rounded-full bg-white/[0.04] border border-white/[0.05] text-lg shadow-sm overflow-hidden">
+                      <TransactionIcon name={tx.name || tx.description || tx.type} category={tx.category} />
                     </div>
-                    <div className="text-right shrink-0">
-                      <p className={`text-sm font-semibold ${tx.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
-                        {tx.amount >= 0 ? '+' : ''}{formatCurrency(tx.amount)}
-                      </p>
-                      {confirmDelete === tx.id ? (
-                        <div className="flex gap-1 mt-1 justify-end">
-                          <Button size="sm" variant="destructive" className="h-5 text-xs px-1.5"
-                            onClick={() => deleteMutation.mutate(tx.id)} disabled={deleteMutation.isPending}>
-                            {deleteMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Borrar'}
-                          </Button>
-                          <button onClick={() => setConfirmDelete(null)}>
-                            <X className="h-3 w-3 text-muted-foreground" />
-                          </button>
+                    
+                    <div className="flex flex-col flex-1 min-w-0 gap-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-col min-w-0">
+                          <p className="font-semibold text-[14px] leading-tight text-foreground truncate">{tx.name || tx.description || tx.type}</p>
+                          {tx.is_internal_transfer && (
+                            <span className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-orange-500/50"></span>
+                              Transferencia Interna
+                            </span>
+                          )}
                         </div>
-                      ) : (
-                        <button onClick={() => setConfirmDelete(tx.id)}
-                          className="text-muted-foreground/40 hover:text-negative mt-0.5 transition-colors">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                        <span className={cn(
+                          "text-[15px] font-bold tabular-nums tracking-tight shrink-0",
+                          tx.amount > 0 ? "text-emerald-400" : "text-foreground",
+                          tx.amount === 0 && "text-muted-foreground"
+                        )}>
+                          {tx.amount > 0 ? '+' : ''}{formatCurrency(tx.amount)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Select 
+                            value={tx.category_id?.toString() || ''} 
+                            onValueChange={id => updateMutation.mutate({ id: tx.id, data: { category_id: Number(id) } })}
+                          >
+                            <SelectTrigger className="flex items-center justify-between gap-1 text-[11px] px-2 py-0.5 h-6 w-fit min-w-[90px] max-w-[150px] rounded-full bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-all font-medium shadow-sm [&>svg]:opacity-50 [&>svg]:h-3 [&>svg]:w-3">
+                              {tx.category ? (
+                                <span style={{ color: tx.category.color }} className="flex items-center gap-1 truncate">{tx.category.icon} <span className="truncate">{tx.category.name}</span></span>
+                              ) : (
+                                <span className="text-muted-foreground flex items-center gap-1 truncate"><Tag className="h-2.5 w-2.5" /> Asignar cat.</span>
+                              )}
+                            </SelectTrigger>
+                            <SelectContent>
+                              {categories?.map(c => (
+                                <SelectItem key={c.id} value={c.id.toString()}>
+                                  {c.icon} {c.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {tx.is_auto_categorized && !tx.is_internal_transfer && (
+                            <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 opacity-70" title="Categorizado automáticamente" />
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2.5 shrink-0">
+                          <span className="text-[11px] font-medium text-muted-foreground/50">{formatDate(tx.date)}</span>
+                          
+                          <button onClick={() => setConfirmDelete(tx.id)}
+                              className="text-muted-foreground/30 hover:text-negative transition-colors flex items-center justify-center">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -529,28 +584,27 @@ export function Transactions() {
               {/* Desktop table */}
               <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-muted-foreground">
-                      <th className="text-left px-4 py-3 font-medium">Fecha</th>
-                      <th className="text-left px-4 py-3 font-medium">Descripción</th>
-                      <th className="text-left px-4 py-3 font-medium hidden md:table-cell">Categoría</th>
-                      <th className="text-right px-4 py-3 font-medium">Importe</th>
-                      <th className="px-4 py-3"></th>
+                  <thead className="bg-white/[0.02] border-b border-white/[0.05]">
+                    <tr className="text-muted-foreground">
+                      <th className="text-left px-5 py-3.5 font-medium text-xs tracking-wider uppercase">Fecha</th>
+                      <th className="text-left px-5 py-3.5 font-medium text-xs tracking-wider uppercase">Descripción</th>
+                      <th className="text-left px-5 py-3.5 font-medium text-xs tracking-wider uppercase hidden md:table-cell min-w-[240px] w-[240px] max-w-[240px]">Categoría</th>
+                      <th className="text-right px-5 py-3.5 font-medium text-xs tracking-wider uppercase">Importe</th>
+                      <th className="px-5 py-3.5"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {data?.items.map(tx => (
-                      <tr key={tx.id} className="border-b border-border/50 hover:bg-accent/30 transition-colors group">
-                        <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(tx.date)}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <span>{tx.category?.icon || '💳'}</span>
-                            <div>
-                              <p className="font-medium truncate max-w-[180px]">{tx.name || tx.description || tx.type}</p>
+                      <tr key={tx.id} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors group">
+                        <td className="px-5 py-4 text-xs font-medium text-muted-foreground whitespace-nowrap">{formatDate(tx.date)}</td>
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/[0.04] border border-white/[0.05] text-lg shadow-sm overflow-hidden">
+                              <TransactionIcon name={tx.name || tx.description || tx.type} category={tx.category} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm text-foreground truncate max-w-[220px]">{tx.name || tx.description || tx.type}</p>
                               <div className="flex gap-1 mt-0.5">
-                                {tx.is_auto_categorized && !tx.is_internal_transfer && (
-                                  <Badge variant="warning" className="text-xs py-0">Auto</Badge>
-                                )}
                                 {!tx.category_id && (
                                   <Badge variant="muted" className="text-xs py-0">Sin cat.</Badge>
                                 )}
@@ -567,52 +621,49 @@ export function Transactions() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 hidden md:table-cell">
-                          {editingCat === tx.id ? (
-                            <div className="flex items-center gap-1">
-                              <CategoryPicker
-                                categories={categories || []}
-                                value={tx.category_id}
-                                onChange={id => updateMutation.mutate({ id: tx.id, data: { category_id: id } })}
-                              />
-                              <button onClick={() => setEditingCat(null)}><X className="h-4 w-4 text-muted-foreground" /></button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setEditingCat(tx.id)}
-                              className="flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-accent transition-colors"
+                        <td className="px-5 py-4 hidden md:table-cell min-w-[240px] w-[240px] max-w-[240px]">
+                          <div className="flex items-center gap-2">
+                            <Select 
+                              value={tx.category_id?.toString() || ''} 
+                              onValueChange={id => updateMutation.mutate({ id: tx.id, data: { category_id: Number(id) } })}
                             >
-                              {tx.category ? (
-                                <span style={{ color: tx.category.color }}>{tx.category.icon} {tx.category.name}</span>
-                              ) : (
-                                <span className="text-muted-foreground flex items-center gap-1"><Tag className="h-3 w-3" /> Asignar</span>
-                              )}
-                            </button>
-                          )}
+                              <SelectTrigger className="flex items-center justify-between w-full max-w-[160px] gap-1.5 text-xs px-2.5 py-1.5 h-7 rounded-md bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] hover:border-white/[0.1] transition-all font-medium group shadow-sm [&>svg]:opacity-50 hover:[&>svg]:opacity-100">
+                                {tx.category ? (
+                                  <span style={{ color: tx.category.color }} className="flex items-center gap-1.5 truncate">{tx.category.icon} <span className="truncate">{tx.category.name}</span></span>
+                                ) : (
+                                  <span className="text-muted-foreground flex items-center gap-1.5 truncate"><Tag className="h-3.5 w-3.5" /> Asignar categoría</span>
+                                )}
+                              </SelectTrigger>
+                              <SelectContent>
+                                {categories?.map(c => (
+                                  <SelectItem key={c.id} value={c.id.toString()}>
+                                    {c.icon} {c.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {tx.is_auto_categorized && !tx.is_internal_transfer && (
+                              <Sparkles className="h-4 w-4 text-primary shrink-0 opacity-80" title="Categorizado automáticamente" />
+                            )}
+                          </div>
                         </td>
-                        <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${tx.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
-                          {tx.amount >= 0 ? '+' : ''}{formatCurrency(tx.amount)}
+                        <td className="px-5 py-4 text-right whitespace-nowrap">
+                          <span className={cn(
+                            "inline-flex px-2.5 py-1 rounded-md text-[15px] font-semibold tabular-nums tracking-tight",
+                            tx.amount > 0 ? "bg-emerald-500/10 text-emerald-400" : "text-foreground",
+                            tx.amount === 0 && "text-muted-foreground"
+                          )}>
+                            {tx.amount > 0 ? '+' : ''}{formatCurrency(tx.amount)}
+                          </span>
                         </td>
-                        <td className="px-2 py-3 text-right">
-                          {confirmDelete === tx.id ? (
-                            <div className="flex items-center gap-1 justify-end">
-                              <Button size="sm" variant="destructive" className="h-6 text-xs px-2"
-                                onClick={() => deleteMutation.mutate(tx.id)} disabled={deleteMutation.isPending}>
-                                {deleteMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Borrar'}
-                              </Button>
-                              <button onClick={() => setConfirmDelete(null)} className="text-muted-foreground hover:text-foreground">
-                                <X className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setConfirmDelete(tx.id)}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-negative"
-                              title="Eliminar transacción"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
+                        <td className="px-3 py-4 text-right">
+                          <button
+                            onClick={() => setConfirmDelete(tx.id)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-negative"
+                            title="Eliminar transacción"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -624,8 +675,8 @@ export function Transactions() {
               </div>
             </>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Pagination */}
       {totalPages > 1 && (
@@ -645,6 +696,31 @@ export function Transactions() {
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <AddTransactionDialog open={addOpen} onClose={() => setAddOpen(false)} categories={categories || []} />
       <DeleteAllDialog open={deleteAllOpen} onClose={() => setDeleteAllOpen(false)} />
+
+      <Dialog open={confirmDelete !== null} onOpenChange={(open) => !open && setConfirmDelete(null)}>
+        <DialogContent className="max-w-[320px]">
+          <DialogHeader>
+            <DialogTitle className="text-negative flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4" /> Borrar transacción
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground mt-1">
+            ¿Estás seguro de que quieres borrar esta transacción? Esta acción no se puede deshacer.
+          </p>
+          <DialogFooter className="mt-4 sm:justify-end gap-2 sm:gap-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
+            <Button 
+              variant="destructive" 
+              size="sm"
+              onClick={() => { if (confirmDelete) deleteMutation.mutate(confirmDelete) }}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-3 w-3 mr-2 animate-spin" /> : null}
+              Borrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { debtApi } from '@/lib/api'
 import type { Debt } from '@/lib/api'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -58,8 +58,9 @@ function DebtCard({ debt, onAddPayment, onDelete }: { debt: Debt; onAddPayment: 
   const pct = debt.total_amount > 0 ? Math.min(100, (debt.paid_amount / debt.total_amount) * 100) : 0
 
   return (
-    <Card className={debt.is_settled ? 'opacity-60' : ''}>
-      <CardContent className="p-4">
+    <Card className={cn("relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]", debt.is_settled ? 'opacity-60' : '')}>
+      <div className={cn("pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full blur-3xl", debt.direction === 'I_OWE' ? 'bg-negative/[0.03]' : 'bg-primary/[0.03]')} />
+      <CardContent className="relative z-10 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
@@ -145,11 +146,15 @@ export function Debts() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card><CardContent className="p-5">
+        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-negative/[0.05] blur-2xl" />
+          <CardContent className="relative z-10 p-5">
           <p className="text-xs text-muted-foreground mb-1">Yo debo (pendiente)</p>
           <p className="text-xl font-semibold tracking-tight text-negative">-{formatCurrency(totalIOwe)}</p>
         </CardContent></Card>
-        <Card><CardContent className="p-5">
+        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-primary/[0.05] blur-2xl" />
+          <CardContent className="relative z-10 p-5">
           <p className="text-xs text-muted-foreground mb-1">Me deben (pendiente)</p>
           <p className="text-xl font-semibold tracking-tight text-primary">+{formatCurrency(totalOwedToMe)}</p>
         </CardContent></Card>

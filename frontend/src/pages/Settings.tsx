@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Plus, Trash2, Settings as SettingsIcon, Lock, Palette, Loader2, Check } from 'lucide-react'
+import { Plus, Trash2, Settings as SettingsIcon, Lock, Palette, Loader2, Check, Pencil } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { THEMES, ACCENT_COLORS, THEME_KEY, ACCENT_KEY, applyTheme, getChartColors, saveChartColors, resetChartColors } from '@/lib/theme'
 import type { ChartColors } from '@/lib/theme'
@@ -26,14 +26,24 @@ const CATEGORY_TYPES = [
 
 
 // ── Category form ─────────────────────────────────────────────────────────────
-function CategoryForm({ onSave, onCancel }: { onSave: (d: Partial<Category>) => void; onCancel: () => void }) {
-  const [form, setForm] = useState({ name: '', icon: '💰', color: '#6366f1', type: 'expense' })
+function CategoryForm({ initial, isSystem, onSave, onCancel }: { initial?: Partial<Category>; isSystem?: boolean; onSave: (d: Partial<Category>) => void; onCancel: () => void }) {
+  const [form, setForm] = useState({ 
+    name: initial?.name || '', 
+    icon: initial?.icon || '💰', 
+    color: initial?.color || '#6366f1', 
+    type: initial?.type || 'expense' 
+  })
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-1.5 col-span-2">
-          <Label>Nombre</Label>
-          <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+          <Label>Nombre {isSystem && <span className="text-muted-foreground font-normal">(Sistema)</span>}</Label>
+          <Input 
+            value={form.name} 
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))} 
+            disabled={isSystem}
+            title={isSystem ? "El nombre de las categorías del sistema no se puede cambiar porque se usa para la categorización automática." : ""}
+          />
         </div>
         <div className="space-y-1.5">
           <Label>Emoji</Label>
@@ -72,6 +82,7 @@ export function Settings() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const [newCatOpen, setNewCatOpen] = useState(false)
+  const [editingCat, setEditingCat] = useState<Category | null>(null)
   const [newRuleOpen, setNewRuleOpen] = useState(false)
   const [ruleForm, setRuleForm] = useState({ keyword: '', category_id: '', field: 'name', priority: '0' })
 
@@ -91,6 +102,11 @@ export function Settings() {
   const createCatMutation = useMutation({
     mutationFn: catApi.create,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); setNewCatOpen(false); toast('Categoría creada', 'success') },
+  })
+  const updateCatMutation = useMutation({
+    mutationFn: (data: Partial<Category> & { id: number }) => catApi.update(data.id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); setEditingCat(null); toast('Categoría actualizada', 'success') },
+    onError: (e: any) => toast(e.message, 'error'),
   })
   const deleteCatMutation = useMutation({
     mutationFn: catApi.delete,
@@ -183,6 +199,9 @@ export function Settings() {
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 rounded-full" style={{ backgroundColor: c.color }} />
+                    <Button variant="ghost" size="icon" onClick={() => setEditingCat(c)}>
+                      <Pencil className="h-4 w-4 text-muted-foreground" />
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => deleteCatMutation.mutate(c.id)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
@@ -228,12 +247,23 @@ export function Settings() {
         <TabsContent value="system" className="mt-4">
           <div className="grid gap-2">
             {systemCats.map(c => (
-              <div key={c.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/30">
-                <span className="text-xl">{c.icon}</span>
-                <p className="text-sm">{c.name}</p>
-                <Badge variant="muted" className="text-xs ml-auto">{c.type}</Badge>
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: c.color }} />
-              </div>
+              <Card key={c.id}>
+                <CardContent className="p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">{c.icon}</span>
+                    <div>
+                      <p className="font-medium">{c.name}</p>
+                      <Badge variant="muted" className="text-xs">{CATEGORY_TYPES.find(t => t.value === c.type)?.label || c.type}</Badge>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded-full" style={{ backgroundColor: c.color }} />
+                    <Button variant="ghost" size="icon" onClick={() => setEditingCat(c)}>
+                      <Pencil className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         </TabsContent>
@@ -374,6 +404,21 @@ export function Settings() {
         <DialogContent>
           <DialogHeader><DialogTitle>Nueva categoría</DialogTitle></DialogHeader>
           <CategoryForm onSave={d => createCatMutation.mutate(d)} onCancel={() => setNewCatOpen(false)} />
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit category dialog */}
+      <Dialog open={!!editingCat} onOpenChange={(open) => !open && setEditingCat(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Editar categoría</DialogTitle></DialogHeader>
+          {editingCat && (
+            <CategoryForm 
+              initial={editingCat} 
+              isSystem={editingCat.is_system}
+              onSave={d => updateCatMutation.mutate({ ...d, id: editingCat.id })} 
+              onCancel={() => setEditingCat(null)} 
+            />
+          )}
         </DialogContent>
       </Dialog>
 

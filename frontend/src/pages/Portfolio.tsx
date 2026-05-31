@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { portfolioApi } from '@/lib/api'
-import { formatCurrency, formatDate } from '@/lib/utils'
+import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -11,8 +11,8 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import type { PortfolioPosition } from '@/lib/api'
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Legend, ReferenceLine,
+  AreaChart, Area, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, ReferenceLine, CartesianGrid,
 } from 'recharts'
 
 const ASSET_LABELS: Record<string, string> = {
@@ -95,14 +95,6 @@ function EditablePrice({ symbol, currentPrice, onSave }: { symbol: string; curre
   )
 }
 
-/* ─── Deterministic HSL color from ticker symbol ─────────────── */
-function symbolColor(sym: string): string {
-  let hash = 0
-  for (let i = 0; i < sym.length; i++) hash = sym.charCodeAt(i) + ((hash << 5) - hash)
-  const h = Math.abs(hash) % 360
-  return `hsl(${h}, 70%, 60%)`
-}
-
 /* ─── Price history chart ─────────────────────────────────────── */
 const PERIODS = [
   { value: '1mo', label: '1M' },
@@ -113,15 +105,62 @@ const PERIODS = [
   { value: '5y',  label: '5A' },
 ]
 
+// Distinct palette – ensures visually separated colors even with many positions
+const CHART_PALETTE = [
+  '#818cf8', // indigo
+  '#34d399', // emerald
+  '#fbbf24', // amber
+  '#f472b6', // pink
+  '#38bdf8', // sky
+  '#fb923c', // orange
+  '#a78bfa', // violet
+  '#4ade80', // green
+  '#f87171', // red
+  '#22d3ee', // cyan
+  '#e879f9', // fuchsia
+  '#facc15', // yellow
+]
+
+function symbolColor(sym: string): string {
+  let hash = 0
+  for (let i = 0; i < sym.length; i++) hash = sym.charCodeAt(i) + ((hash << 5) - hash)
+  return CHART_PALETTE[Math.abs(hash) % CHART_PALETTE.length]
+}
+
 function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosition[]; totalInvested?: number }) {
   const [period, setPeriod]         = useState('1y')
   const [cumulative, setCumulative] = useState(false)
+  const [hiddenSymbols, setHiddenSymbols] = useState<Set<string>>(() => {
+    const toHide = new Set<string>()
+    if (positions.length > 5) {
+      const sorted = [...positions].sort((a, b) => {
+         const valA = (a as any).market_value ?? (a.shares * (a.current_price || 0))
+         const valB = (b as any).market_value ?? (b.shares * (b.current_price || 0))
+         return valB - valA
+      })
+      sorted.slice(5).forEach(p => toHide.add(p.symbol))
+    }
+    return toHide
+  })
 
-  const symbols  = positions.map(p => p.symbol)
-  const nameOf   = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.name || p.symbol])), [positions])
-  const sharesOf = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.shares])), [positions])
-  // current_price from backend is already in EUR; divide by latest Yahoo close to get USD→EUR factor
+  const toggleSymbol = (sym: string) => {
+    setHiddenSymbols(prev => {
+      const next = new Set(prev)
+      if (next.has(sym)) next.delete(sym)
+      else next.add(sym)
+      return next
+    })
+  }
+
+  const symbols    = positions.map(p => p.symbol)
+  const nameOf     = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.name || p.symbol])), [positions])
+  const sharesOf   = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.shares])), [positions])
   const priceEurOf = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.current_price])), [positions])
+  // Stable per-symbol color derived from palette index (not hash) so colors stay distinct
+  const colorOf    = useMemo(
+    () => Object.fromEntries(symbols.map((sym, i) => [sym, CHART_PALETTE[i % CHART_PALETTE.length]])),
+    [symbols]
+  )
 
   const { data, isLoading } = useQuery({
     queryKey: ['price-history', symbols.join(','), period],
@@ -132,7 +171,6 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
 
   type ChartRow = Record<string, number | string>
 
-  // Merge all price series into one array keyed by date
   const chartData = useMemo((): ChartRow[] => {
     if (!data) return []
     const dateMap: Record<string, Record<string, number>> = {}
@@ -147,7 +185,6 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
       .map(([date, vals]) => ({ date, ...vals } as ChartRow))
   }, [data])
 
-  // Base-100 normalised (for comparison mode)
   const baseValues = useMemo(() => {
     if (!chartData.length) return {} as Record<string, number>
     const base: Record<string, number> = {}
@@ -169,7 +206,6 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
       return out
     }), [chartData, baseValues, symbols])
 
-  // USD→EUR conversion factor per symbol: latest Yahoo close vs known EUR price from backend
   const fxOf = useMemo((): Record<string, number> => {
     if (!data) return {}
     const out: Record<string, number> = {}
@@ -185,7 +221,6 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
     return out
   }, [data, priceEurOf])
 
-  // Cumulative portfolio value = Σ(shares × price × fxFactor) per date
   const cumulativeData = useMemo((): ChartRow[] => {
     const result: ChartRow[] = []
     for (const row of chartData) {
@@ -205,39 +240,46 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
 
   const displayData = cumulative ? cumulativeData : normalisedData
 
+  // Smart tick reducer: max 8 labels regardless of data density
+  const xTicks = useMemo(() => {
+    if (!displayData.length) return []
+    const total = displayData.length
+    if (total <= 8) return displayData.map(d => d.date as string)
+    const step = Math.ceil(total / 7)
+    return displayData
+      .filter((_, i) => i === 0 || i === total - 1 || i % step === 0)
+      .map(d => d.date as string)
+  }, [displayData])
+
   const ChartTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null
+    const dateLabel = (() => {
+      try {
+        return new Date(label + 'T00:00:00').toLocaleDateString('es-ES', {
+          day: 'numeric', month: 'short', year: 'numeric',
+        })
+      } catch { return label }
+    })()
     return (
-      <div className="rounded-lg border border-white/10 bg-[hsl(228_22%_7%)] p-3 text-xs shadow-xl min-w-[160px]">
-        <p className="font-medium text-foreground/70 mb-2">{label}</p>
-        {payload.map((p: any) => (
-          <p key={p.dataKey} className="flex items-center justify-between gap-3" style={{ color: p.stroke }}>
-            <span className="flex items-center gap-1.5">
-              <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: p.stroke }} />
-              <span className="truncate max-w-[100px]">
-                {cumulative ? 'Cartera total' : (nameOf[p.dataKey] || p.dataKey)}
+      <div className="rounded-xl border border-white/10 bg-[hsl(228_22%_6%)] p-3 text-xs shadow-2xl min-w-[190px]">
+        <p className="font-semibold text-foreground/60 mb-2 pb-1.5 border-b border-white/[0.07]">{dateLabel}</p>
+        <div className="space-y-1.5">
+          {payload.map((p: any) => (
+            <div key={p.dataKey} className="flex items-center justify-between gap-4" style={{ color: p.stroke }}>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: p.stroke }} />
+                <span className="truncate max-w-[110px] text-foreground/75">
+                  {cumulative ? 'Cartera total' : (nameOf[p.dataKey] || p.dataKey)}
+                </span>
               </span>
-            </span>
-            <span className="font-semibold tabular-nums">
-              {cumulative ? `${formatCurrency(p.value)}` : `${p.value >= 100 ? '+' : ''}${(p.value - 100).toFixed(2)}%`}
-            </span>
-          </p>
-        ))}
-      </div>
-    )
-  }
-
-  // Custom legend using names instead of tickers
-  const CustomLegend = ({ payload }: any) => {
-    if (!payload?.length) return null
-    return (
-      <div className="flex flex-wrap gap-x-4 gap-y-1 justify-center mt-2">
-        {payload.map((entry: any) => (
-          <span key={entry.dataKey} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <span className="inline-block w-3 h-0.5 rounded" style={{ backgroundColor: entry.color }} />
-            {nameOf[entry.dataKey] || entry.dataKey}
-          </span>
-        ))}
+              <span className="font-bold tabular-nums">
+                {cumulative
+                  ? formatCurrency(p.value)
+                  : `${p.value >= 100 ? '+' : ''}${(p.value - 100).toFixed(2)}%`}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -248,29 +290,31 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
 
   return (
     <div className="space-y-3">
-      {/* Controls */}
+      {/* ── Controls ── */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
+        <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/20 p-0.5">
           <button
             onClick={() => setCumulative(false)}
-            className={`text-xs px-3 py-1 rounded-md transition-colors ${!cumulative ? 'bg-primary/20 text-primary font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`text-xs px-3 py-1.5 rounded-md transition-all ${!cumulative ? 'bg-primary/20 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
           >
             Comparativa
           </button>
           <button
             onClick={() => setCumulative(true)}
-            className={`text-xs px-3 py-1 rounded-md transition-colors ${cumulative ? 'bg-primary/20 text-primary font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+            className={`text-xs px-3 py-1.5 rounded-md transition-all ${cumulative ? 'bg-primary/20 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
           >
             Valor total
           </button>
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-0.5 rounded-lg border border-border bg-muted/20 p-0.5">
           {PERIODS.map(p => (
             <button
               key={p.value}
               onClick={() => setPeriod(p.value)}
-              className={`text-xs px-2 py-1 rounded transition-colors ${
-                period === p.value ? 'bg-primary/20 text-primary font-medium' : 'text-muted-foreground hover:text-foreground'
+              className={`text-xs px-2.5 py-1.5 rounded-md transition-all ${
+                period === p.value
+                  ? 'bg-primary/20 text-primary font-semibold'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               {p.label}
@@ -278,32 +322,81 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
           ))}
         </div>
       </div>
-      <p className="text-[11px] text-muted-foreground">
-        {cumulative
-          ? 'Valor aproximado de la cartera a lo largo del tiempo (acciones actuales × precio histórico)'
-          : 'Rendimiento relativo base 100 — comparativa entre activos'}
-      </p>
 
+      {/* ── Inline legend pills (comparativa only) ── */}
+      {!cumulative && (
+        <div className="flex flex-wrap gap-x-2 gap-y-2 px-1">
+          {symbols.map(sym => {
+            const isHidden = hiddenSymbols.has(sym)
+            return (
+              <button
+                key={sym}
+                onClick={() => toggleSymbol(sym)}
+                className={cn(
+                  "flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-full border transition-all",
+                  isHidden 
+                    ? "border-transparent text-muted-foreground opacity-50 hover:bg-white/[0.05]" 
+                    : "border-white/[0.08] bg-white/[0.02] text-foreground shadow-sm"
+                )}
+              >
+                <span
+                  className="inline-block w-3 h-3 rounded-full shrink-0"
+                  style={{ backgroundColor: isHidden ? 'transparent' : colorOf[sym], border: isHidden ? `1px solid ${colorOf[sym]}` : 'none' }}
+                />
+                <span className="truncate max-w-[130px]">{nameOf[sym] || sym}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+
+
+      {/* ── Chart ── */}
       {isLoading ? (
-        <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        <div className="flex justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
       ) : (
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={displayData} margin={{ top: 8, right: 16, left: -8, bottom: 0 }}>
+        <ResponsiveContainer width="100%" height={360}>
+          <AreaChart data={displayData} margin={{ top: 8, right: 12, left: -4, bottom: 0 }}>
+            <defs>
+              <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.35}/>
+                <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+              </linearGradient>
+              {symbols.map(sym => (
+                <linearGradient key={sym} id={`color_${sym}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={colorOf[sym]} stopOpacity={0.25}/>
+                  <stop offset="95%" stopColor={colorOf[sym]} stopOpacity={0}/>
+                </linearGradient>
+              ))}
+            </defs>
+            <CartesianGrid
+              strokeDasharray="3 8"
+              stroke="rgba(255,255,255,0.04)"
+              vertical={false}
+            />
             <XAxis
               dataKey="date"
-              tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-              axisLine={false} tickLine={false}
+              ticks={xTicks}
+              tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))', dy: 6 }}
+              axisLine={{ stroke: 'rgba(255,255,255,0.06)' }}
+              tickLine={false}
               tickFormatter={d => {
                 const [y, m] = (d as string).split('-')
                 return `${m}/${y.slice(2)}`
               }}
-              interval="preserveStartEnd"
             />
             <YAxis
               tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
-              axisLine={false} tickLine={false}
+              axisLine={false}
+              tickLine={false}
               tickFormatter={v => {
-                if (!cumulative) return String(v)
+                if (!cumulative) {
+                  const diff = v - 100
+                  return `${diff >= 0 ? '+' : ''}${diff.toFixed(0)}%`
+                }
                 const a = Math.abs(v)
                 if (a >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`
                 if (a >= 10_000)   return `${(v / 1_000).toFixed(0)}k`
@@ -313,7 +406,7 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
               domain={['auto', 'auto']}
               width={50}
             />
-            <Tooltip content={<ChartTooltip />} />
+            <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }} />
             {cumulative ? (
               <>
                 <ReferenceLine
@@ -323,35 +416,38 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
                   ifOverflow="extendDomain"
                   label={{ value: `Invertido ${Math.round(totalInvested)} €`, position: 'insideTopRight', fontSize: 10, fill: 'rgba(255,255,255,0.4)' }}
                 />
-                <Line
+                <Area
                   type="monotone"
                   dataKey="total"
                   name="total"
                   stroke="hsl(var(--primary))"
-                  strokeWidth={2}
+                  fill="url(#colorTotal)"
+                  strokeWidth={2.5}
                   dot={false}
                   connectNulls
+                  activeDot={{ r: 5, fill: 'hsl(var(--primary))', stroke: 'hsl(var(--background))', strokeWidth: 2 }}
                 />
               </>
             ) : (
               <>
                 <ReferenceLine y={100} stroke="rgba(255,255,255,0.12)" strokeDasharray="5 4" />
-                <Legend content={<CustomLegend />} />
-                {symbols.map(sym => (
-                  <Line
+                {symbols.filter(sym => !hiddenSymbols.has(sym)).map(sym => (
+                  <Area
                     key={sym}
                     type="monotone"
                     dataKey={sym}
                     name={sym}
-                    stroke={symbolColor(sym)}
-                    strokeWidth={1.8}
+                    stroke={colorOf[sym]}
+                    fill={`url(#color_${sym})`}
+                    strokeWidth={2}
                     dot={false}
                     connectNulls
+                    activeDot={{ r: 4, fill: colorOf[sym], stroke: 'hsl(var(--background))', strokeWidth: 2 }}
                   />
                 ))}
               </>
             )}
-          </LineChart>
+          </AreaChart>
         </ResponsiveContainer>
       )}
     </div>
@@ -402,12 +498,16 @@ export function Portfolio() {
 
       {/* Summary cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card><CardContent className="p-5">
+        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-primary/[0.05] blur-2xl" />
+          <CardContent className="relative z-10 p-5">
           <p className="text-xs text-muted-foreground mb-1">Valor de mercado actual</p>
           <p className="text-xl font-semibold tracking-tight">{totalMarketValue > 0 ? formatCurrency(totalMarketValue) : '—'}</p>
           <p className="text-xs text-muted-foreground mt-1">Coste: {formatCurrency(perf?.total_invested ?? 0)}</p>
         </CardContent></Card>
-        <Card><CardContent className="p-5">
+        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-primary/[0.05] blur-2xl" />
+          <CardContent className="relative z-10 p-5">
           <p className="text-xs text-muted-foreground mb-1">P&L No realizado</p>
           <p className={`text-xl font-semibold tracking-tight ${totalUnrealized >= 0 ? 'text-positive' : 'text-negative'}`}>
             {totalMarketValue > 0
@@ -416,15 +516,13 @@ export function Portfolio() {
           </p>
           <p className="text-xs text-muted-foreground mt-1">P&L Realizado: {(perf?.total_realized_pnl ?? 0) >= 0 ? '+' : ''}{formatCurrency(perf?.total_realized_pnl ?? 0)}</p>
         </CardContent></Card>
-        <Card><CardContent className="p-5">
+        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-positive/[0.05] blur-2xl" />
+          <CardContent className="relative z-10 p-5">
           <p className="text-xs text-muted-foreground mb-1">Dividendos recibidos</p>
           <p className="text-xl font-semibold tracking-tight text-positive">+{formatCurrency(perf?.total_dividends ?? 0)}</p>
           <p className="text-xs text-muted-foreground mt-1">Comisiones: -{formatCurrency(perf?.total_fees ?? 0)}</p>
         </CardContent></Card>
-      </div>
-
-      <div className="text-xs text-muted-foreground bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
-        💡 Los precios en tiempo real se obtienen de Yahoo Finance y se convierten automáticamente a EUR. Puedes editar el precio haciendo hover sobre la columna "Precio actual (€)" y clicando el lápiz — se muestra en amarillo.
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -432,152 +530,16 @@ export function Portfolio() {
         <div className="overflow-x-auto pb-0.5">
           <TabsList className="w-max min-w-full sm:w-auto">
             <TabsTrigger value="charts">📈 Gráficas</TabsTrigger>
-            <TabsTrigger value="positions">Posiciones ({openPositions.length})</TabsTrigger>
             <TabsTrigger value="dividends">Dividendos</TabsTrigger>
-            <TabsTrigger value="closed">Cerradas ({closedPositions.length})</TabsTrigger>
             <TabsTrigger value="history">Historial</TabsTrigger>
           </TabsList>
         </div>
 
-        <TabsContent value="positions">
-          <Card>
-            <CardContent className="p-0">
-              {/* Mobile cards */}
-              <div className="sm:hidden divide-y divide-border/50">
-                {openPositions.map(p => (
-                  <div key={p.symbol} className="px-4 py-3.5 space-y-2">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-sm truncate">{p.name}</p>
-                        <div className="flex gap-1 mt-0.5">
-                          <Badge variant="muted" className="text-xs">{p.symbol}</Badge>
-                          <Badge variant="secondary" className="text-xs">{ASSET_LABELS[p.asset_class] || p.asset_class}</Badge>
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="font-semibold text-sm">
-                          {p.market_value != null ? formatCurrency(p.market_value) : formatCurrency(p.total_invested)}
-                        </p>
-                        {p.unrealized_pnl != null && (
-                          <p className={`text-xs font-medium ${p.unrealized_pnl >= 0 ? 'text-positive' : 'text-negative'}`}>
-                            {p.unrealized_pnl >= 0 ? '+' : ''}{formatCurrency(p.unrealized_pnl)}
-                            {p.unrealized_pnl_pct != null && (
-                              <span className="ml-1 opacity-80">
-                                ({p.unrealized_pnl_pct >= 0 ? '+' : ''}{p.unrealized_pnl_pct.toFixed(1)}%)
-                              </span>
-                            )}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>{p.shares.toFixed(4)} acc. · P.med. {formatCurrency(p.avg_buy_price)}</span>
-                      {p.current_price && (
-                        <span>Actual: {formatCurrency(p.current_price)}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {openPositions.length === 0 && (
-                  <p className="px-4 py-8 text-center text-muted-foreground text-sm">Sin posiciones abiertas</p>
-                )}
-              </div>
-
-              {/* Desktop table */}
-              <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-muted-foreground">
-                      <th className="text-left px-4 py-3 font-medium">Activo</th>
-                      <th className="text-right px-4 py-3 font-medium">Acciones</th>
-                      <th className="text-right px-4 py-3 font-medium hidden sm:table-cell">Precio medio</th>
-                      <th className="text-right px-4 py-3 font-medium hidden md:table-cell">Precio actual (€)</th>
-                      <th className="text-right px-4 py-3 font-medium">Valor mercado</th>
-                      <th className="text-right px-4 py-3 font-medium hidden lg:table-cell">P&L no realizado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {openPositions.map(p => (
-                      <tr key={p.symbol} className="border-b border-border/50 hover:bg-accent/30 group">
-                        <td className="px-4 py-3">
-                          <p className="font-medium">{p.name}</p>
-                          <div className="flex gap-1 mt-0.5">
-                            <Badge variant="muted" className="text-xs">{p.symbol}</Badge>
-                            <Badge variant="secondary" className="text-xs">{ASSET_LABELS[p.asset_class] || p.asset_class}</Badge>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono">{p.shares.toFixed(6)}</td>
-                        <td className="px-4 py-3 text-right text-muted-foreground hidden sm:table-cell">{formatCurrency(p.avg_buy_price)}</td>
-                        <td className="px-4 py-3 text-right hidden md:table-cell">
-                          <EditablePrice
-                            symbol={p.symbol}
-                            currentPrice={p.current_price}
-                            onSave={() => refresh(r => r + 1)}
-                          />
-                        </td>
-                        <td className="px-4 py-3 text-right font-semibold">
-                          {p.market_value != null ? formatCurrency(p.market_value) : formatCurrency(p.total_invested)}
-                        </td>
-                        <td className="px-4 py-3 text-right hidden lg:table-cell">
-                          {p.unrealized_pnl != null ? (
-                            <div>
-                              <span className={p.unrealized_pnl >= 0 ? 'text-positive' : 'text-negative'}>
-                                {p.unrealized_pnl >= 0 ? '+' : ''}{formatCurrency(p.unrealized_pnl)}
-                              </span>
-                              <p className={`text-xs ${p.unrealized_pnl_pct != null && p.unrealized_pnl_pct >= 0 ? 'text-positive/70' : 'text-negative/70'}`}>
-                                {p.unrealized_pnl_pct != null ? `${p.unrealized_pnl_pct >= 0 ? '+' : ''}${p.unrealized_pnl_pct.toFixed(2)}%` : ''}
-                              </p>
-                            </div>
-                          ) : <span className="text-muted-foreground text-xs">—</span>}
-                        </td>
-                      </tr>
-                    ))}
-                    {openPositions.length === 0 && (
-                      <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Sin posiciones abiertas</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="closed">
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-muted-foreground">
-                      <th className="text-left px-4 py-3 font-medium">Activo</th>
-                      <th className="text-right px-4 py-3 font-medium">P&L Realizado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {closedPositions.map(p => (
-                      <tr key={p.symbol} className="border-b border-border/50">
-                        <td className="px-4 py-3">
-                          <p className="font-medium">{p.name}</p>
-                          <Badge variant="muted" className="text-xs">{p.symbol}</Badge>
-                        </td>
-                        <td className={`px-4 py-3 text-right font-semibold ${p.realized_pnl >= 0 ? 'text-positive' : 'text-negative'}`}>
-                          {p.realized_pnl >= 0 ? '+' : ''}{formatCurrency(p.realized_pnl)}
-                        </td>
-                      </tr>
-                    ))}
-                    {closedPositions.length === 0 && (
-                      <tr><td colSpan={2} className="px-4 py-8 text-center text-muted-foreground">Sin posiciones cerradas</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="dividends">
-          <Card>
-            <CardContent className="p-0">
+          <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+            <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
+            <CardContent className="relative z-10 p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -609,8 +571,9 @@ export function Portfolio() {
         </TabsContent>
 
         <TabsContent value="history">
-          <Card>
-            <CardContent className="p-0">
+          <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+            <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
+            <CardContent className="relative z-10 p-0">
               {/* Mobile cards */}
               <div className="sm:hidden divide-y divide-border/50">
                 {history?.items.map(tx => (
@@ -669,11 +632,71 @@ export function Portfolio() {
           </Card>
         </TabsContent>
         <TabsContent value="charts">
-          <Card>
-            <CardContent className="p-5">
-              <PriceChart positions={openPositions} totalInvested={perf?.total_invested ?? 0} />
-            </CardContent>
-          </Card>
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-[3fr_2fr]">
+            {/* Gráfica — columna izquierda */}
+            <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+              <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
+              <CardContent className="relative z-10 p-5">
+                <PriceChart positions={openPositions} totalInvested={perf?.total_invested ?? 0} />
+              </CardContent>
+            </Card>
+
+            {/* Posiciones — columna derecha */}
+            <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+              <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
+              <CardHeader className="relative z-10 pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Posiciones abiertas
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="relative z-10 p-0">
+                <div className="divide-y divide-border/50">
+                  {openPositions.map(p => (
+                    <div key={p.symbol} className="px-4 py-3 flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{p.name}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <Badge variant="muted" className="text-xs">{p.symbol}</Badge>
+                          <span className="text-xs text-muted-foreground">{p.shares.toFixed(4)} acc.</span>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-sm font-semibold">
+                          {p.market_value != null ? formatCurrency(p.market_value) : formatCurrency(p.total_invested)}
+                        </p>
+                        {p.unrealized_pnl != null && (
+                          <p className={`text-xs font-medium ${p.unrealized_pnl >= 0 ? 'text-positive' : 'text-negative'}`}>
+                            {p.unrealized_pnl >= 0 ? '+' : ''}{formatCurrency(p.unrealized_pnl)}
+                            {p.unrealized_pnl_pct != null && (
+                              <span className="opacity-70 ml-1">({p.unrealized_pnl_pct >= 0 ? '+' : ''}{p.unrealized_pnl_pct.toFixed(1)}%)</span>
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {openPositions.length === 0 && (
+                    <p className="px-4 py-8 text-center text-sm text-muted-foreground">Sin posiciones abiertas</p>
+                  )}
+                </div>
+
+                {/* Totales */}
+                {openPositions.length > 0 && (
+                  <div className="border-t border-border px-4 py-3 bg-muted/30">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Total</span>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold">{formatCurrency(totalMarketValue)}</p>
+                        <p className={`text-xs font-medium ${totalUnrealized >= 0 ? 'text-positive' : 'text-negative'}`}>
+                          {totalUnrealized >= 0 ? '+' : ''}{formatCurrency(totalUnrealized)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

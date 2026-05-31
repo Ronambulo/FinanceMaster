@@ -41,11 +41,16 @@ def update_category(
 ):
     cat = db.query(models.Category).filter(
         models.Category.id == cat_id,
-        models.Category.user_id == current_user.id,
+        (models.Category.user_id == current_user.id) | (models.Category.is_system == True)
     ).first()
     if not cat:
         raise HTTPException(404, "Categoría no encontrada")
-    for k, v in data.model_dump(exclude_none=True).items():
+        
+    update_data = data.model_dump(exclude_none=True)
+    if cat.is_system and "name" in update_data and update_data["name"] != cat.name:
+        raise HTTPException(400, "No se puede cambiar el nombre de una categoría del sistema (afectaría a la auto-categorización).")
+        
+    for k, v in update_data.items():
         setattr(cat, k, v)
     db.commit()
     db.refresh(cat)

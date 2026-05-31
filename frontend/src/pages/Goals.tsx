@@ -19,8 +19,9 @@ function GoalCard({ goal, onDelete, onUpdate }: { goal: Goal; onDelete: (id: num
   const [newAmt, setNewAmt] = useState(String(goal.current_amount))
 
   return (
-    <Card>
-      <CardContent className="p-5">
+    <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+      <div className="pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full bg-primary/[0.04] blur-3xl" />
+      <CardContent className="relative z-10 p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
@@ -170,11 +171,12 @@ export function Goals() {
       </div>
 
       {/* Savings allocation */}
-      <Card>
-        <CardHeader className="pb-3">
+      <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+        <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-positive/[0.04] blur-3xl" />
+        <CardHeader className="relative z-10 pb-3">
           <CardTitle className="text-base flex items-center gap-2"><PiggyBank className="h-5 w-5 text-primary" />Asignación mensual de ingresos</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="relative z-10 space-y-4">
           <div className="grid sm:grid-cols-3 gap-4">
             {[
               { key: 'savings_pct', label: 'Ahorro', icon: '💰', color: 'text-primary' },
@@ -221,7 +223,9 @@ export function Goals() {
             <GoalCard key={g.id} goal={g} onDelete={id => deleteMutation.mutate(id)} onUpdate={(id, d) => updateMutation.mutate({ id, data: d })} />
           ))}
           {goals?.length === 0 && (
-            <Card className="col-span-2"><CardContent className="py-12 text-center text-sm text-muted-foreground">
+            <Card className="col-span-2 relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+              <div className="pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full bg-primary/[0.04] blur-3xl" />
+              <CardContent className="relative z-10 py-12 text-center text-sm text-muted-foreground">
               No tienes objetivos activos. Crea uno para empezar a hacer seguimiento.
             </CardContent></Card>
           )}
