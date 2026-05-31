@@ -560,7 +560,7 @@ export function Transactions() {
                             </SelectContent>
                           </Select>
                           {tx.is_auto_categorized && !tx.is_internal_transfer && (
-                            <Sparkles className="h-3.5 w-3.5 text-primary shrink-0 opacity-70" title="Categorizado automáticamente" />
+                            <span title="Categorizado automáticamente"><Sparkles className="h-3.5 w-3.5 text-primary shrink-0 opacity-70" /></span>
                           )}
                         </div>
 
@@ -643,7 +643,7 @@ export function Transactions() {
                               </SelectContent>
                             </Select>
                             {tx.is_auto_categorized && !tx.is_internal_transfer && (
-                              <Sparkles className="h-4 w-4 text-primary shrink-0 opacity-80" title="Categorizado automáticamente" />
+                              <span title="Categorizado automáticamente"><Sparkles className="h-4 w-4 text-primary shrink-0 opacity-80" /></span>
                             )}
                           </div>
                         </td>

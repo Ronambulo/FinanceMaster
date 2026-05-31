@@ -166,7 +166,7 @@ function MetricCard({
 }: {
   title: string; value: string; icon: any; accent?: 'emerald' | 'rose' | 'amber' | 'violet' | 'cyan' | 'orange' | 'default'; sub?: string; delay?: number
 }) {
-  const colors = {
+  const colors: Record<string, { text: string; bg: string; glow: string; icon?: string }> = {
     emerald: { text: 'text-emerald-400', bg: 'bg-emerald-400/10', glow: 'bg-emerald-500/20' },
     rose: { text: 'text-rose-400', bg: 'bg-rose-400/10', glow: 'bg-rose-500/20' },
     amber: { text: 'text-amber-400', bg: 'bg-amber-400/10', glow: 'bg-amber-500/20' },
