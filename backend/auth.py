@@ -31,6 +31,21 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
+def get_user_from_token(token: str, db: Session) -> models.User:
+    """Resolve a user from a raw JWT string (used by SSE where Depends can't inject)."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: int = payload.get("sub")
+        if user_id is None:
+            raise ValueError("no sub")
+        user = db.query(models.User).filter(models.User.id == int(user_id)).first()
+        if user is None or not user.is_active:
+            raise ValueError("user not found")
+        return user
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Invalid token") from exc
+
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> models.User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

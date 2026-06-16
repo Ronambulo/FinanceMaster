@@ -1,6 +1,6 @@
-﻿from datetime import date, timedelta
+from datetime import date, timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import func, extract
 from sqlalchemy.orm import Session, joinedload
 from .. import models, schemas, auth
@@ -61,7 +61,6 @@ def overview(
     interest_month = _sum(cash_txs, INTEREST_TYPES, start, end)
     interest_total = _sum(cash_txs, INTEREST_TYPES)
 
-    # Real cash balance = sum of ALL signed amounts (CASH + TRADING BUY/SELL affect the cash account)
     balance_raw = db.query(func.sum(models.Transaction.amount)).filter(
         models.Transaction.user_id == current_user.id
     ).scalar()
@@ -117,9 +116,9 @@ def by_category(
         cat = db.query(models.Category).filter(models.Category.id == cat_id).first() if cat_id else None
         result.append(schemas.CategoryBreakdown(
             category_id=cat_id,
-            category_name=cat.name if cat else "Sin categorÃ­a",
+            category_name=cat.name if cat else "Sin categoría",
             category_color=cat.color if cat else "#94a3b8",
-            category_icon=cat.icon if cat else "â“",
+            category_icon=cat.icon if cat else "❓",
             total=round(total, 2),
             count=cnt,
         ))
@@ -216,7 +215,6 @@ def monthly_detail(
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
-    """All cash expense/income transactions for a given period, with exclude_from_stats flag."""
     if date_from and date_to:
         start, end = date_from, date_to
     else:
@@ -245,12 +243,194 @@ def monthly_detail(
             date=tx.date,
             name=tx.name or tx.description or tx.type,
             category_id=tx.category_id,
-            category_name=tx.category.name if tx.category else "Sin categorÃ­a",
+            category_name=tx.category.name if tx.category else "Sin categoría",
             category_color=tx.category.color if tx.category else "#94a3b8",
-            category_icon=tx.category.icon if tx.category else "â“",
+            category_icon=tx.category.icon if tx.category else "❓",
             amount=tx.amount,
             exclude_from_stats=tx.exclude_from_stats or False,
         )
         for tx in txs
     ]
 
+
+@router.get("/net-worth-history", response_model=List[schemas.NetWorthPoint])
+def net_worth_history(
+    months: int = Query(24, ge=3, le=60),
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    from ..services.portfolio_calculator import _get_yahoo_price_in_eur, ISIN_TO_YAHOO, _get_usd_eur_rate
+
+    today = date.today()
+
+    # All cash & trading transactions ordered by date
+    cash_txs = (
+        db.query(models.Transaction)
+        .filter(
+            models.Transaction.user_id == current_user.id,
+            models.Transaction.account_category == "CASH",
+        )
+        .order_by(models.Transaction.date)
+        .all()
+    )
+    trading_txs = (
+        db.query(models.Transaction)
+        .filter(
+            models.Transaction.user_id == current_user.id,
+            models.Transaction.account_category == "TRADING",
+        )
+        .order_by(models.Transaction.date)
+        .all()
+    )
+    debts = (
+        db.query(models.Debt)
+        .filter(models.Debt.user_id == current_user.id)
+        .all()
+    )
+
+    # Build month list
+    month_list = []
+    for i in range(months - 1, -1, -1):
+        m_num = today.month - i
+        y_num = today.year
+        while m_num <= 0:
+            m_num += 12
+            y_num -= 1
+        _start, end_m = _month_range(y_num, m_num)
+        month_list.append((y_num, m_num, end_m))
+
+    # Fetch historical monthly close prices for all symbols
+    symbols_set = {tx.symbol for tx in trading_txs if tx.symbol}
+    hist_prices: dict = {}  # symbol → {YYYY-MM: eur_price}
+
+    if symbols_set:
+        try:
+            import yfinance as yf
+            usd_rate = _get_usd_eur_rate()
+            for sym in symbols_set:
+                entry = ISIN_TO_YAHOO.get(sym, sym)
+                if entry is None:
+                    continue
+                yahoo_sym, currency = (entry if isinstance(entry, tuple) else (entry, "EUR"))
+                try:
+                    tk = yf.Ticker(yahoo_sym)
+                    hist = tk.history(period="5y", interval="1mo")
+                    if hist.empty:
+                        continue
+                    hist_prices[sym] = {}
+                    for idx, row in hist.iterrows():
+                        key = f"{idx.year}-{idx.month:02d}"
+                        price_raw = float(row["Close"])
+                        hist_prices[sym][key] = round(
+                            price_raw * usd_rate if currency == "USD" else price_raw, 4
+                        )
+                except Exception:
+                    pass
+        except ImportError:
+            pass
+
+    result = []
+    for y_num, m_num, end_m in month_list:
+        month_key = f"{y_num}-{m_num:02d}"
+
+        # 1. Cumulative cash balance
+        cash_balance = sum(tx.amount for tx in cash_txs if tx.date <= end_m)
+
+        # 2. Portfolio value: simulate positions up to end of month
+        positions: dict = {}
+        for tx in trading_txs:
+            if tx.date > end_m:
+                continue
+            sym = tx.symbol or "UNKNOWN"
+            if tx.type == "BUY":
+                positions[sym] = positions.get(sym, 0.0) + abs(tx.shares or 0.0)
+            elif tx.type == "SELL":
+                positions[sym] = max(0.0, positions.get(sym, 0.0) - abs(tx.shares or 0.0))
+
+        portfolio_val = 0.0
+        for sym, shares in positions.items():
+            if shares < 0.0001:
+                continue
+            price = hist_prices.get(sym, {}).get(month_key)
+            if price is None:
+                price = _get_yahoo_price_in_eur(sym)
+            if price:
+                portfolio_val += shares * price
+
+        # 3. Outstanding debts I_OWE at that date
+        debt_total = 0.0
+        for debt in debts:
+            created = debt.created_at.date() if debt.created_at else today
+            if created > end_m:
+                continue
+            if debt.direction.value != "I_OWE":
+                continue
+            paid = sum(p.amount for p in debt.payments if p.payment_date <= end_m)
+            remaining = max(0.0, debt.total_amount - paid)
+            if remaining > 0.0:
+                debt_total += remaining
+
+        result.append(schemas.NetWorthPoint(
+            month=month_key,
+            cash=round(cash_balance, 2),
+            portfolio=round(portfolio_val, 2),
+            debt=round(debt_total, 2),
+            net_worth=round(cash_balance + portfolio_val - debt_total, 2),
+        ))
+
+    return result
+
+
+# ── Insights ──────────────────────────────────────────────────────────────────
+
+@router.get("/insights", response_model=List[schemas.InsightOut])
+def get_insights(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    insights = (
+        db.query(models.Insight)
+        .filter(models.Insight.user_id == current_user.id)
+        .order_by(models.Insight.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    # If no stored insights, compute on the fly (first visit)
+    if not insights:
+        from ..services.insights import refresh_insights
+        refresh_insights(db, current_user.id)
+        insights = (
+            db.query(models.Insight)
+            .filter(models.Insight.user_id == current_user.id)
+            .order_by(models.Insight.created_at.desc())
+            .limit(20)
+            .all()
+        )
+    return insights
+
+
+@router.patch("/insights/{insight_id}/read")
+def mark_insight_read(
+    insight_id: int,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    insight = db.query(models.Insight).filter(
+        models.Insight.id == insight_id,
+        models.Insight.user_id == current_user.id,
+    ).first()
+    if not insight:
+        raise HTTPException(404, "Insight no encontrado")
+    insight.is_read = True
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/insights/refresh")
+def refresh_user_insights(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    from ..services.insights import refresh_insights
+    refresh_insights(db, current_user.id)
+    return {"ok": True}

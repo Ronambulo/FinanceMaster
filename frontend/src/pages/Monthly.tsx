@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query'
 import { dashApi, budgetApi, txApi, recurringApi } from '@/lib/api'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
@@ -17,6 +18,7 @@ import { useToast } from '@/components/ui/toast'
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Loader2,
   TrendingUp, TrendingDown, Eye, EyeOff, RefreshCw, Calendar, Search,
+  ArrowUpRight, ArrowDownRight, FileText, FileSpreadsheet,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
@@ -135,10 +137,12 @@ function AddBudgetDialog({
 export function Monthly() {
   const qc = useQueryClient()
   const { toast } = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [cycleOffset, setCycleOffset] = useState(0)  // 0 = latest cycle, -1 = previous, etc.
   const [addOpen, setAddOpen] = useState(false)
   const [txSearch, setTxSearch]     = useState('')
   const [txTypeGroup, setTxTypeGroup] = useState('')  // '' | 'income' | 'expense'
+  const [cycleCategory, setCycleCategory] = useState<number | null>(null) // category driving cycle detection
 
   /* ── Categories (still needed for the budget dialog) ── */
   const { data: categories } = useQuery({
@@ -150,10 +154,10 @@ export function Monthly() {
   const {
     cycles, selectedCycleIdx, isLatestCycle,
     periodStart, periodEnd, isPayrollCycle, monthStr, cycleRangeLabel,
-  } = usePayrollCycle(cycleOffset)
+  } = usePayrollCycle(cycleOffset, cycleCategory)
 
-  function prevCycle() { setCycleOffset(o => Math.max(-(cycles.length - 1), o - 1)) }
-  function nextCycle()  { setCycleOffset(o => Math.min(0, o + 1)) }
+  function goPrevCycle() { setCycleOffset(o => Math.max(-(cycles.length - 1), o - 1)) }
+  function goNextCycle()  { setCycleOffset(o => Math.min(0, o + 1)) }
 
   // Derive month label from cycleRangeLabel (first part) or fall back to full label
   const cycleMonthLabel = isPayrollCycle
@@ -186,9 +190,18 @@ export function Monthly() {
     enabled: !!(periodStart && periodEnd),
   })
 
+  /* ── Previous cycle for comparison ── */
+  const prevCycle = selectedCycleIdx > 0 ? cycles[selectedCycleIdx - 1] : null
+  const { data: prevDetail } = useQuery({
+    queryKey: ['monthly-detail', prevCycle?.start, prevCycle?.end],
+    queryFn: () => dashApi.monthlyDetail({ date_from: prevCycle!.start, date_to: prevCycle!.end }),
+    enabled: !!prevCycle,
+  })
+
   const { data: budgetStatus } = useQuery({
-    queryKey: ['budget-status', monthStr],
-    queryFn: () => budgetApi.status(monthStr),
+    queryKey: ['budget-status', periodStart, periodEnd],
+    queryFn: () => budgetApi.status(monthStr, periodStart, periodEnd),
+    enabled: !!(periodStart && periodEnd),
   })
 
   // ── Recurring queries ───────────────────────────────────────────
@@ -220,7 +233,7 @@ export function Monthly() {
       txApi.update(id, { exclude_from_stats: exclude }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['monthly-detail', periodStart, periodEnd] })
-      qc.invalidateQueries({ queryKey: ['budget-status', monthStr] })
+      qc.invalidateQueries({ queryKey: ['budget-status', periodStart, periodEnd] })
     },
     onError: (e: any) => toast(e.message, 'error'),
   })
@@ -229,7 +242,7 @@ export function Monthly() {
     mutationFn: budgetApi.delete,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['budgets'] })
-      qc.invalidateQueries({ queryKey: ['budget-status'] })
+      qc.invalidateQueries({ queryKey: ['budget-status', periodStart, periodEnd] })
       toast('Presupuesto eliminado', 'success')
     },
   })
@@ -252,6 +265,66 @@ export function Monthly() {
   const included = detail?.filter(r => !r.exclude_from_stats) ?? []
   const totalIncome   = included.filter(r => r.amount > 0).reduce((s, r) => s + r.amount, 0)
   const totalExpenses = included.filter(r => r.amount < 0).reduce((s, r) => s + Math.abs(r.amount), 0)
+
+  // Previous cycle totals for comparison
+  const prevIncluded    = prevDetail?.filter(r => !r.exclude_from_stats) ?? []
+  const prevIncome      = prevIncluded.filter(r => r.amount > 0).reduce((s, r) => s + r.amount, 0)
+  const prevExpenses    = prevIncluded.filter(r => r.amount < 0).reduce((s, r) => s + Math.abs(r.amount), 0)
+  const prevSavings     = prevIncome - prevExpenses
+  const hasPrevCycle    = !!prevCycle && prevDetail !== undefined
+
+  function pctDelta(current: number, prev: number) {
+    if (!prev) return null
+    return ((current - prev) / Math.abs(prev)) * 100
+  }
+
+  // Export functions
+  async function exportPDF() {
+    const { default: jsPDF } = await import('jspdf')
+    const { default: autoTable } = await import('jspdf-autotable')
+    const doc = new jsPDF()
+    doc.setFontSize(14)
+    doc.text(`Resumen ${cycleMonthLabel}`, 14, 16)
+    doc.setFontSize(10)
+    doc.text(`Ingresos: ${formatCurrency(totalIncome)}   Gastos: ${formatCurrency(totalExpenses)}   Ahorro: ${formatCurrency(totalIncome - totalExpenses)}`, 14, 24)
+    autoTable(doc, {
+      startY: 30,
+      head: [['Fecha', 'Nombre', 'Categoría', 'Importe']],
+      body: (detail ?? []).map(r => [
+        r.date,
+        r.name ?? '',
+        r.category_name,
+        (r.amount >= 0 ? '+' : '') + formatCurrency(r.amount),
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [40, 40, 60] },
+    })
+    doc.save(`financemaster-${monthStr}.pdf`)
+  }
+
+  async function exportExcel() {
+    const XLSX = await import('xlsx')
+    const rows = (detail ?? []).map(r => ({
+      Fecha: r.date,
+      Nombre: r.name ?? '',
+      Categoría: r.category_name,
+      Importe: r.amount,
+      Excluido: r.exclude_from_stats ? 'Sí' : 'No',
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, cycleMonthLabel.slice(0, 31))
+    XLSX.writeFile(wb, `financemaster-${monthStr}.xlsx`)
+  }
+
+  // Handle ?export=pdf/xlsx from command palette
+  useEffect(() => {
+    const exp = searchParams.get('export')
+    if (!exp || !detail) return
+    setSearchParams({}, { replace: true })
+    if (exp === 'pdf') exportPDF()
+    if (exp === 'xlsx') exportExcel()
+  }, [searchParams, detail])
 
   // Filtered view for the transaction list
   const filteredDetail = useMemo(() => {
@@ -278,10 +351,30 @@ export function Monthly() {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={prevCycle} disabled={selectedCycleIdx <= 0}><ChevronLeft className="h-4 w-4" /></Button>
-          <Button variant="outline" size="icon" onClick={nextCycle} disabled={isLatestCycle}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="icon" onClick={goPrevCycle} disabled={selectedCycleIdx <= 0}><ChevronLeft className="h-4 w-4" /></Button>
+          <Button variant="outline" size="icon" onClick={goNextCycle} disabled={isLatestCycle}>
             <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Select
+            value={cycleCategory !== null ? String(cycleCategory) : 'auto'}
+            onValueChange={v => { setCycleCategory(v === 'auto' ? null : Number(v)); setCycleOffset(0) }}
+          >
+            <SelectTrigger className="h-8 w-44 text-sm">
+              <SelectValue placeholder="Tramos por..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Auto (nómina)</SelectItem>
+              {categories?.map(c => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.icon} {c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="sm" onClick={exportPDF} title="Exportar PDF">
+            <FileText className="h-3.5 w-3.5 mr-1.5" />PDF
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportExcel} title="Exportar Excel">
+            <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />Excel
           </Button>
           <Button onClick={() => setAddOpen(true)}><Plus className="h-4 w-4 mr-2" />Presupuesto</Button>
         </div>
@@ -315,6 +408,41 @@ export function Monthly() {
         </CardContent></Card>
       </div>
 
+      {/* ── Comparación con ciclo anterior ── */}
+      {hasPrevCycle && (
+        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <CardContent className="p-4">
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-3">vs ciclo anterior</p>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: 'Ingresos', cur: totalIncome, prev: prevIncome, good: 'up' },
+                { label: 'Gastos',   cur: totalExpenses, prev: prevExpenses, good: 'down' },
+                { label: 'Ahorro',   cur: totalIncome - totalExpenses, prev: prevSavings, good: 'up' },
+              ].map(({ label, cur, prev, good }) => {
+                const delta = pctDelta(cur, prev)
+                const isPositive = delta !== null && delta >= 0
+                const isGood = delta !== null && ((good === 'up' && delta >= 0) || (good === 'down' && delta <= 0))
+                return (
+                  <div key={label} className="text-center space-y-1">
+                    <p className="text-[11px] text-muted-foreground">{label}</p>
+                    <p className="text-sm font-semibold">{formatCurrency(cur)}</p>
+                    {delta !== null && (
+                      <div className={cn('flex items-center justify-center gap-0.5 text-xs font-medium', isGood ? 'text-positive' : 'text-negative')}>
+                        {isPositive
+                          ? <ArrowUpRight className="h-3 w-3" />
+                          : <ArrowDownRight className="h-3 w-3" />}
+                        {Math.abs(delta).toFixed(1)}%
+                      </div>
+                    )}
+                    <p className="text-[10px] text-muted-foreground/50">{formatCurrency(prev)} ant.</p>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── Gráfica tendencia 12 meses ── */}
       <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
         <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
@@ -342,7 +470,12 @@ export function Monthly() {
         <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
           <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-amber-500/[0.04] blur-3xl" />
           <CardHeader className="relative z-10 flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Presupuestos</CardTitle>
+            <div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Presupuestos</CardTitle>
+              {isPayrollCycle && (
+                <p className="text-[10px] text-muted-foreground/50 mt-0.5">Prorateado al tramo ({Math.round((new Date(periodEnd).getTime() - new Date(periodStart).getTime()) / 86400000) + 1}d / 30d)</p>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="relative z-10 space-y-4">
             {budgetStatus.map(b => (

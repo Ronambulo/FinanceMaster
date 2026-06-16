@@ -110,9 +110,27 @@ export const ACCENT_COLORS = [
   { id: 'red',    name: 'Rojo',       h: '0',   s: '75%',  l: '55%' },
 ]
 
-export const THEME_KEY       = 'fm_theme'
-export const ACCENT_KEY      = 'fm_accent'
+export const THEME_KEY        = 'fm_theme'
+export const ACCENT_KEY       = 'fm_accent'
 export const CHART_COLORS_KEY = 'fm_chart_colors'
+export const COMPACT_KEY      = 'fm_compact'
+
+export function getTheme(): string {
+  return localStorage.getItem(THEME_KEY) || 'trade-republic'
+}
+
+export function getCompact(): boolean {
+  return localStorage.getItem(COMPACT_KEY) === 'true'
+}
+export function setCompact(val: boolean): void {
+  if (val) {
+    localStorage.setItem(COMPACT_KEY, 'true')
+    document.documentElement.classList.add('compact')
+  } else {
+    localStorage.removeItem(COMPACT_KEY)
+    document.documentElement.classList.remove('compact')
+  }
+}
 
 export interface ChartColors { income: string; expense: string; savings: string }
 

@@ -27,19 +27,24 @@ export interface UsePayrollCycleReturn {
   monthStr: string
 }
 
-/** Derives the current payroll cycle given a cycleOffset (0 = latest, -1 = previous, …) */
-export function usePayrollCycle(cycleOffset: number): UsePayrollCycleReturn {
+/**
+ * Derives payroll cycles from a cycleOffset (0 = latest, -1 = previous, …).
+ * Pass overrideCategoryId to use a specific category instead of auto-detecting nómina.
+ */
+export function usePayrollCycle(cycleOffset: number, overrideCategoryId?: number | null): UsePayrollCycleReturn {
   const today = useMemo(() => new Date(), [])
 
-  /* ── 1. Categories ── */
+  /* ── 1. Categories (for auto-detection fallback) ── */
   const { data: categories } = useQuery({
     queryKey: ['categories'],
     queryFn: catApi.list,
     staleTime: 10 * 60_000,
+    enabled: !overrideCategoryId,
   })
 
-  /* ── 2. Locate the "nómina" category ── */
+  /* ── 2. Auto-detect "nómina" category (skipped when override is set) ── */
   const nominaCategory = useMemo(() => {
+    if (overrideCategoryId) return null
     return (
       categories?.find(c => {
         const n = c.name.toLowerCase()
@@ -51,28 +56,72 @@ export function usePayrollCycle(cycleOffset: number): UsePayrollCycleReturn {
         )
       }) ?? null
     )
-  }, [categories])
+  }, [categories, overrideCategoryId])
 
-  /* ── 3. Fetch payroll transactions ── */
-  const { data: payrollData } = useQuery({
-    queryKey: ['payroll-transactions', nominaCategory?.id ?? 'none'],
+  /* ── 3. Resolved category id: explicit override wins, then auto-detected ── */
+  const activeCategoryId = overrideCategoryId ?? nominaCategory?.id ?? null
+
+  /* ── 4. Fetch payroll transactions — always try CUSTOMER_INPAYMENT ── */
+  const { data: payrollByType } = useQuery({
+    queryKey: ['payroll-transactions-type'],
     queryFn: () =>
       txApi.list({
-        ...(nominaCategory
-          ? { category_id: nominaCategory.id.toString() }
-          : { type: 'CUSTOMER_INPAYMENT' }),
+        type: 'CUSTOMER_INPAYMENT',
         account_category: 'CASH',
         page_size: 100,
       }),
-    enabled: categories !== undefined,
     staleTime: 5 * 60_000,
   })
 
-  /* ── 4. Unique sorted payroll dates ── */
+  /* Also query by the active category (override or auto-detected nómina) */
+  const { data: payrollByCategory } = useQuery({
+    queryKey: ['payroll-transactions-cat', activeCategoryId ?? 'none'],
+    queryFn: () =>
+      txApi.list({
+        category_id: activeCategoryId!.toString(),
+        page_size: 100,
+      }),
+    enabled: !!activeCategoryId,
+    staleTime: 5 * 60_000,
+  })
+
+  /* ── 4. Unique sorted payroll dates (union of both sources) ── */
   const payrollDates = useMemo(() => {
-    if (!payrollData?.items) return []
-    return [...new Set(payrollData.items.map(tx => tx.date))].sort()
-  }, [payrollData])
+    const typeItems = payrollByType?.items ?? []
+    const catItems  = payrollByCategory?.items ?? []
+    const allItems  = [...typeItems, ...catItems]
+    if (!allItems.length) return []
+
+    // Sort by date asc and group amounts per date
+    const dateAmounts = new Map<string, number>()
+    for (const tx of allItems) {
+      dateAmounts.set(tx.date, Math.max(dateAmounts.get(tx.date) ?? 0, Math.abs(tx.amount)))
+    }
+    const allDates = [...dateAmounts.keys()].sort()
+
+    // Keep only dates that are ≥ 20 days apart from the previous kept one.
+    // This filters out mid-month transfers/refunds that break cycle detection.
+    // When two dates are too close we prefer the one with the higher amount
+    // (more likely to be the salary). Within the window, we already took the max.
+    const MIN_GAP_DAYS = 20
+    const filtered: string[] = []
+    for (const d of allDates) {
+      if (filtered.length === 0) {
+        filtered.push(d)
+        continue
+      }
+      const prev = filtered[filtered.length - 1]
+      const gapMs = new Date(d + 'T12:00:00').getTime() - new Date(prev + 'T12:00:00').getTime()
+      const gapDays = gapMs / 86_400_000
+      if (gapDays >= MIN_GAP_DAYS) {
+        filtered.push(d)
+      } else if ((dateAmounts.get(d) ?? 0) > (dateAmounts.get(prev) ?? 0)) {
+        // Same window but new date has larger amount → replace
+        filtered[filtered.length - 1] = d
+      }
+    }
+    return filtered
+  }, [payrollByType, payrollByCategory])
 
   /* ── 5. Build cycles array ── */
   const cycles = useMemo((): PayrollCycle[] => {

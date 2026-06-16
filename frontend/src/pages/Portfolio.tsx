@@ -1,12 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { portfolioApi } from '@/lib/api'
+import { portfolioApi, trApi } from '@/lib/api'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, Pencil, Check, X } from 'lucide-react'
-import { useState, useEffect, useMemo } from 'react'
+import { Loader2, Pencil, Check, X, Radio } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import type { PortfolioPosition } from '@/lib/api'
@@ -152,21 +152,27 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
     })
   }
 
+  const [sinceMyBuy, setSinceMyBuy] = useState(false)
+
   const symbols    = positions.map(p => p.symbol)
   const nameOf     = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.name || p.symbol])), [positions])
   const sharesOf   = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.shares])), [positions])
   const priceEurOf = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.current_price])), [positions])
+  const firstBuyOf    = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.first_purchase_date ?? null])), [positions])
+  const buyDatesOf    = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, new Set(p.buy_dates)])), [positions])
+  const allBuyDatesSet = useMemo(() => new Set(positions.flatMap(p => p.buy_dates)), [positions])
   // Stable per-symbol color derived from palette index (not hash) so colors stay distinct
   const colorOf    = useMemo(
     () => Object.fromEntries(symbols.map((sym, i) => [sym, CHART_PALETTE[i % CHART_PALETTE.length]])),
     [symbols]
   )
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['price-history', symbols.join(','), period],
     queryFn: () => portfolioApi.priceHistory(symbols, period),
     enabled: symbols.length > 0,
     staleTime: 5 * 60_000,
+    retry: 1,
   })
 
   type ChartRow = Record<string, number | string>
@@ -185,26 +191,31 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
       .map(([date, vals]) => ({ date, ...vals } as ChartRow))
   }, [data])
 
+  // When sinceMyBuy is on, normalize each symbol from its own first-buy date
   const baseValues = useMemo(() => {
     if (!chartData.length) return {} as Record<string, number>
     const base: Record<string, number> = {}
     for (const sym of symbols) {
-      const first = chartData.find(d => d[sym] !== undefined)
+      const cutoff = sinceMyBuy ? (firstBuyOf[sym] ?? null) : null
+      const first = chartData.find(d => d[sym] !== undefined && (!cutoff || (d.date as string) >= cutoff))
       if (first) base[sym] = first[sym] as number
     }
     return base
-  }, [chartData, symbols])
+  }, [chartData, symbols, sinceMyBuy, firstBuyOf])
 
   const normalisedData = useMemo((): ChartRow[] =>
     chartData.map(row => {
       const out: ChartRow = { date: row.date }
       for (const sym of symbols) {
-        const base = baseValues[sym]
-        const val  = row[sym] as number | undefined
-        if (base && val !== undefined) out[sym] = parseFloat(((val / base) * 100).toFixed(2))
+        const base   = baseValues[sym]
+        const val    = row[sym] as number | undefined
+        const cutoff = sinceMyBuy ? (firstBuyOf[sym] ?? null) : null
+        if (base && val !== undefined && (!cutoff || (row.date as string) >= cutoff)) {
+          out[sym] = parseFloat(((val / base) * 100).toFixed(2))
+        }
       }
       return out
-    }), [chartData, baseValues, symbols])
+    }), [chartData, baseValues, symbols, sinceMyBuy, firstBuyOf])
 
   const fxOf = useMemo((): Record<string, number> => {
     if (!data) return {}
@@ -222,13 +233,22 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
   }, [data, priceEurOf])
 
   const cumulativeData = useMemo((): ChartRow[] => {
+    const lastSeen: Record<string, number> = {}
     const result: ChartRow[] = []
     for (const row of chartData) {
+      // Update last-seen prices for gap-filling
+      for (const sym of symbols) {
+        const p = row[sym] as number | undefined
+        if (p !== undefined && p > 0) lastSeen[sym] = p
+      }
       let total = 0
       let hasAny = false
       for (const sym of symbols) {
-        const price = row[sym] as number | undefined
-        if (price !== undefined) {
+        const cutoff = sinceMyBuy ? (firstBuyOf[sym] ?? null) : null
+        if (cutoff && (row.date as string) < cutoff) continue
+        // Use today's price or fall back to last seen (carry-forward avoids gap spikes)
+        const price = ((row[sym] as number | undefined) ?? lastSeen[sym])
+        if (price !== undefined && price > 0) {
           total += sharesOf[sym] * price * (fxOf[sym] ?? 1)
           hasAny = true
         }
@@ -236,7 +256,7 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
       if (hasAny) result.push({ date: row.date, total: parseFloat(total.toFixed(2)) })
     }
     return result
-  }, [chartData, symbols, sharesOf, fxOf])
+  }, [chartData, symbols, sharesOf, fxOf, sinceMyBuy, firstBuyOf])
 
   const displayData = cumulative ? cumulativeData : normalisedData
 
@@ -253,6 +273,7 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
 
   const ChartTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null
+    const isBuyDay = allBuyDatesSet.has(label as string)
     const dateLabel = (() => {
       try {
         return new Date(label + 'T00:00:00').toLocaleDateString('es-ES', {
@@ -262,7 +283,14 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
     })()
     return (
       <div className="rounded-xl border border-white/10 bg-[hsl(228_22%_6%)] p-3 text-xs shadow-2xl min-w-[190px]">
-        <p className="font-semibold text-foreground/60 mb-2 pb-1.5 border-b border-white/[0.07]">{dateLabel}</p>
+        <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-white/[0.07]">
+          <p className="font-semibold text-foreground/60">{dateLabel}</p>
+          {isBuyDay && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/20 text-primary">
+              Compra
+            </span>
+          )}
+        </div>
         <div className="space-y-1.5">
           {payload.map((p: any) => (
             <div key={p.dataKey} className="flex items-center justify-between gap-4" style={{ color: p.stroke }}>
@@ -292,18 +320,30 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
     <div className="space-y-3">
       {/* ── Controls ── */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/20 p-0.5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/20 p-0.5">
+            <button
+              onClick={() => setCumulative(false)}
+              className={`text-xs px-3 py-1.5 rounded-md transition-all ${!cumulative ? 'bg-primary/20 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Comparativa
+            </button>
+            <button
+              onClick={() => setCumulative(true)}
+              className={`text-xs px-3 py-1.5 rounded-md transition-all ${cumulative ? 'bg-primary/20 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Valor total
+            </button>
+          </div>
           <button
-            onClick={() => setCumulative(false)}
-            className={`text-xs px-3 py-1.5 rounded-md transition-all ${!cumulative ? 'bg-primary/20 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setSinceMyBuy(v => !v)}
+            className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${
+              sinceMyBuy
+                ? 'border-primary/40 bg-primary/15 text-primary font-semibold'
+                : 'border-border bg-muted/20 text-muted-foreground hover:text-foreground'
+            }`}
           >
-            Comparativa
-          </button>
-          <button
-            onClick={() => setCumulative(true)}
-            className={`text-xs px-3 py-1.5 rounded-md transition-all ${cumulative ? 'bg-primary/20 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            Valor total
+            Desde mi compra
           </button>
         </div>
         <div className="flex gap-0.5 rounded-lg border border-border bg-muted/20 p-0.5">
@@ -356,6 +396,17 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
       {isLoading ? (
         <div className="flex justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : isError || (!isLoading && chartData.length === 0) ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center gap-2">
+          <p className="text-sm text-muted-foreground">
+            {isError
+              ? 'Error al cargar el historial de precios.'
+              : 'No hay datos históricos para estas posiciones.'}
+          </p>
+          <p className="text-xs text-muted-foreground/60">
+            Puede que algunos símbolos no estén mapeados a Yahoo Finance todavía.
+          </p>
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={360}>
@@ -423,8 +474,15 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
                   stroke="hsl(var(--primary))"
                   fill="url(#colorTotal)"
                   strokeWidth={2.5}
-                  dot={false}
                   connectNulls
+                  dot={(props: any) => {
+                    const date = props.payload?.date as string
+                    if (!allBuyDatesSet.has(date)) return <g key={`nd-${date}`} />
+                    return (
+                      <circle key={`bd-${date}`} cx={props.cx} cy={props.cy} r={5}
+                        fill="hsl(var(--primary))" stroke="hsl(var(--background))" strokeWidth={2} />
+                    )
+                  }}
                   activeDot={{ r: 5, fill: 'hsl(var(--primary))', stroke: 'hsl(var(--background))', strokeWidth: 2 }}
                 />
               </>
@@ -440,8 +498,15 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
                     stroke={colorOf[sym]}
                     fill={`url(#color_${sym})`}
                     strokeWidth={2}
-                    dot={false}
                     connectNulls
+                    dot={(props: any) => {
+                      const date = props.payload?.date as string
+                      if (!buyDatesOf[sym]?.has(date)) return <g key={`nd-${sym}-${date}`} />
+                      return (
+                        <circle key={`bd-${sym}-${date}`} cx={props.cx} cy={props.cy} r={4.5}
+                          fill={colorOf[sym]} stroke="hsl(var(--background))" strokeWidth={2} />
+                      )
+                    }}
                     activeDot={{ r: 4, fill: colorOf[sym], stroke: 'hsl(var(--background))', strokeWidth: 2 }}
                   />
                 ))}
@@ -471,29 +536,115 @@ function applyOverrides(positions: PortfolioPosition[]): PortfolioPosition[] {
 function round2(v: number) { return Math.round(v * 100) / 100 }
 
 export function Portfolio() {
-  const { data: perf, isLoading } = useQuery({ queryKey: ['portfolio'], queryFn: portfolioApi.performance })
+  const { data: trStatus } = useQuery({ queryKey: ['tr-status'], queryFn: trApi.status, staleTime: 30_000 })
+  const trConnected = trStatus?.connected ?? false
+
+  // Always load calculated portfolio from DB
+  const { data: calcPerf, isLoading } = useQuery({
+    queryKey: ['portfolio'],
+    queryFn: portfolioApi.performance,
+    staleTime: 60_000,
+  })
+
+  // When TR is connected, also fetch live positions and overlay them
+  const { data: livePerf } = useQuery({
+    queryKey: ['portfolio-live'],
+    queryFn: portfolioApi.livePerformance,
+    enabled: trConnected,
+    staleTime: 60_000,
+    retry: false,
+  })
+
+  const perf = livePerf ?? calcPerf
+
   const { data: history } = useQuery({ queryKey: ['portfolio-history'], queryFn: () => portfolioApi.history({ page_size: 50 }) })
   const [tab, setTab] = useState('charts')
   const [, refresh] = useState(0)
+
+  // ── SSE live price stream ──────────────────────────────────────────────────
+  const [livePrices, setLivePrices] = useState<Record<string, number>>({})
+  const [liveConnected, setLiveConnected] = useState(false)
+  const esRef = useRef<EventSource | null>(null)
+
+  useEffect(() => {
+    const token = localStorage.getItem('fm_token')
+    if (!token) return
+
+    function connect() {
+      const es = new EventSource(`/api/portfolio/stream-prices?token=${token}`)
+      esRef.current = es
+
+      es.onopen = () => setLiveConnected(true)
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data)
+          if (data.prices) setLivePrices(prev => ({ ...prev, ...data.prices }))
+        } catch {}
+      }
+      es.onerror = () => {
+        setLiveConnected(false)
+        es.close()
+        // Reconnect after 30s
+        setTimeout(connect, 30_000)
+      }
+    }
+
+    connect()
+    return () => {
+      esRef.current?.close()
+      setLiveConnected(false)
+    }
+  }, [])
 
   if (isLoading) return (
     <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
   )
 
   const rawPositions = perf?.positions || []
-  const positions = applyOverrides(rawPositions)
+  // Apply live prices on top of server prices
+  const rawWithLive = rawPositions.map(p => {
+    const live = livePrices[p.symbol]
+    if (!live) return p
+    const market_value = live * p.shares
+    return {
+      ...p,
+      current_price: live,
+      market_value,
+      unrealized_pnl: market_value - p.total_invested,
+      unrealized_pnl_pct: p.total_invested > 0 ? ((market_value - p.total_invested) / p.total_invested) * 100 : 0,
+    }
+  })
+  const positions = applyOverrides(rawWithLive)
 
-  const openPositions = positions.filter(p => p.shares > 0.0001)
-  const closedPositions = positions.filter(p => p.shares <= 0.0001 && p.realized_pnl !== 0)
+  // Show positions with cost > 0 even if shares are unknown (null from TR sync)
+  const openPositions = positions.filter(p => p.shares > 0.0001 || p.total_invested > 0)
+  const closedPositions = positions.filter(p => p.shares <= 0.0001 && p.total_invested <= 0 && p.realized_pnl !== 0)
 
   const totalMarketValue = openPositions.reduce((s, p) => s + (p.market_value ?? p.total_invested), 0)
   const totalUnrealized = openPositions.reduce((s, p) => s + (p.unrealized_pnl ?? 0), 0)
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Portfolio de Inversiones</h1>
-        <p className="text-sm text-muted-foreground">Seguimiento de tus activos financieros</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Portfolio de Inversiones</h1>
+          <p className="text-sm text-muted-foreground">Seguimiento de tus activos financieros</p>
+        </div>
+        {/* Live indicator */}
+        <div className="flex items-center gap-2">
+          {livePerf && (
+            <span className="text-xs text-emerald-400/70 bg-emerald-500/10 px-2 py-1 rounded-full">
+              Posiciones de TR
+            </span>
+          )}
+          <div className={cn(
+            'flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full',
+            liveConnected ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.05] text-muted-foreground'
+          )}>
+            <span className={cn('h-1.5 w-1.5 rounded-full', liveConnected ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground/40')} />
+            {liveConnected ? 'Live' : 'Offline'}
+          </div>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -637,7 +788,7 @@ export function Portfolio() {
             <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
               <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
               <CardContent className="relative z-10 p-5">
-                <PriceChart positions={openPositions} totalInvested={perf?.total_invested ?? 0} />
+                <PriceChart positions={openPositions.filter(p => p.shares > 0.0001)} totalInvested={perf?.total_invested ?? 0} />
               </CardContent>
             </Card>
 
@@ -651,20 +802,29 @@ export function Portfolio() {
               </CardHeader>
               <CardContent className="relative z-10 p-0">
                 <div className="divide-y divide-border/50">
-                  {openPositions.map(p => (
+                  {openPositions.map(p => {
+                    const sharesKnown = p.shares > 0.0001
+                    return (
                     <div key={p.symbol} className="px-4 py-3 flex items-center gap-3">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{p.name}</p>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <Badge variant="muted" className="text-xs">{p.symbol}</Badge>
-                          <span className="text-xs text-muted-foreground">{p.shares.toFixed(4)} acc.</span>
+                          <span className="text-xs text-muted-foreground">
+                            {sharesKnown ? `${p.shares.toFixed(6)} acc.` : '? acc.'}
+                          </span>
+                          {!sharesKnown && (
+                            <span className="text-xs text-amber-400/70" title="Reconecta TR para ver acciones">sync pendiente</span>
+                          )}
                         </div>
                       </div>
                       <div className="text-right shrink-0">
                         <p className="text-sm font-semibold">
-                          {p.market_value != null ? formatCurrency(p.market_value) : formatCurrency(p.total_invested)}
+                          {sharesKnown && p.market_value != null
+                            ? formatCurrency(p.market_value)
+                            : formatCurrency(p.total_invested)}
                         </p>
-                        {p.unrealized_pnl != null && (
+                        {sharesKnown && p.unrealized_pnl != null && (
                           <p className={`text-xs font-medium ${p.unrealized_pnl >= 0 ? 'text-positive' : 'text-negative'}`}>
                             {p.unrealized_pnl >= 0 ? '+' : ''}{formatCurrency(p.unrealized_pnl)}
                             {p.unrealized_pnl_pct != null && (
@@ -674,7 +834,8 @@ export function Portfolio() {
                         )}
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                   {openPositions.length === 0 && (
                     <p className="px-4 py-8 text-center text-sm text-muted-foreground">Sin posiciones abiertas</p>
                   )}

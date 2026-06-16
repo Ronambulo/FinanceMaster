@@ -14,10 +14,22 @@ RUN npm run build
 FROM python:3.11-slim
 WORKDIR /app
 
+# System deps required by Playwright/Chromium (Trade Republic web login)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
+    libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+    libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 \
+    libx11-6 libx11-xcb1 libxcb1 libxext6 libxss1 \
+    fonts-liberation wget ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Python dependencies
 COPY backend/requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt
+
+# Install Playwright Chromium browser (needed for Trade Republic initial login)
+RUN playwright install chromium
 
 # Copy backend
 COPY backend/ ./backend/

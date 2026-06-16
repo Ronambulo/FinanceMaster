@@ -50,6 +50,8 @@ class User(Base):
     goals = relationship("Goal", back_populates="user", cascade="all, delete-orphan")
     savings_allocations = relationship("SavingsAllocation", back_populates="user", cascade="all, delete-orphan")
     budgets = relationship("Budget", back_populates="user", cascade="all, delete-orphan")
+    webhooks = relationship("Webhook", back_populates="user", cascade="all, delete-orphan")
+    bank_connections = relationship("BankConnection", back_populates="user", cascade="all, delete-orphan")
 
 
 class Category(Base):
@@ -104,6 +106,7 @@ class Transaction(Base):
     mcc_code = Column(String, nullable=True)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     is_auto_categorized = Column(Boolean, default=False)
+    is_ai_categorized = Column(Boolean, default=False)
     is_internal_transfer = Column(Boolean, default=False)
     exclude_from_stats = Column(Boolean, default=False)
     recurring_group_id = Column(Integer, ForeignKey("recurring_groups.id"), nullable=True)
@@ -207,3 +210,54 @@ class SavingsAllocation(Base):
 
     __table_args__ = (UniqueConstraint("user_id", "month", name="uq_user_month"),)
     user = relationship("User", back_populates="savings_allocations")
+
+
+class Insight(Base):
+    __tablename__ = "insights"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    type = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    severity = Column(String, default="info")  # info | warning | positive
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=_dt.utcnow)
+
+    user = relationship("User")
+
+
+class BackgroundJob(Base):
+    __tablename__ = "background_jobs"
+    id = Column(Integer, primary_key=True, index=True)
+    job_name = Column(String, nullable=False)
+    status = Column(String, default="pending")  # pending | running | done | error
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_dt.utcnow)
+
+
+class Webhook(Base):
+    __tablename__ = "webhooks"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    url = Column(String, nullable=False)
+    events = Column(Text, default="[]")        # JSON array of event names
+    secret = Column(String, nullable=False)    # HMAC signing secret
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_dt.utcnow)
+
+    user = relationship("User", back_populates="webhooks")
+
+
+class BankConnection(Base):
+    __tablename__ = "bank_connections"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    bank_name = Column(String, nullable=False)          # "trade_republic"
+    encrypted_phone = Column(String, nullable=True)
+    encrypted_pin = Column(String, nullable=True)
+    last_connected_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="bank_connections")
+    __table_args__ = (UniqueConstraint("user_id", "bank_name", name="uq_user_bank"),)
