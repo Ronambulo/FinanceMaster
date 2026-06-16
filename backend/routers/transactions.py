@@ -111,7 +111,11 @@ def update_transaction(
 
     updates = data.model_dump(exclude_none=True)
     if "category_id" in updates:
-        tx.is_auto_categorized = False
+        # Manual category edit — reset both auto-categorize flags unless the caller explicitly sets them
+        if "is_ai_categorized" not in updates:
+            tx.is_ai_categorized = False
+        if "is_auto_categorized" not in updates:
+            tx.is_auto_categorized = False
     for k, v in updates.items():
         setattr(tx, k, v)
     db.commit()
@@ -136,20 +140,55 @@ def delete_transaction(
     return {"ok": True}
 
 
-@router.post("/import", response_model=schemas.ImportResult)
+@router.post("/import")
 async def import_csv(
     file: UploadFile = File(...),
+    bank_format: str = "auto",
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
     content = await file.read()
-    rows, parse_errors = parse_csv(content)
+    detected_bank = "trade_republic"
+    try:
+        from ..services.bank_connectors import parse_with_autodetect
+        rows, parse_errors, detected_bank = parse_with_autodetect(content, bank_format)
+    except ImportError:
+        rows, parse_errors = parse_csv(content)
 
     imported = 0
     skipped = 0
     errors = len(parse_errors)
 
+    updated = 0
     for row in rows:
+        # If we have an external_id, try to update existing transaction first
+        existing = None
+        if row.get("external_id"):
+            from sqlalchemy import and_
+            existing = db.query(models.Transaction).filter(
+                and_(
+                    models.Transaction.user_id == current_user.id,
+                    models.Transaction.external_id == row["external_id"],
+                )
+            ).first()
+
+        if existing:
+            changed = False
+            if row.get("shares") is not None and existing.shares is None:
+                existing.shares = row["shares"]
+                changed = True
+            if row.get("price") is not None and existing.price is None:
+                existing.price = row["price"]
+                changed = True
+            if row.get("symbol") and not existing.symbol:
+                existing.symbol = row["symbol"]
+                changed = True
+            if changed:
+                updated += 1
+            else:
+                skipped += 1
+            continue
+
         category_id, is_auto, is_internal = auto_categorize(
             db=db,
             user_id=current_user.id,
@@ -188,4 +227,4 @@ async def import_csv(
     except Exception:
         pass
 
-    return schemas.ImportResult(imported=imported, skipped_duplicates=skipped, errors=errors)
+    return {**schemas.ImportResult(imported=imported, skipped_duplicates=skipped, errors=errors).model_dump(), "updated": updated, "detected_bank": detected_bank}

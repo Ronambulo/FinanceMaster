@@ -24,6 +24,15 @@ export function Recurring() {
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) => recurringApi.update(id, { is_active }),
+    onMutate: async ({ id, is_active }) => {
+      await qc.cancelQueries({ queryKey: ['recurring'] })
+      const prev = qc.getQueryData(['recurring'])
+      qc.setQueryData(['recurring'], (old: any[]) => old?.map(g => g.id === id ? { ...g, is_active } : g))
+      return { prev }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['recurring'], ctx.prev)
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['recurring'] }),
   })
 

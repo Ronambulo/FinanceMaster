@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { goalApi } from '@/lib/api'
 import type { Goal, SavingsAllocation } from '@/lib/api'
@@ -134,7 +135,15 @@ export function Goals() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const [newOpen, setNewOpen] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
   const month = currentMonth()
+
+  useEffect(() => {
+    if (searchParams.get('add') === '1') {
+      setNewOpen(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [])
 
   const { data: goals, isLoading } = useQuery({ queryKey: ['goals'], queryFn: goalApi.list })
   const { data: allocation } = useQuery({ queryKey: ['allocation', month], queryFn: () => goalApi.getAllocation(month) })

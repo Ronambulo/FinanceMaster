@@ -1,6 +1,7 @@
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { txApi, catApi, authApi } from '@/lib/api'
+import { txApi, catApi, authApi, trApi, aiApi } from '@/lib/api'
 import type { Transaction, Category } from '@/lib/api'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -10,7 +11,8 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Upload, Search, ChevronLeft, ChevronRight, ChevronDown, Loader2, Tag, X, Plus, Trash2, AlertTriangle, Filter, Sparkles } from 'lucide-react'
+import { Upload, Search, ChevronLeft, ChevronRight, ChevronDown, Loader2, Tag, X, Plus, Trash2, AlertTriangle, Filter, Sparkles, Bot, RefreshCw, Settings } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { TransactionIcon } from '@/components/TransactionIcon'
@@ -44,41 +46,67 @@ function CategoryPicker({ categories, value, onChange }: { categories: Category[
   )
 }
 
+const BANK_FORMATS = [
+  { value: 'auto', label: '🔍 Auto-detectar' },
+  { value: 'trade_republic', label: 'Trade Republic' },
+  { value: 'revolut', label: 'Revolut' },
+  { value: 'n26', label: 'N26' },
+  { value: 'wise', label: 'Wise' },
+]
+
 function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { toast } = useToast()
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
   const [result, setResult] = useState<{ imported: number; skipped_duplicates: number; errors: number } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [bankFormat, setBankFormat] = useState('auto')
+  const [detectedBank, setDetectedBank] = useState<string | null>(null)
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     setLoading(true)
+    setResult(null)
+    setDetectedBank(null)
     try {
-      const res = await txApi.importCsv(file)
+      const res = await txApi.importCsv(file, bankFormat) as any
       setResult(res)
+      if (res.detected_bank) setDetectedBank(res.detected_bank)
       qc.invalidateQueries()
       toast(`Importadas ${res.imported} transacciones`, 'success')
     } catch (err: any) {
       toast(err.message || 'Error al importar', 'error')
     } finally {
       setLoading(false)
+      if (fileRef.current) fileRef.current.value = ''
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Importar CSV de Trade Republic</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Importar CSV</DialogTitle></DialogHeader>
         <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Formato del banco</label>
+            <select
+              value={bankFormat}
+              onChange={e => setBankFormat(e.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              {BANK_FORMATS.map(f => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
+            </select>
+          </div>
           <div
             className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary transition-colors"
             onClick={() => fileRef.current?.click()}
           >
             <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
             <p className="text-sm font-medium">Haz clic para seleccionar el CSV</p>
-            <p className="text-xs text-muted-foreground mt-1">Exportación de transacción.csv</p>
+            <p className="text-xs text-muted-foreground mt-1">.csv — cualquier banco soportado</p>
             <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleFile} />
           </div>
           {loading && (
@@ -88,6 +116,7 @@ function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void })
           )}
           {result && (
             <div className="rounded-lg bg-muted p-4 space-y-1 text-sm">
+              {detectedBank && <p className="text-xs text-muted-foreground mb-1">Banco detectado: <span className="font-medium text-foreground">{detectedBank}</span></p>}
               <p className="text-primary">✓ {result.imported} transacciones importadas</p>
               {result.skipped_duplicates > 0 && <p className="text-muted-foreground">↷ {result.skipped_duplicates} duplicadas omitidas</p>}
               {result.errors > 0 && <p className="text-negative">✗ {result.errors} errores</p>}
@@ -263,6 +292,8 @@ function DeleteAllDialog({ open, onClose }: { open: boolean; onClose: () => void
 export function Transactions() {
   const qc = useQueryClient()
   const { toast } = useToast()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [page, setPage]           = useState(1)
   const [search, setSearch]       = useState('')
   const [catFilter, setCatFilter] = useState<string>('')
@@ -270,9 +301,95 @@ export function Transactions() {
   const [cycleFilter, setCycleFilter] = useState<string>('')
   const [typeGroup, setTypeGroup] = useState<string>('')       // "" | "income" | "expense"
   const [importOpen, setImportOpen]   = useState(false)
+
+  // Open dialogs when navigated from command palette
+  useEffect(() => {
+    if (searchParams.get('import') === '1') {
+      setImportOpen(true)
+      setSearchParams({}, { replace: true })
+    } else if (searchParams.get('add') === '1') {
+      setAddOpen(true)
+      setSearchParams({}, { replace: true })
+    }
+  }, [])
   const [addOpen, setAddOpen]         = useState(false)
   const [deleteAllOpen, setDeleteAllOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [lastClickedIdx, setLastClickedIdx] = useState<number | null>(null)
+  const [bulkCatOpen, setBulkCatOpen] = useState(false)
+  const [bulkCatId, setBulkCatId] = useState<string>('')
+  const [syncing, setSyncing] = useState(false)
+  const [aiCategorizingIds, setAiCategorizingIds] = useState<Set<number>>(new Set())
+  const [bulkAiPending, setBulkAiPending] = useState(false)
+
+  // Auto-refresh when AI chat categorizes a transaction
+  useEffect(() => {
+    const handler = () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['by-cat'] })
+    }
+    window.addEventListener('tx-categorized', handler)
+    return () => window.removeEventListener('tx-categorized', handler)
+  }, [qc])
+
+  const { data: trStatus } = useQuery({
+    queryKey: ['tr-status'],
+    queryFn: trApi.status,
+    staleTime: 60_000,
+  })
+
+  const handleBankSync = async () => {
+    setSyncing(true)
+    try {
+      const r = await trApi.sync()
+      const parts = [`${r.synced} nuevas`]
+      if (r.updated > 0) parts.push(`${r.updated} corregidas`)
+      if (r.skipped > 0) parts.push(`${r.skipped} ya existían`)
+      toast(`Sincronizado: ${parts.join(', ')}`, 'success')
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Error al sincronizar', 'error')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  const handleAiCategorize = async (ids: number[]) => {
+    const isBulk = ids.length > 1
+    if (isBulk) {
+      setBulkAiPending(true)
+    } else {
+      setAiCategorizingIds(prev => new Set([...prev, ...ids]))
+    }
+    try {
+      const res = await aiApi.categorizeBatch(ids)
+      const ok = res.results.filter(r => r.category_id)
+      const fail = res.results.filter(r => r.error)
+      if (ok.length > 0) {
+        qc.invalidateQueries({ queryKey: ['transactions'] })
+        qc.invalidateQueries({ queryKey: ['by-cat'] })
+        toast(
+          isBulk
+            ? `IA categorizó ${ok.length} de ${ids.length} transacciones`
+            : `IA asignó: ${ok[0].category_icon} ${ok[0].category_name}`,
+          'success',
+        )
+      }
+      if (fail.length > 0 && ok.length === 0) {
+        toast(isBulk ? 'La IA no pudo categorizar ninguna' : `IA: ${fail[0].error}`, 'error')
+      }
+      if (isBulk) setSelectedIds(new Set())
+    } catch (e: any) {
+      toast(e.message || 'Error al categorizar con IA', 'error')
+    } finally {
+      if (isBulk) {
+        setBulkAiPending(false)
+      } else {
+        setAiCategorizingIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n })
+      }
+    }
+  }
 
   /* ── Payroll cycles for the period filter ── */
   const { cycles: payrollCycles } = usePayrollCycle(0)
@@ -337,6 +454,19 @@ export function Transactions() {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<Transaction> }) => txApi.update(id, data),
+    onMutate: async ({ id, data }) => {
+      await qc.cancelQueries({ queryKey: ['transactions'] })
+      const prev = qc.getQueryData<{ items: Transaction[] }>(['transactions', page, search, catFilter, cycleFilter, typeGroup])
+      qc.setQueryData(['transactions', page, search, catFilter, cycleFilter, typeGroup], (old: any) => {
+        if (!old) return old
+        return { ...old, items: old.items.map((tx: Transaction) => tx.id === id ? { ...tx, ...data } : tx) }
+      })
+      return { prev }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['transactions', page, search, catFilter, cycleFilter, typeGroup], ctx.prev)
+      toast('Error al actualizar', 'error')
+    },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['overview'] })
@@ -357,6 +487,52 @@ export function Transactions() {
     },
     onError: (e: any) => toast(e.message, 'error'),
   })
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: number[]) => Promise.all(ids.map(id => txApi.delete(id))),
+    onSuccess: (_, ids) => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+      setSelectedIds(new Set())
+      toast(`${ids.length} transacciones eliminadas`, 'success')
+    },
+    onError: (e: any) => toast(e.message, 'error'),
+  })
+
+  const bulkCategoryMutation = useMutation({
+    mutationFn: ({ ids, category_id }: { ids: number[]; category_id: number }) =>
+      Promise.all(ids.map(id => txApi.update(id, { category_id }))),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      setSelectedIds(new Set())
+      setBulkCatOpen(false)
+      setBulkCatId('')
+      toast('Categoría actualizada', 'success')
+    },
+    onError: (e: any) => toast(e.message, 'error'),
+  })
+
+  const toggleSelect = useCallback((id: number, idx: number, shiftKey: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (shiftKey && lastClickedIdx !== null && data?.items) {
+        const lo = Math.min(idx, lastClickedIdx)
+        const hi = Math.max(idx, lastClickedIdx)
+        data.items.slice(lo, hi + 1).forEach(tx => next.add(tx.id))
+      } else {
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+      }
+      return next
+    })
+    setLastClickedIdx(idx)
+  }, [lastClickedIdx, data?.items])
+
+  const toggleSelectAll = useCallback(() => {
+    if (!data?.items) return
+    if (selectedIds.size === data.items.length) setSelectedIds(new Set())
+    else setSelectedIds(new Set(data.items.map(tx => tx.id)))
+  }, [data?.items, selectedIds.size])
 
   const totalPages = data ? Math.ceil(data.total / 25) : 1
 
@@ -389,6 +565,16 @@ export function Transactions() {
           <Button variant="outline" size="sm" className="text-negative border-negative/20 hover:bg-negative/10" onClick={() => setDeleteAllOpen(true)}>
             <Trash2 className="h-4 w-4 mr-2" /> Borrar todo
           </Button>
+          {trStatus?.connected ? (
+            <Button variant="outline" onClick={handleBankSync} disabled={syncing}>
+              {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+              Sincronizar bancos
+            </Button>
+          ) : (
+            <Button variant="outline" onClick={() => navigate('/ajustes')}>
+              <Settings className="h-4 w-4 mr-2" /> Conectar banco
+            </Button>
+          )}
           <Button variant="outline" onClick={() => setImportOpen(true)}>
             <Upload className="h-4 w-4 mr-2" /> Importar CSV
           </Button>
@@ -560,13 +746,37 @@ export function Transactions() {
                             </SelectContent>
                           </Select>
                           {tx.is_auto_categorized && !tx.is_internal_transfer && (
-                            <span title="Categorizado automáticamente"><Sparkles className="h-3.5 w-3.5 text-primary shrink-0 opacity-70" /></span>
+                            <button
+                              title="Categoría asignada automáticamente. Haz clic para confirmar y quitar este aviso."
+                              onClick={() => updateMutation.mutate({ id: tx.id, data: { is_auto_categorized: false } })}
+                              className="text-primary/60 hover:text-primary transition-colors shrink-0"
+                            >
+                              <Sparkles className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {tx.is_ai_categorized && (
+                            <button
+                              title="Categoría asignada por la IA. Haz clic para confirmar y quitar el indicador."
+                              onClick={() => updateMutation.mutate({ id: tx.id, data: { is_ai_categorized: false } })}
+                              className="text-violet-400/80 hover:text-violet-400 transition-colors shrink-0"
+                            >
+                              <Bot className="h-3.5 w-3.5" />
+                            </button>
                           )}
                         </div>
 
                         <div className="flex items-center gap-2.5 shrink-0">
                           <span className="text-[11px] font-medium text-muted-foreground/50">{formatDate(tx.date)}</span>
-                          
+                          <button
+                            title="Categorizar con IA"
+                            disabled={aiCategorizingIds.has(tx.id)}
+                            onClick={() => handleAiCategorize([tx.id])}
+                            className="text-muted-foreground/40 hover:text-violet-400 transition-colors flex items-center justify-center disabled:opacity-40"
+                          >
+                            {aiCategorizingIds.has(tx.id)
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <Sparkles className="h-3.5 w-3.5" />}
+                          </button>
                           <button onClick={() => setConfirmDelete(tx.id)}
                               className="text-muted-foreground/30 hover:text-negative transition-colors flex items-center justify-center">
                               <Trash2 className="h-3.5 w-3.5" />
@@ -586,6 +796,15 @@ export function Transactions() {
                 <table className="w-full text-sm">
                   <thead className="bg-white/[0.02] border-b border-white/[0.05]">
                     <tr className="text-muted-foreground">
+                      <th className="pl-4 pr-2 py-3.5 w-8">
+                        <input
+                          type="checkbox"
+                          checked={(data?.items?.length ?? 0) > 0 && selectedIds.size === (data?.items?.length ?? 0)}
+                          ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < (data?.items?.length ?? 0) }}
+                          onChange={toggleSelectAll}
+                          className="h-3.5 w-3.5 rounded accent-primary cursor-pointer"
+                        />
+                      </th>
                       <th className="text-left px-5 py-3.5 font-medium text-xs tracking-wider uppercase">Fecha</th>
                       <th className="text-left px-5 py-3.5 font-medium text-xs tracking-wider uppercase">Descripción</th>
                       <th className="text-left px-5 py-3.5 font-medium text-xs tracking-wider uppercase hidden md:table-cell min-w-[240px] w-[240px] max-w-[240px]">Categoría</th>
@@ -594,8 +813,17 @@ export function Transactions() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data?.items.map(tx => (
-                      <tr key={tx.id} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors group">
+                    {data?.items.map((tx, idx) => (
+                      <tr key={tx.id} className={cn("border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors group", selectedIds.has(tx.id) && "bg-primary/5")}>
+                        <td className="pl-4 pr-2 py-4 w-8">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(tx.id)}
+                            onChange={e => toggleSelect(tx.id, idx, e.nativeEvent instanceof MouseEvent ? e.nativeEvent.shiftKey : false)}
+                            onClick={e => toggleSelect(tx.id, idx, e.shiftKey)}
+                            className="h-3.5 w-3.5 rounded accent-primary cursor-pointer"
+                          />
+                        </td>
                         <td className="px-5 py-4 text-xs font-medium text-muted-foreground whitespace-nowrap">{formatDate(tx.date)}</td>
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-3">
@@ -643,8 +871,33 @@ export function Transactions() {
                               </SelectContent>
                             </Select>
                             {tx.is_auto_categorized && !tx.is_internal_transfer && (
-                              <span title="Categorizado automáticamente"><Sparkles className="h-4 w-4 text-primary shrink-0 opacity-80" /></span>
+                              <button
+                                title="Categoría asignada automáticamente. Haz clic para confirmar y quitar este aviso."
+                                onClick={() => updateMutation.mutate({ id: tx.id, data: { is_auto_categorized: false } })}
+                                className="text-primary/60 hover:text-primary transition-colors shrink-0"
+                              >
+                                <Sparkles className="h-4 w-4" />
+                              </button>
                             )}
+                            {tx.is_ai_categorized && (
+                              <button
+                                title="Categoría asignada por la IA. Haz clic para confirmar y quitar el indicador."
+                                onClick={() => updateMutation.mutate({ id: tx.id, data: { is_ai_categorized: false } })}
+                                className="text-violet-400/80 hover:text-violet-400 transition-colors shrink-0"
+                              >
+                                <Bot className="h-4 w-4" />
+                              </button>
+                            )}
+                            <button
+                              title="Categorizar con IA"
+                              disabled={aiCategorizingIds.has(tx.id)}
+                              onClick={() => handleAiCategorize([tx.id])}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-violet-400 disabled:opacity-50 shrink-0"
+                            >
+                              {aiCategorizingIds.has(tx.id)
+                                ? <Loader2 className="h-4 w-4 animate-spin" />
+                                : <Sparkles className="h-4 w-4" />}
+                            </button>
                           </div>
                         </td>
                         <td className="px-5 py-4 text-right whitespace-nowrap">
@@ -692,6 +945,65 @@ export function Transactions() {
           </div>
         </div>
       )}
+
+      {/* Bulk action floating bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 bg-card border border-border rounded-2xl shadow-2xl backdrop-blur-md animate-fade-up">
+          <span className="text-sm font-semibold text-foreground">{selectedIds.size}</span>
+          <span className="text-sm text-muted-foreground mr-1">seleccionadas</span>
+          <div className="w-px h-5 bg-border" />
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setBulkCatOpen(true)}>
+            <Tag className="h-3 w-3 mr-1.5" /> Categorizar
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
+            disabled={bulkAiPending}
+            onClick={() => handleAiCategorize(Array.from(selectedIds))}
+          >
+            {bulkAiPending
+              ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+              : <Sparkles className="h-3 w-3 mr-1.5" />}
+            IA
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            className="h-7 text-xs"
+            disabled={bulkDeleteMutation.isPending}
+            onClick={() => bulkDeleteMutation.mutate(Array.from(selectedIds))}
+          >
+            <Trash2 className="h-3 w-3 mr-1.5" /> Eliminar
+          </Button>
+          <button onClick={() => setSelectedIds(new Set())} className="text-muted-foreground hover:text-foreground ml-1 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Bulk category dialog */}
+      <Dialog open={bulkCatOpen} onOpenChange={v => { if (!v) { setBulkCatOpen(false); setBulkCatId('') } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Cambiar categoría ({selectedIds.size} transacciones)</DialogTitle></DialogHeader>
+          <Select value={bulkCatId} onValueChange={setBulkCatId}>
+            <SelectTrigger><SelectValue placeholder="Selecciona una categoría..." /></SelectTrigger>
+            <SelectContent>
+              {categories?.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.icon} {c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setBulkCatOpen(false); setBulkCatId('') }}>Cancelar</Button>
+            <Button
+              disabled={!bulkCatId || bulkCategoryMutation.isPending}
+              onClick={() => bulkCategoryMutation.mutate({ ids: Array.from(selectedIds), category_id: Number(bulkCatId) })}
+            >
+              {bulkCategoryMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />}
+              Aplicar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <AddTransactionDialog open={addOpen} onClose={() => setAddOpen(false)} categories={categories || []} />

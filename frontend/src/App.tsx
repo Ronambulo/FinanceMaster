@@ -13,16 +13,135 @@ import { Debts } from '@/pages/Debts'
 import { Goals } from '@/pages/Goals'
 import { Monthly } from '@/pages/Monthly'
 import { Settings } from '@/pages/Settings'
-import { useEffect } from 'react'
-import { applyTheme, THEME_KEY, ACCENT_KEY } from '@/lib/theme'
+import { FireCalculator } from '@/pages/FireCalculator'
+import { CommandPalette } from '@/components/CommandPalette'
+import { OnboardingWizard } from '@/components/OnboardingWizard'
+import { AiChat } from '@/components/AiChat'
+import { useEffect, useState, useRef } from 'react'
+import { applyTheme, THEME_KEY, ACCENT_KEY, getCompact } from '@/lib/theme'
+import { WifiOff, Loader2 } from 'lucide-react'
+import { trApi } from '@/lib/api'
+import { useToast } from '@/components/ui/toast'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+
+function OfflineBanner() {
+  const [offline, setOffline] = useState(!navigator.onLine)
+  useEffect(() => {
+    const on  = () => setOffline(false)
+    const off = () => setOffline(true)
+    window.addEventListener('online',  on)
+    window.addEventListener('offline', off)
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+  }, [])
+  if (!offline) return null
+  return (
+    <div className="fixed top-0 inset-x-0 z-[200] flex items-center justify-center gap-2 bg-amber-500/90 backdrop-blur-sm py-1.5 text-xs font-medium text-amber-950">
+      <WifiOff className="h-3.5 w-3.5" />
+      Sin conexión — mostrando datos en caché
+    </div>
+  )
+}
+
+/* ── 2FA modal — shown when auto-connect finds a pending SMS code ── */
+function TwoFAModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast } = useToast()
+  const [code, setCode] = useState('')
+  const [loading, setLoading] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (open) {
+      setCode('')
+      setTimeout(() => inputRef.current?.focus(), 150)
+    }
+  }, [open])
+
+  async function handleVerify() {
+    if (code.length < 4 || loading) return
+    setLoading(true)
+    try {
+      await trApi.verify(code)
+      toast('Trade Republic conectado', 'success')
+      onClose()
+    } catch (e: any) {
+      toast(e.message || 'Código incorrecto o expirado', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose() }}>
+      <DialogContent className="max-w-xs">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <span className="text-xl">📱</span> Verificación Trade Republic
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-1">
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Se ha enviado un código de 4 dígitos a tu teléfono. Introdúcelo para reconectar.
+          </p>
+          <Input
+            ref={inputRef}
+            placeholder="0000"
+            value={code}
+            onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            onKeyDown={e => e.key === 'Enter' && handleVerify()}
+            inputMode="numeric"
+            className="text-center text-2xl tracking-[0.5em] font-mono"
+            maxLength={4}
+          />
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={onClose}>Cancelar</Button>
+            <Button className="flex-1" onClick={handleVerify} disabled={code.length < 4 || loading}>
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verificar'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 })
 
+let lastTokenAutoConnected: string | null = null
+
+function TrAutoConnect() {
+  const { toast } = useToast()
+  const token = useAuthStore(s => s.token)
+  const [show2FA, setShow2FA] = useState(false)
+
+  useEffect(() => {
+    if (!token || lastTokenAutoConnected === token) return
+    lastTokenAutoConnected = token
+
+    trApi.autoConnect().then(r => {
+      if (r.status === 'connected') toast('Trade Republic conectado', 'success')
+      else if (r.status === 'needs_2fa') setShow2FA(true)
+      else if (r.status === 'error') toast(`Trade Republic: ${r.message ?? 'error al conectar'}`, 'error')
+      // 'no_credentials' → silencioso
+    }).catch(() => {})
+  }, [token])
+
+  return <TwoFAModal open={show2FA} onClose={() => setShow2FA(false)} />
+}
+
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore(s => s.token)
-  return token ? <>{children}</> : <Navigate to="/login" replace />
+  if (!token) return <Navigate to="/login" replace />
+  return (
+    <>
+      <TrAutoConnect />
+      {children}
+      <AiChat />
+    </>
+  )
 }
 
 export default function App() {
@@ -30,12 +149,16 @@ export default function App() {
     const themeId  = localStorage.getItem(THEME_KEY)  || 'trade-republic'
     const accentId = localStorage.getItem(ACCENT_KEY) || 'lime'
     applyTheme(themeId, accentId)
+    if (getCompact()) document.documentElement.classList.add('compact')
   }, [])
 
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         <BrowserRouter>
+          <OfflineBanner />
+          <CommandPalette />
+          <OnboardingWizard />
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/registro" element={<Register />} />
@@ -47,6 +170,7 @@ export default function App() {
               <Route path="deudas" element={<Debts />} />
               <Route path="objetivos" element={<Goals />} />
               <Route path="monthly" element={<Monthly />} />
+              <Route path="fire" element={<FireCalculator />} />
               <Route path="ajustes" element={<Settings />} />
             </Route>
           </Routes>

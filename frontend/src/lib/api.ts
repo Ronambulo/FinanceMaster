@@ -46,9 +46,10 @@ export const txApi = {
     request<Transaction>(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) =>
     request<void>(`/transactions/${id}`, { method: 'DELETE' }),
-  importCsv: (file: File) => {
+  importCsv: (file: File, bankFormat = 'auto') => {
     const fd = new FormData()
     fd.append('file', file)
+    fd.append('bank_format', bankFormat)
     return request<ImportResult>('/transactions/import', { method: 'POST', body: fd })
   },
 }
@@ -77,6 +78,14 @@ export const dashApi = {
     if (params.date_to)   q.set('date_to',   params.date_to)
     return request<MonthlyDetailRow[]>(`/dashboard/monthly-detail?${q}`)
   },
+  netWorthHistory: (months = 24) =>
+    request<NetWorthPoint[]>(`/dashboard/net-worth-history?months=${months}`),
+  insights: () =>
+    request<Insight[]>('/dashboard/insights'),
+  markInsightRead: (id: number) =>
+    request<{ ok: boolean }>(`/dashboard/insights/${id}/read`, { method: 'PATCH' }),
+  refreshInsights: () =>
+    request<{ ok: boolean }>('/dashboard/insights/refresh', { method: 'POST' }),
 }
 
 // Categories
@@ -135,6 +144,8 @@ export const goalApi = {
 // Portfolio
 export const portfolioApi = {
   performance: () => request<PortfolioPerformance>('/portfolio/performance'),
+  livePerformance: () => request<PortfolioPerformance>('/portfolio/live'),
+  estimateShares: () => request<{ estimated: number; skipped: number }>('/portfolio/estimate-shares', { method: 'POST' }),
   history: (params?: Record<string, string | number>) => {
     const q = new URLSearchParams()
     Object.entries(params || {}).forEach(([k, v]) => q.set(k, String(v)))
@@ -152,9 +163,12 @@ export const budgetApi = {
   update: (id: number, data: Partial<Budget>) =>
     request<Budget>(`/budgets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => request<void>(`/budgets/${id}`, { method: 'DELETE' }),
-  status: (month?: string) => {
-    const q = month ? `?month=${month}` : ''
-    return request<BudgetStatus[]>(`/budgets/status${q}`)
+  status: (month?: string, dateFrom?: string, dateTo?: string) => {
+    const q = new URLSearchParams()
+    if (dateFrom && dateTo) { q.set('date_from', dateFrom); q.set('date_to', dateTo) }
+    else if (month) q.set('month', month)
+    const qs = q.toString()
+    return request<BudgetStatus[]>(`/budgets/status${qs ? '?' + qs : ''}`)
   },
 }
 
@@ -169,7 +183,7 @@ export interface Transaction {
   amount: number; fee: number | null; tax: number | null; currency: string
   description: string | null; counterparty_name: string | null; mcc_code: string | null
   category_id: number | null; category: Category | null
-  is_auto_categorized: boolean; is_internal_transfer: boolean; exclude_from_stats: boolean; recurring_group_id: number | null
+  is_auto_categorized: boolean; is_ai_categorized: boolean; is_internal_transfer: boolean; exclude_from_stats: boolean; recurring_group_id: number | null
 }
 export interface TransactionListResponse { items: Transaction[]; total: number; page: number; page_size: number; income_sum: number; expense_sum: number }
 export interface ImportResult { imported: number; skipped_duplicates: number; errors: number }
@@ -182,10 +196,76 @@ export interface DashboardOverview { balance: number; income_month: number; expe
 export interface CategoryBreakdown { category_id: number | null; category_name: string; category_color: string; category_icon: string; total: number; count: number }
 export interface MonthlyTrend { month: string; income: number; expenses: number; savings: number }
 export interface UpcomingRecurring { id: number; display_name: string; avg_amount: number; next_expected_date: string | null; days_until: number | null; category: Category | null }
-export interface PortfolioPosition { symbol: string; name: string; asset_class: string; shares: number; avg_buy_price: number; total_invested: number; realized_pnl: number; dividends_received: number; current_price: number | null; market_value: number | null; unrealized_pnl: number | null; unrealized_pnl_pct: number | null }
+export interface PortfolioPosition { symbol: string; name: string; asset_class: string; shares: number; avg_buy_price: number; total_invested: number; realized_pnl: number; dividends_received: number; first_purchase_date: string | null; buy_dates: string[]; current_price: number | null; market_value: number | null; unrealized_pnl: number | null; unrealized_pnl_pct: number | null }
 export interface PortfolioPerformance { total_invested: number; total_realized_pnl: number; total_fees: number; total_dividends: number; total_market_value: number; total_unrealized_pnl: number; positions: PortfolioPosition[]; dividends_by_asset: { symbol: string; name: string; total: number; count: number }[] }
 export interface PricePoint { date: string; close: number }
 export interface PriceHistory { symbol: string; points: PricePoint[] }
 export interface Budget { id: number; category_id: number | null; category: Category | null; amount: number; month: string | null; is_recurring: boolean }
 export interface BudgetStatus { budget_id: number; category_id: number | null; category_name: string; category_color: string; category_icon: string; budgeted: number; spent: number; remaining: number; pct_used: number }
 export interface MonthlyDetailRow { id: number; date: string; name: string | null; category_id: number | null; category_name: string; category_color: string; category_icon: string; amount: number; exclude_from_stats: boolean }
+export interface NetWorthPoint { month: string; cash: number; portfolio: number; debt: number; net_worth: number }
+export interface Insight { id: number; type: string; title: string; message: string; severity: string; is_read: boolean; created_at: string }
+export interface Webhook { id: number; url: string; events: string[]; is_active: boolean; created_at: string }
+export interface TRStatus { connected: boolean; last_sync: string | null }
+export interface TRPosition {
+  instrumentId: string
+  netSize: string
+  averageBuyIn: string | null
+  purchaseValue: string | null
+  currentValue: string | null
+  returnOnEquity: string | null
+  returnOnEquityPercentage: string | null
+  name?: string
+}
+export interface TRPortfolioRaw {
+  positions: TRPosition[]
+  cash?: { currencyId: string; amount: string }
+  totalValue?: string
+}
+
+// Webhooks
+export const webhookApi = {
+  list: () => request<Webhook[]>('/webhooks'),
+  create: (data: { url: string; events: string[] }) =>
+    request<Webhook>('/webhooks', { method: 'POST', body: JSON.stringify(data) }),
+  delete: (id: number) => request<void>(`/webhooks/${id}`, { method: 'DELETE' }),
+  toggle: (id: number) => request<{ is_active: boolean }>(`/webhooks/${id}/toggle`, { method: 'PATCH' }),
+}
+
+// Trade Republic
+export const trApi = {
+  status: () => request<TRStatus>('/tr/status'),
+  autoConnect: () => request<{ status: string; message?: string }>('/tr/auto-connect', { method: 'POST' }),
+  connect: (phone: string, pin: string) =>
+    request<{ status: string }>('/tr/connect', { method: 'POST', body: JSON.stringify({ phone, pin }) }),
+  verify: (code: string) =>
+    request<{ ok: boolean }>('/tr/verify', { method: 'POST', body: JSON.stringify({ code }) }),
+  sync: () => request<{ synced: number; updated: number; skipped: number; errors: number; total_events: number }>('/tr/sync'),
+  dedupe: () => request<{ deleted: number }>('/tr/dedupe', { method: 'POST' }),
+  fixUnknown: () => request<{ deleted: number }>('/tr/fix-unknown', { method: 'POST' }),
+  fixSecurities: () => request<{ fixed: number }>('/tr/fix-securities', { method: 'POST' }),
+  fixShares: () => request<{ fixed: number; total: number }>('/tr/fix-shares', { method: 'POST' }),
+  livePositions: () => request<{ portfolio: TRPortfolioRaw; compact: unknown }>('/tr/live-positions'),
+  disconnect: () => request<{ ok: boolean }>('/tr/disconnect', { method: 'POST' }),
+}
+
+// AI
+export const aiApi = {
+  categorizeBatch: (transaction_ids: number[]) =>
+    request<{ results: AiCategorizeResult[]; total: number }>('/ai/categorize-batch', {
+      method: 'POST',
+      body: JSON.stringify({ transaction_ids }),
+    }),
+}
+
+export interface AiCategorizeResult {
+  id: number
+  category_id?: number
+  category_name?: string
+  category_icon?: string
+  category_color?: string
+  error?: string
+}
+
+// API token
+export const getApiToken = () => request<{ token: string; expires_in_days: number }>('/auth/api-token')

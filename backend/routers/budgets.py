@@ -98,12 +98,22 @@ def delete_budget(
 @router.get("/status", response_model=List[schemas.BudgetStatus])
 def budget_status(
     month: Optional[str] = Query(None, description="'2024-01'; defaults to current month"),
+    date_from: Optional[str] = Query(None, description="YYYY-MM-DD; overrides month for range"),
+    date_to:   Optional[str] = Query(None, description="YYYY-MM-DD; overrides month for range"),
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
     today = date.today()
-    month_str = month or f"{today.year}-{today.month:02d}"
-    start, end = _month_range(month_str)
+    if date_from and date_to:
+        from datetime import date as _date
+        start = _date.fromisoformat(date_from)
+        end   = _date.fromisoformat(date_to)
+        month_str = f"{start.year}-{start.month:02d}"
+        cycle_days = (end - start).days + 1
+    else:
+        month_str = month or f"{today.year}-{today.month:02d}"
+        start, end = _month_range(month_str)
+        cycle_days = (end - start).days + 1
 
     # Budgets that apply to this month: recurring ones + specific ones for this month
     budgets = (
@@ -140,15 +150,17 @@ def budget_status(
     for b in budgets:
         cat = b.category
         spent = spending.get(b.category_id, 0.0)
-        remaining = round(b.amount - spent, 2)
-        pct = round((spent / b.amount) * 100, 1) if b.amount > 0 else 0.0
+        # Prorate monthly budget amount to the actual cycle length
+        prorated = round(b.amount * cycle_days / 30, 2)
+        remaining = round(prorated - spent, 2)
+        pct = round((spent / prorated) * 100, 1) if prorated > 0 else 0.0
         result.append(schemas.BudgetStatus(
             budget_id=b.id,
             category_id=b.category_id,
             category_name=cat.name if cat else "Sin categoría",
             category_color=cat.color if cat else "#94a3b8",
             category_icon=cat.icon if cat else "💰",
-            budgeted=b.amount,
+            budgeted=prorated,
             spent=spent,
             remaining=remaining,
             pct_used=pct,

@@ -82,6 +82,8 @@ class TransactionUpdate(BaseModel):
     description: Optional[str] = None
     is_internal_transfer: Optional[bool] = None
     exclude_from_stats: Optional[bool] = None
+    is_auto_categorized: Optional[bool] = None
+    is_ai_categorized: Optional[bool] = None
 
 class TransactionOut(BaseModel):
     id: int
@@ -105,6 +107,7 @@ class TransactionOut(BaseModel):
     category_id: Optional[int]
     category: Optional[CategoryOut]
     is_auto_categorized: bool
+    is_ai_categorized: bool = False
     is_internal_transfer: bool
     exclude_from_stats: bool = False
     recurring_group_id: Optional[int]
@@ -241,6 +244,8 @@ class PortfolioPosition(BaseModel):
     total_invested: float
     realized_pnl: float
     dividends_received: float
+    first_purchase_date: Optional[str] = None
+    buy_dates: List[str] = []
     current_price: Optional[float] = None
     market_value: Optional[float] = None
     unrealized_pnl: Optional[float] = None
@@ -349,3 +354,24 @@ class PricePoint(BaseModel):
 class PriceHistory(BaseModel):
     symbol: str
     points: List[PricePoint]
+
+
+# ── Net Worth History ──────────────────────────────────────────────────────────
+class NetWorthPoint(BaseModel):
+    month: str
+    cash: float
+    portfolio: float
+    debt: float
+    net_worth: float
+
+
+# ── Insights ──────────────────────────────────────────────────────────────────
+class InsightOut(BaseModel):
+    id: int
+    type: str
+    title: str
+    message: str
+    severity: str
+    is_read: bool
+    created_at: datetime
+    model_config = {"from_attributes": True}

@@ -1,3 +1,10 @@
+import sys
+import asyncio
+
+# On Windows, SelectorEventLoop doesn't support subprocesses (needed by Playwright/pytr).
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 import os
 
 # Load .env before any other module reads os.environ (works even with --reload worker)
@@ -14,16 +21,56 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from .database import engine
 from . import models
-from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets
+from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic
 from .services.categorizer import seed_system_categories
 from .database import SessionLocal
 from sqlalchemy import text
 
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="FinanceMaster API", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── Startup ────────────────────────────────────────────────────────────────
+    # Incremental migrations for columns added after initial schema
+    with engine.connect() as conn:
+        for stmt in [
+            "ALTER TABLE transactions ADD COLUMN exclude_from_stats BOOLEAN DEFAULT FALSE",
+        ]:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass
+
+    db = SessionLocal()
+    try:
+        seed_system_categories(db)
+    finally:
+        db.close()
+
+    # Start background scheduler
+    try:
+        from .services.scheduler import start as scheduler_start
+        scheduler_start()
+    except Exception as exc:
+        import logging
+        logging.getLogger("main").warning("Scheduler not started: %s", exc)
+
+    yield
+
+    # ── Shutdown ───────────────────────────────────────────────────────────────
+    try:
+        from .services.scheduler import stop as scheduler_stop
+        scheduler_stop()
+    except Exception:
+        pass
+
+
+app = FastAPI(title="FinanceMaster API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,26 +89,9 @@ app.include_router(goals.router)
 app.include_router(portfolio.router)
 app.include_router(dashboard.router)
 app.include_router(budgets.router)
-
-
-@app.on_event("startup")
-def on_startup():
-    # Incremental migrations for columns added after initial schema
-    with engine.connect() as conn:
-        for stmt in [
-            "ALTER TABLE transactions ADD COLUMN exclude_from_stats BOOLEAN DEFAULT FALSE",
-        ]:
-            try:
-                conn.execute(text(stmt))
-                conn.commit()
-            except Exception:
-                pass  # Column already exists
-
-    db = SessionLocal()
-    try:
-        seed_system_categories(db)
-    finally:
-        db.close()
+app.include_router(ai.router)
+app.include_router(webhooks.router)
+app.include_router(trade_republic.router)
 
 
 # Serve React frontend

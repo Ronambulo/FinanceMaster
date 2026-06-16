@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { catApi, authApi } from '@/lib/api'
 import type { Category } from '@/lib/api'
@@ -11,10 +12,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Plus, Trash2, Settings as SettingsIcon, Lock, Palette, Loader2, Check, Pencil } from 'lucide-react'
+import { Plus, Trash2, Settings as SettingsIcon, Lock, Palette, Loader2, Check, Pencil, Trophy, Webhook, Plug, Copy, Trash } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { THEMES, ACCENT_COLORS, THEME_KEY, ACCENT_KEY, applyTheme, getChartColors, saveChartColors, resetChartColors } from '@/lib/theme'
+import { Achievements } from '@/components/Achievements'
+import { THEMES, ACCENT_COLORS, THEME_KEY, ACCENT_KEY, applyTheme, getChartColors, saveChartColors, resetChartColors, getCompact, setCompact } from '@/lib/theme'
 import type { ChartColors } from '@/lib/theme'
+import { webhookApi, trApi, portfolioApi, getApiToken } from '@/lib/api'
+import type { Webhook as WebhookType } from '@/lib/api'
 
 const CATEGORY_TYPES = [
   { value: 'expense', label: 'Gasto' },
@@ -76,12 +80,202 @@ function CategoryForm({ initial, isSystem, onSave, onCancel }: { initial?: Parti
   )
 }
 
+// ── Integrations tab ─────────────────────────────────────────────────────────
+const WEBHOOK_EVENTS = [
+  'transaction.created', 'transaction.imported', 'recurring.detected',
+  'goal.completed', 'achievement.unlocked',
+]
+
+function IntegrationsTab() {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const { data: webhooks = [] } = useQuery({ queryKey: ['webhooks'], queryFn: webhookApi.list })
+  const { data: trStatus } = useQuery({ queryKey: ['tr-status'], queryFn: trApi.status, retry: false })
+  const [apiToken, setApiToken] = useState<string | null>(null)
+  const [newWh, setNewWh] = useState({ url: '', events: [] as string[] })
+  const [trPhone, setTrPhone] = useState('')
+  const [trPin, setTrPin] = useState('')
+  const [trCode, setTrCode] = useState('')
+  const [trPhase, setTrPhase] = useState<'idle' | 'awaiting_2fa' | 'connected'>('idle')
+  const [trLoading, setTrLoading] = useState(false)
+
+  const createWh = useMutation({
+    mutationFn: () => webhookApi.create(newWh),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['webhooks'] }); setNewWh({ url: '', events: [] }) },
+  })
+  const deleteWh = useMutation({
+    mutationFn: (id: number) => webhookApi.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['webhooks'] }),
+  })
+  const toggleWh = useMutation({
+    mutationFn: (id: number) => webhookApi.toggle(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['webhooks'] }),
+  })
+
+  const [trError, setTrError] = useState<string | null>(null)
+
+  const handleTrConnect = async () => {
+    setTrLoading(true)
+    setTrError(null)
+    try {
+      const res = await trApi.connect(trPhone, trPin)
+      setTrPhase(res.status === 'connected' ? 'connected' : 'awaiting_2fa')
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Error al conectar'
+      setTrError(msg)
+    } finally { setTrLoading(false) }
+  }
+  const handleTrVerify = async () => {
+    setTrLoading(true)
+    setTrError(null)
+    try {
+      await trApi.verify(trCode)
+      setTrPhase('connected')
+      qc.invalidateQueries({ queryKey: ['tr-status'] })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Código incorrecto'
+      setTrError(msg)
+    } finally { setTrLoading(false) }
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Trade Republic */}
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Trade Republic API</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {trStatus?.connected || trPhase === 'connected' ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-positive">Conectado</p>
+                {trStatus?.last_sync && <p className="text-xs text-muted-foreground">Última sync: {new Date(trStatus.last_sync).toLocaleString('es-ES')}</p>}
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <Button size="sm" variant="outline" onClick={() =>
+                  trApi.sync().then(r => {
+                    const parts = [`${r.synced} nuevas`]
+                    if (r.updated > 0) parts.push(`${r.updated} corregidas`)
+                    toast(`Sync: ${parts.join(', ')}`, 'success')
+                  })
+                }>Sincronizar</Button>
+                <Button size="sm" variant="outline" onClick={() =>
+                  trApi.fixUnknown().then(r =>
+                    toast(r.deleted > 0 ? `${r.deleted} sin categoría eliminadas — vuelve a sincronizar` : 'Sin transacciones para reparar', 'success')
+                  )
+                }>Reparar categorías</Button>
+                <Button size="sm" variant="outline" onClick={() =>
+                  trApi.fixSecurities().then(r => toast(r.fixed > 0 ? `${r.fixed} operaciones movidas al portfolio` : 'Portfolio ya en orden', 'success'))
+                }>Reparar portfolio</Button>
+                <Button size="sm" variant="outline" onClick={() =>
+                  trApi.fixShares()
+                    .then(r => toast(r.fixed > 0 ? `${r.fixed}/${r.total} acciones reparadas` : 'No hay operaciones sin acciones', 'success'))
+                    .catch(e => toast(e.message || 'Error al reparar acciones', 'error'))
+                }>Reparar acciones</Button>
+                <Button size="sm" variant="outline" onClick={() =>
+                  portfolioApi.estimateShares()
+                    .then(r => toast(r.estimated > 0 ? `${r.estimated} acciones estimadas (${r.skipped} sin ticker)` : 'Sin operaciones pendientes', 'success'))
+                    .catch(e => toast(e.message || 'Error', 'error'))
+                }>Estimar acciones</Button>
+                <Button size="sm" variant="outline" onClick={() =>
+                  trApi.dedupe().then(r => toast(r.deleted > 0 ? `${r.deleted} duplicados eliminados` : 'Sin duplicados', 'success'))
+                }>Limpiar duplicados</Button>
+                <Button size="sm" variant="destructive" onClick={() => { trApi.disconnect(); qc.invalidateQueries({ queryKey: ['tr-status'] }) }}>Desconectar</Button>
+              </div>
+            </div>
+          ) : trPhase === 'awaiting_2fa' ? (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Introduce el código de 4 dígitos de la app de Trade Republic:</p>
+              <div className="flex gap-2">
+                <Input placeholder="0000" value={trCode} onChange={e => setTrCode(e.target.value)} className="w-24" maxLength={4} inputMode="numeric" />
+                <Button size="sm" onClick={handleTrVerify} disabled={trLoading || trCode.length < 4}>
+                  {trLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verificar'}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => { setTrPhase('idle'); setTrCode(''); setTrError(null) }} className="text-muted-foreground">
+                  Cancelar
+                </Button>
+              </div>
+              {trError && <p className="text-xs text-negative rounded-lg bg-negative/10 px-2 py-1.5">{trError}</p>}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">API no oficial vía WebSocket. El primer inicio de sesión puede tardar ~30 segundos.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Input placeholder="+34612345678" value={trPhone} onChange={e => setTrPhone(e.target.value)} />
+                <Input placeholder="PIN (4 dígitos)" type="password" value={trPin} onChange={e => setTrPin(e.target.value)} maxLength={4} />
+              </div>
+              {trError && <p className="text-xs text-negative rounded-lg bg-negative/10 px-2 py-1.5">{trError}</p>}
+              <Button size="sm" onClick={handleTrConnect} disabled={trLoading || !trPhone || !trPin}>
+                {trLoading ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Conectando…</> : 'Conectar'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Webhooks */}
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Webhooks</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            {(webhooks as WebhookType[]).map(wh => (
+              <div key={wh.id} className="flex items-center gap-2 rounded-lg border border-border p-2.5 text-xs">
+                <div className="flex-1 min-w-0">
+                  <p className="truncate font-mono text-muted-foreground">{wh.url}</p>
+                  <p className="text-muted-foreground/60 mt-0.5">{wh.events.join(', ')}</p>
+                </div>
+                <button onClick={() => toggleWh.mutate(wh.id)} className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${wh.is_active ? 'bg-positive/15 text-positive' : 'bg-muted text-muted-foreground'}`}>{wh.is_active ? 'activo' : 'pausado'}</button>
+                <button onClick={() => deleteWh.mutate(wh.id)} className="text-muted-foreground hover:text-negative"><Trash className="h-3.5 w-3.5" /></button>
+              </div>
+            ))}
+            {webhooks.length === 0 && <p className="text-xs text-muted-foreground">No hay webhooks configurados.</p>}
+          </div>
+          <div className="space-y-2 border-t border-border pt-3">
+            <Input placeholder="https://mi-app.com/webhook" value={newWh.url} onChange={e => setNewWh(p => ({ ...p, url: e.target.value }))} className="text-xs" />
+            <div className="flex flex-wrap gap-1.5">
+              {WEBHOOK_EVENTS.map(ev => (
+                <button key={ev} onClick={() => setNewWh(p => ({ ...p, events: p.events.includes(ev) ? p.events.filter(e => e !== ev) : [...p.events, ev] }))}
+                  className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${newWh.events.includes(ev) ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}>
+                  {ev}
+                </button>
+              ))}
+            </div>
+            <Button size="sm" disabled={!newWh.url || newWh.events.length === 0} onClick={() => createWh.mutate()}>Añadir webhook</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* API token */}
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Token de API</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          <p className="text-xs text-muted-foreground">Token de larga duración (365 días) para acceso externo via <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+          {apiToken ? (
+            <div className="flex items-center gap-2">
+              <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-xs font-mono">{apiToken}</code>
+              <button onClick={() => { navigator.clipboard.writeText(apiToken); toast('Copiado', 'success') }} className="text-muted-foreground hover:text-foreground"><Copy className="h-4 w-4" /></button>
+            </div>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => getApiToken().then(r => setApiToken(r.token))}>Generar token</Button>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 // ── Settings component ────────────────────────────────────────────────────────
 export function Settings() {
   const user = useAuthStore(s => s.user)
   const qc = useQueryClient()
   const { toast } = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'categories')
   const [newCatOpen, setNewCatOpen] = useState(false)
+
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab) { setActiveTab(tab); setSearchParams({}, { replace: true }) }
+  }, [])
   const [editingCat, setEditingCat] = useState<Category | null>(null)
   const [newRuleOpen, setNewRuleOpen] = useState(false)
   const [ruleForm, setRuleForm] = useState({ keyword: '', category_id: '', field: 'name', priority: '0' })
@@ -89,6 +283,7 @@ export function Settings() {
   // Theme state
   const [activeTheme, setActiveTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'dark-blue')
   const [activeAccent, setActiveAccent] = useState(() => localStorage.getItem(ACCENT_KEY) || 'blue')
+  const [compact, setCompactState] = useState(() => getCompact())
 
   // Chart colors state
   const [chartColors, setChartColors] = useState<Partial<ChartColors>>(() => getChartColors() || {})
@@ -142,6 +337,11 @@ export function Settings() {
     applyTheme(activeTheme, accentId)
   }
 
+  const handleCompactToggle = (val: boolean) => {
+    setCompactState(val)
+    setCompact(val)
+  }
+
   const handleChartColorChange = (key: keyof ChartColors, value: string) => {
     const next = { ...chartColors, [key]: value }
     setChartColors(next)
@@ -168,7 +368,7 @@ export function Settings() {
         </div>
       </div>
 
-      <Tabs defaultValue="categories">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="categories">Mis categorías ({userCats.length})</TabsTrigger>
           <TabsTrigger value="rules">Reglas ({rules?.length || 0})</TabsTrigger>
@@ -178,6 +378,12 @@ export function Settings() {
           </TabsTrigger>
           <TabsTrigger value="security">
             <Lock className="h-3.5 w-3.5 mr-1.5" />Seguridad
+          </TabsTrigger>
+          <TabsTrigger value="achievements">
+            <Trophy className="h-3.5 w-3.5 mr-1.5" />Logros
+          </TabsTrigger>
+          <TabsTrigger value="integrations">
+            <Plug className="h-3.5 w-3.5 mr-1.5" />Integraciones
           </TabsTrigger>
         </TabsList>
 
@@ -349,6 +555,26 @@ export function Settings() {
               <p className="text-xs text-muted-foreground">Se aplica a las líneas de la gráfica de tendencia en Mensual.</p>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-sm font-medium">Densidad de interfaz</CardTitle></CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Modo compacto</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Reduce el espaciado para ver más contenido en pantalla.</p>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={compact}
+                  onClick={() => handleCompactToggle(!compact)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${compact ? 'bg-primary' : 'bg-muted'}`}
+                >
+                  <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition-transform ${compact ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Security */}
@@ -396,6 +622,18 @@ export function Settings() {
               </Button>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="achievements" className="mt-4">
+          <Card>
+            <CardContent className="p-5">
+              <Achievements />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="integrations" className="mt-4 space-y-4">
+          <IntegrationsTab />
         </TabsContent>
       </Tabs>
 

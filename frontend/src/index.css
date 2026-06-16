@@ -95,6 +95,25 @@
   .delay-375 { animation-delay: 375ms; }
 }
 
+/* ── Compact mode ── */
+html.compact main {
+  padding: 0.5rem !important;
+  padding-bottom: 5.5rem !important;
+}
+@media (min-width: 768px) {
+  html.compact main {
+    padding: 0.875rem !important;
+    padding-bottom: 0.875rem !important;
+  }
+}
+html.compact .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.875rem !important; }
+html.compact .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.625rem !important; }
+html.compact .gap-4 { gap: 0.625rem !important; }
+html.compact .gap-6 { gap: 0.875rem !important; }
+html.compact tbody td { padding-top: 0.4rem !important; padding-bottom: 0.4rem !important; }
+html.compact .text-xl { font-size: 1.05rem !important; }
+html.compact h1.text-2xl { font-size: 1.2rem !important; }
+
 /* ── Animation keyframes ── */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(12px); }
