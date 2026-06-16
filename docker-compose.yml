@@ -12,6 +12,10 @@ services:
     environment:
       - SECRET_KEY=cambia-esto-por-una-clave-secreta-larga-y-aleatoria
       - DATABASE_URL=sqlite:////data/finance.db
+      # AI chat (opcional — sin estas claves el chat de IA queda desactivado)
+      - NVIDIA_API_KEY=
+      - GROQ_API_KEY=
+      - GEMINI_API_KEY=
 
 x-casaos:
   architectures:
