@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueries } from '@tanstack/react-query'
-import { dashApi, txApi, goalApi, portfolioApi } from '@/lib/api'
-import type { Goal } from '@/lib/api'
+import { dashApi, txApi, goalApi, portfolioApi, budgetApi } from '@/lib/api'
+import type { Goal, PendingRecurring } from '@/lib/api'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 import { useDashboardLayout, type WidgetId } from '@/hooks/useDashboardLayout'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -17,7 +17,7 @@ import {
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Cell, PieChart, Pie,
-  LineChart, Line, Legend,
+  LineChart, Line, Legend, ReferenceLine,
 } from 'recharts'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
@@ -72,18 +72,21 @@ const PieTooltip = ({ active, payload }: any) => {
 
 /* ── Hero balance card ── */
 function BalanceHero({
-  balance, savingsMonth, incomeMonth, expensesMonth, goals, cycleLabel,
+  balance, savingsMonth, incomeMonth, expensesMonth, goals, cycleLabel, pendingRecurring,
 }: {
   balance: number; savingsMonth: number; incomeMonth: number; expensesMonth: number
-  goals: Goal[]; cycleLabel: string
+  goals: Goal[]; cycleLabel: string; pendingRecurring: PendingRecurring[]
 }) {
   const savingsRate = incomeMonth > 0 ? (savingsMonth / incomeMonth) * 100 : 0
   const isPositiveSavings = savingsMonth >= 0
 
-  const activeGoals   = goals.filter(g => g.is_active && g.type === 'EURO_TARGET' && g.target_amount)
-  const savedInGoals  = activeGoals.reduce((s, g) => s + g.current_amount, 0)
-  const available     = balance - savedInGoals
-  const hasGoals      = activeGoals.length > 0
+  const activeGoals        = goals.filter(g => g.is_active && g.type === 'EURO_TARGET' && g.target_amount)
+  const savedInGoals       = activeGoals.reduce((s, g) => s + g.current_amount, 0)
+  const pendingTotal       = pendingRecurring.reduce((s, r) => s + r.avg_amount, 0)
+  const available          = balance - savedInGoals - pendingTotal
+  const hasGoals           = activeGoals.length > 0
+  const hasPendingRecurring = pendingRecurring.length > 0
+  const hasBlocked         = hasGoals || hasPendingRecurring
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-card p-6 shadow-[0_4px_24px_rgba(0,0,0,0.5)] animate-fade-up">
@@ -119,30 +122,49 @@ function BalanceHero({
           </div>
         </div>
 
-        {hasGoals ? (
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-white/[0.03] border border-white/[0.05] p-3 space-y-1">
-              <div className="flex items-center gap-1.5">
-                <Wallet className="h-3.5 w-3.5 text-primary" />
-                <span className="text-[11px] text-muted-foreground">Disponible</span>
+        {hasBlocked ? (
+          <div className="mt-5 space-y-3">
+            {/* Summary boxes */}
+            <div className={cn('grid gap-3', hasGoals && hasPendingRecurring ? 'grid-cols-3' : 'grid-cols-2')}>
+              <div className="rounded-xl bg-white/[0.03] border border-white/[0.05] p-3 space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <Wallet className="h-3.5 w-3.5 text-primary" />
+                  <span className="text-[11px] text-muted-foreground">Disponible</span>
+                </div>
+                <p className="text-base font-bold text-foreground">{formatCurrency(Math.max(available, 0))}</p>
               </div>
-              <p className="text-base font-bold text-foreground">{formatCurrency(Math.max(available, 0))}</p>
+              {hasGoals && (
+                <div className="rounded-xl bg-white/[0.03] border border-white/[0.05] p-3 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <Target className="h-3.5 w-3.5 text-primary" />
+                    <span className="text-[11px] text-muted-foreground">En objetivos</span>
+                  </div>
+                  <p className="text-base font-bold text-primary">{formatCurrency(savedInGoals)}</p>
+                </div>
+              )}
+              {hasPendingRecurring && (
+                <div className="rounded-xl bg-white/[0.03] border border-white/[0.05] p-3 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <Activity className="h-3.5 w-3.5 text-amber-400" />
+                    <span className="text-[11px] text-muted-foreground">Recurrentes</span>
+                  </div>
+                  <p className="text-base font-bold text-amber-400">{formatCurrency(pendingTotal)}</p>
+                </div>
+              )}
             </div>
-            <div className="rounded-xl bg-white/[0.03] border border-white/[0.05] p-3 space-y-1">
-              <div className="flex items-center gap-1.5">
-                <Target className="h-3.5 w-3.5 text-primary" />
-                <span className="text-[11px] text-muted-foreground">En objetivos</span>
-              </div>
-              <p className="text-base font-bold text-primary">{formatCurrency(savedInGoals)}</p>
-            </div>
-            <div className="col-span-2 space-y-2 pt-1 border-t border-white/[0.05] mt-1">
+
+            {/* Detail list */}
+            <div className="space-y-2 pt-1 border-t border-white/[0.05]">
               {activeGoals.slice(0, 3).map(g => {
                 const pct = g.target_amount ? Math.min(100, (g.current_amount / g.target_amount) * 100) : 0
                 return (
                   <div key={g.id} className="space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[11px] text-muted-foreground truncate max-w-[60%]">{g.name}</span>
-                      <span className="text-[11px] text-muted-foreground">
+                    <div className="flex justify-between items-center gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Target className="h-3 w-3 text-primary shrink-0" />
+                        <span className="text-[11px] text-muted-foreground truncate">{g.name}</span>
+                      </div>
+                      <span className="text-[11px] text-muted-foreground shrink-0">
                         {formatCurrency(g.current_amount)} / {formatCurrency(g.target_amount ?? 0)}
                       </span>
                     </div>
@@ -151,7 +173,21 @@ function BalanceHero({
                 )
               })}
               {activeGoals.length > 3 && (
-                <p className="text-[10px] text-muted-foreground/60">+{activeGoals.length - 3} más</p>
+                <p className="text-[10px] text-muted-foreground/60">+{activeGoals.length - 3} objetivos más</p>
+              )}
+              {pendingRecurring.slice(0, 4).map(r => (
+                <div key={r.group_id} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-xs shrink-0">{r.category_icon}</span>
+                    <span className="text-[11px] text-muted-foreground truncate">{r.display_name}</span>
+                  </div>
+                  <span className="text-[11px] font-medium text-amber-400 shrink-0 tabular-nums">
+                    -{formatCurrency(r.avg_amount)}
+                  </span>
+                </div>
+              ))}
+              {pendingRecurring.length > 4 && (
+                <p className="text-[10px] text-muted-foreground/60">+{pendingRecurring.length - 4} recurrentes más</p>
               )}
             </div>
           </div>
@@ -272,7 +308,8 @@ export function Dashboard() {
     enabled: !!(periodStart && periodEnd),
   })
 
-  const trendCycles = cycles.slice(-6)
+  const [numTramos, setNumTramos] = useState<number | null>(6)
+  const trendCycles = numTramos === null ? cycles : cycles.slice(-numTramos)
   const cycleQueries = useQueries({
     queries: trendCycles.map(c => ({
       queryKey: ['monthly-detail', c.start, c.end],
@@ -290,6 +327,16 @@ export function Dashboard() {
   const { data: txs      } = useQuery({ queryKey: ['tx-recent'], queryFn: () => txApi.list({ page: 1, page_size: 5, account_category: 'CASH' }) })
   const { data: goals    } = useQuery({ queryKey: ['goals'],     queryFn: goalApi.list })
   const { data: portfolio} = useQuery({ queryKey: ['portfolio-performance'], queryFn: portfolioApi.performance })
+  const { data: budgets  } = useQuery({
+    queryKey: ['budget-status', periodStart, periodEnd],
+    queryFn: () => budgetApi.status(undefined, periodStart, periodEnd),
+    enabled: !!(periodStart && periodEnd),
+  })
+  const { data: pendingRecurring = [] } = useQuery({
+    queryKey: ['pending-recurring', periodStart, periodEnd],
+    queryFn: () => dashApi.pendingRecurring(periodStart!, periodEnd!),
+    enabled: !!(periodStart && periodEnd),
+  })
 
   const PIE_PALETTE = ['#818cf8', '#34d399', '#fbbf24', '#f472b6', '#38bdf8', '#fb923c']
   const today   = new Date()
@@ -359,6 +406,7 @@ export function Dashboard() {
         balance={balance} savingsMonth={savingsMonth}
         incomeMonth={incomeMonth} expensesMonth={expensesMonth}
         goals={goals ?? []} cycleLabel={cycleLabel}
+        pendingRecurring={pendingRecurring}
       />
     ),
     metrics: (
@@ -379,10 +427,28 @@ export function Dashboard() {
     trend: (
       <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
         <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-positive/[0.05] blur-3xl" />
-        <CardHeader className="relative z-10 pb-2">
+        <CardHeader className="relative z-10 pb-2 flex flex-row items-center justify-between">
           <CardTitle className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
             {isPayrollCycle ? 'Flujo de caja por nómina' : 'Ingresos vs Gastos · 6 meses'}
           </CardTitle>
+          {isPayrollCycle && (
+            <div className="flex gap-1">
+              {([3, 6, 9, 12, null] as (number | null)[]).map(n => (
+                <button
+                  key={n ?? 'max'}
+                  onClick={() => setNumTramos(n)}
+                  className={cn(
+                    'rounded px-2 py-0.5 text-[10px] font-medium transition-colors',
+                    numTramos === n
+                      ? 'bg-primary/20 text-primary'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.06]'
+                  )}
+                >
+                  {n ?? 'Max'}
+                </button>
+              ))}
+            </div>
+          )}
         </CardHeader>
         <CardContent className="relative z-10 px-2 pb-4" style={{ minHeight: 240 }}>
           {isPayrollCycle ? (
@@ -392,6 +458,7 @@ export function Dashboard() {
                 <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                 <Tooltip content={<ChartTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 11, color: 'hsl(var(--muted-foreground))' }} />
+                <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" strokeDasharray="4 3" />
                 <Line type="monotone" dataKey="income"   name="Ingresos" stroke="hsl(var(--positive))" strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="expenses" name="Gastos"   stroke="hsl(var(--negative))" strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="savings"  name="Ahorro"   stroke="hsl(var(--primary))"  strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
@@ -422,54 +489,82 @@ export function Dashboard() {
       </Card>
     ),
     pie: (
-      <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
-        <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-negative/[0.05] blur-3xl" />
-        <CardHeader className="relative z-10 pb-2">
-          <CardTitle className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Gastos por categoría</CardTitle>
-        </CardHeader>
-        <CardContent className="relative z-10 pb-4">
-          {pieData.length > 0 ? (
-            <div className="space-y-3">
-              <div className="relative h-44">
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                  <div className="text-center">
-                    <p className="text-base font-bold text-foreground leading-tight">{formatCurrency(totalPie)}</p>
-                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest">este tramo</p>
-                  </div>
+      <div className="grid gap-4 md:grid-cols-[240px_1fr]">
+        {/* Gastos por categoría — donut only */}
+        <Card className="relative overflow-visible rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-negative/[0.05] blur-3xl" />
+          <CardHeader className="relative z-10 pb-2">
+            <CardTitle className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Gastos por categoría</CardTitle>
+          </CardHeader>
+          <CardContent className="relative z-10 pb-4 flex justify-center">
+            {pieData.length > 0 ? (
+              <div className="relative w-44 h-44">
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+                  <p className="text-sm font-bold text-foreground leading-tight">{formatCurrency(totalPie)}</p>
+                  <p className="text-[9px] text-muted-foreground uppercase tracking-widest mt-0.5">este tramo</p>
                 </div>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={52} outerRadius={76} paddingAngle={2} dataKey="value" startAngle={90} endAngle={-270} strokeWidth={0}>
-                      {pieData.map((entry, i) => <Cell key={i} fill={entry.fill} opacity={0.85} />)}
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={56} outerRadius={80} paddingAngle={2} dataKey="value" startAngle={90} endAngle={-270} strokeWidth={0}>
+                      {pieData.map((entry, i) => <Cell key={i} fill={entry.fill} opacity={0.9} />)}
                     </Pie>
-                    <Tooltip content={<PieTooltip />} />
+                    <Tooltip content={<PieTooltip />} wrapperStyle={{ zIndex: 100 }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="space-y-1.5">
-                {pieData.map((entry, i) => {
-                  const pct = totalPie > 0 ? Math.round((entry.value / totalPie) * 100) : 0
-                  return (
-                    <div key={i} className="flex items-center gap-2 min-w-0">
-                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: entry.fill }} />
-                      <span className="text-[11px] text-muted-foreground truncate flex-1">{entry.name}</span>
-                      <span className="text-[11px] font-medium tabular-nums">{formatCurrency(entry.value)}</span>
-                      <span className="text-[10px] text-muted-foreground/60 w-7 text-right tabular-nums">{pct}%</span>
+            ) : (
+              <div className="h-44 flex items-center justify-center text-sm text-muted-foreground">Sin datos</div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Presupuestos por categoría */}
+        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-violet-500/[0.05] blur-3xl" />
+          <CardHeader className="relative z-10 pb-2">
+            <CardTitle className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Presupuestos por categoría</CardTitle>
+          </CardHeader>
+          <CardContent className="relative z-10 pb-4 space-y-3">
+            {!budgets || budgets.length === 0 ? (
+              <div className="h-36 flex items-center justify-center text-sm text-muted-foreground">Sin presupuestos</div>
+            ) : (
+              budgets.map(b => {
+                const pct = Math.min(b.pct_used, 100)
+                const over = b.pct_used > 100
+                return (
+                  <div key={b.budget_id} className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm" style={{ backgroundColor: b.category_color + '22' }}>
+                          {b.category_icon}
+                        </span>
+                        <span className="text-sm font-medium text-foreground truncate">{b.category_name}</span>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span className={cn('text-sm font-semibold tabular-nums', over ? 'text-negative' : 'text-foreground')}>
+                          {formatCurrency(b.spent)}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground ml-1">/ {formatCurrency(b.budgeted)}</span>
+                      </div>
                     </div>
-                  )
-                })}
-              </div>
-            </div>
-          ) : (
-            <div className="h-40 flex items-center justify-center text-sm text-muted-foreground">Sin datos</div>
-          )}
-        </CardContent>
-      </Card>
+                    <div className="h-1.5 w-full rounded-full bg-white/[0.05]">
+                      <div
+                        className="h-1.5 rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%`, backgroundColor: over ? 'hsl(var(--negative))' : b.category_color, opacity: 0.85 }}
+                      />
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </CardContent>
+        </Card>
+      </div>
     ),
     insights: <InsightsWidget />,
     networth: <NetWorthChart months={24} />,
     personality: (
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
         <SpendingPersonality />
         <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-card p-5 shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
           <Achievements compact />

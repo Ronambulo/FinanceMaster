@@ -5,6 +5,7 @@ import { dashApi, budgetApi, txApi, recurringApi } from '@/lib/api'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 import type { Category } from '@/lib/api'
 import { catApi } from '@/lib/api'
+import type { MonthlyDetailRow } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -18,7 +19,7 @@ import { useToast } from '@/components/ui/toast'
 import {
   ChevronLeft, ChevronRight, Plus, Trash2, Loader2,
   TrendingUp, TrendingDown, Eye, EyeOff, RefreshCw, Calendar, Search,
-  ArrowUpRight, ArrowDownRight, FileText, FileSpreadsheet,
+  ArrowUpRight, ArrowDownRight, FileText, FileSpreadsheet, Repeat2,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
@@ -133,6 +134,64 @@ function AddBudgetDialog({
   )
 }
 
+/* ─── Diálogo marcar como recurrente ─────────────────────────── */
+function MarkRecurringDialog({ tx, onClose }: { tx: MonthlyDetailRow; onClose: () => void }) {
+  const qc = useQueryClient()
+  const { toast } = useToast()
+  const [name, setName] = useState(tx.name ?? '')
+  const [period, setPeriod] = useState('30')
+
+  const mutation = useMutation({
+    mutationFn: () => recurringApi.createFromTx({
+      transaction_id: tx.id,
+      display_name: name,
+      period_days: Number(period),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recurring'] })
+      qc.invalidateQueries({ queryKey: ['monthly-detail'] })
+      toast('Marcado como recurrente', 'success')
+      onClose()
+    },
+    onError: (e: any) => toast(e.message ?? 'Error', 'error'),
+  })
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Marcar como recurrente</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Nombre</Label>
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="Nombre del gasto recurrente" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Periodicidad</Label>
+            <Select value={period} onValueChange={setPeriod}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7">Semanal</SelectItem>
+                <SelectItem value="14">Quincenal</SelectItem>
+                <SelectItem value="30">Mensual</SelectItem>
+                <SelectItem value="90">Trimestral</SelectItem>
+                <SelectItem value="365">Anual</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-xs text-muted-foreground">Importe: {formatCurrency(Math.abs(tx.amount))}</p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button disabled={!name.trim() || mutation.isPending} onClick={() => mutation.mutate()}>
+            {mutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Guardar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /* ─── Página principal ────────────────────────────────────────── */
 export function Monthly() {
   const qc = useQueryClient()
@@ -140,6 +199,7 @@ export function Monthly() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [cycleOffset, setCycleOffset] = useState(0)  // 0 = latest cycle, -1 = previous, etc.
   const [addOpen, setAddOpen] = useState(false)
+  const [recurringTx, setRecurringTx] = useState<MonthlyDetailRow | null>(null)
   const [txSearch, setTxSearch]     = useState('')
   const [txTypeGroup, setTxTypeGroup] = useState('')  // '' | 'income' | 'expense'
   const [cycleCategory, setCycleCategory] = useState<number | null>(null) // category driving cycle detection
@@ -216,7 +276,11 @@ export function Monthly() {
   })
   const deleteRecurringMutation = useMutation({
     mutationFn: recurringApi.delete,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['recurring'] }); toast('Eliminado', 'success') },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recurring'] })
+      qc.invalidateQueries({ queryKey: ['monthly-detail'] })
+      toast('Grupo recurrente eliminado', 'success')
+    },
   })
   const toggleRecurringMutation = useMutation({
     mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) => recurringApi.update(id, { is_active }),
@@ -581,6 +645,23 @@ export function Monthly() {
                       >
                         {row.exclude_from_stats ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
+                      {row.recurring_group_id ? (
+                        <button
+                          onClick={() => deleteRecurringMutation.mutate(row.recurring_group_id!)}
+                          className="text-primary hover:text-negative transition-colors"
+                          title="Quitar grupo recurrente"
+                        >
+                          <Repeat2 className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setRecurringTx(row)}
+                          className="text-muted-foreground/30 hover:text-primary transition-colors"
+                          title="Marcar como recurrente"
+                        >
+                          <Repeat2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -597,6 +678,9 @@ export function Monthly() {
                       <th className="text-right px-4 py-2.5 font-medium">Importe</th>
                       <th className="px-4 py-2.5 text-center font-medium w-10" title="Incluir/excluir del cálculo">
                         <Eye className="h-3.5 w-3.5 mx-auto" />
+                      </th>
+                      <th className="px-4 py-2.5 text-center font-medium w-10" title="Recurrente">
+                        <Repeat2 className="h-3.5 w-3.5 mx-auto" />
                       </th>
                     </tr>
                   </thead>
@@ -629,6 +713,25 @@ export function Monthly() {
                               ? <EyeOff className="h-4 w-4 text-negative/60" />
                               : <Eye className="h-4 w-4" />}
                           </button>
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          {row.recurring_group_id ? (
+                            <button
+                              onClick={() => deleteRecurringMutation.mutate(row.recurring_group_id!)}
+                              className="text-primary hover:text-negative transition-colors"
+                              title="Quitar grupo recurrente"
+                            >
+                              <Repeat2 className="h-4 w-4" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setRecurringTx(row)}
+                              className="text-muted-foreground/30 hover:text-primary transition-colors"
+                              title="Marcar como recurrente"
+                            >
+                              <Repeat2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -772,6 +875,7 @@ export function Monthly() {
         categories={categories || []}
         currentMonth={monthStr}
       />
+      {recurringTx && <MarkRecurringDialog tx={recurringTx} onClose={() => setRecurringTx(null)} />}
     </div>
   )
 }

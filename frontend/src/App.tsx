@@ -132,6 +132,12 @@ function TrAutoConnect() {
   return <TwoFAModal open={show2FA} onClose={() => setShow2FA(false)} />
 }
 
+function PublicRoute({ children }: { children: React.ReactNode }) {
+  const token = useAuthStore(s => s.token)
+  if (token) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore(s => s.token)
   if (!token) return <Navigate to="/login" replace />
@@ -160,8 +166,8 @@ export default function App() {
           <CommandPalette />
           <OnboardingWizard />
           <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/registro" element={<Register />} />
+            <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+            <Route path="/registro" element={<PublicRoute><Register /></PublicRoute>} />
             <Route path="/" element={<PrivateRoute><AppLayout /></PrivateRoute>}>
               <Route index element={<Dashboard />} />
               <Route path="transacciones" element={<Transactions />} />

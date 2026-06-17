@@ -206,6 +206,46 @@ def upcoming_recurring(
     return result
 
 
+@router.get("/pending-recurring", response_model=List[schemas.PendingRecurring])
+def pending_recurring(
+    date_from: date = Query(...),
+    date_to: date = Query(...),
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    groups = (
+        db.query(models.RecurringGroup)
+        .options(joinedload(models.RecurringGroup.category))
+        .filter(
+            models.RecurringGroup.user_id == current_user.id,
+            models.RecurringGroup.is_active == True,
+            models.RecurringGroup.next_expected_date != None,
+            models.RecurringGroup.next_expected_date >= date_from,
+            models.RecurringGroup.next_expected_date <= date_to,
+        )
+        .all()
+    )
+    result = []
+    for g in groups:
+        paid = db.query(models.Transaction).filter(
+            models.Transaction.user_id == current_user.id,
+            models.Transaction.recurring_group_id == g.id,
+            models.Transaction.date >= date_from,
+        ).first()
+        if not paid:
+            cat = g.category
+            result.append(schemas.PendingRecurring(
+                group_id=g.id,
+                display_name=g.display_name,
+                avg_amount=round(g.avg_amount or 0.0, 2),
+                category_name=cat.name if cat else "Sin categoría",
+                category_color=cat.color if cat else "#94a3b8",
+                category_icon=cat.icon if cat else "💳",
+                next_expected_date=g.next_expected_date,
+            ))
+    return result
+
+
 @router.get("/monthly-detail", response_model=List[schemas.MonthlyDetailRow])
 def monthly_detail(
     year: Optional[int] = None,
@@ -248,6 +288,7 @@ def monthly_detail(
             category_icon=tx.category.icon if tx.category else "❓",
             amount=tx.amount,
             exclude_from_stats=tx.exclude_from_stats or False,
+            recurring_group_id=tx.recurring_group_id,
         )
         for tx in txs
     ]

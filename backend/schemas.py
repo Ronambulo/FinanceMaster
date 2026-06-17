@@ -235,6 +235,13 @@ class SavingsAllocationUpdate(BaseModel):
 
 
 # ── Portfolio ─────────────────────────────────────────────────────────────────
+class TradeEvent(BaseModel):
+    date: str
+    shares: float
+    price_eur: float
+    total_eur: float
+
+
 class PortfolioPosition(BaseModel):
     symbol: str
     name: str
@@ -246,10 +253,49 @@ class PortfolioPosition(BaseModel):
     dividends_received: float
     first_purchase_date: Optional[str] = None
     buy_dates: List[str] = []
+    sell_dates: List[str] = []
+    buy_events: List[TradeEvent] = []
+    sell_events: List[TradeEvent] = []
     current_price: Optional[float] = None
     market_value: Optional[float] = None
     unrealized_pnl: Optional[float] = None
     unrealized_pnl_pct: Optional[float] = None
+    is_manual: bool = False
+    manual_id: Optional[int] = None
+
+
+class StockSearchResult(BaseModel):
+    ticker: str
+    name: str
+    exchange: str = ""
+    currency: str = "USD"
+    type_disp: str = ""
+
+
+class ManualPositionCreate(BaseModel):
+    ticker: str
+    name: str
+    shares: float
+    avg_price_eur: float
+    currency: str = "EUR"
+
+
+class ManualPositionUpdate(BaseModel):
+    shares: Optional[float] = None
+    avg_price_eur: Optional[float] = None
+
+
+class ManualPositionOut(BaseModel):
+    id: int
+    ticker: str
+    name: str
+    shares: float
+    avg_price_eur: float
+    currency: str
+    created_at: str
+
+    class Config:
+        from_attributes = True
 
 class PortfolioDividend(BaseModel):
     symbol: str
@@ -346,6 +392,23 @@ class MonthlyDetailRow(BaseModel):
     category_icon: str
     amount: float
     exclude_from_stats: bool
+    recurring_group_id: Optional[int] = None
+
+
+class RecurringGroupCreate(BaseModel):
+    transaction_id: int
+    display_name: str
+    period_days: int
+
+class PendingRecurring(BaseModel):
+    group_id: int
+    display_name: str
+    avg_amount: float
+    category_name: str
+    category_color: str
+    category_icon: str
+    next_expected_date: Optional[date] = None
+
 
 class PricePoint(BaseModel):
     date: str

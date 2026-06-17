@@ -12,6 +12,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...(options.headers as Record<string, string> || {}),
   }
   const res = await fetch(`${BASE}${path}`, { ...options, headers })
+  if (res.status === 401) {
+    localStorage.removeItem('fm_token')
+    localStorage.removeItem('fm-auth')
+    const isAuthPage = ['/login', '/registro'].includes(window.location.pathname)
+    if (!isAuthPage) window.location.replace('/login')
+    throw new Error('Sesión caducada. Inicia sesión de nuevo.')
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || 'Error desconocido')
@@ -78,6 +85,8 @@ export const dashApi = {
     if (params.date_to)   q.set('date_to',   params.date_to)
     return request<MonthlyDetailRow[]>(`/dashboard/monthly-detail?${q}`)
   },
+  pendingRecurring: (dateFrom: string, dateTo: string) =>
+    request<PendingRecurring[]>(`/dashboard/pending-recurring?date_from=${dateFrom}&date_to=${dateTo}`),
   netWorthHistory: (months = 24) =>
     request<NetWorthPoint[]>(`/dashboard/net-worth-history?months=${months}`),
   insights: () =>
@@ -106,6 +115,8 @@ export const catApi = {
 export const recurringApi = {
   list: () => request<RecurringGroup[]>('/recurring'),
   detect: () => request<void>('/recurring/detect', { method: 'POST' }),
+  createFromTx: (data: { transaction_id: number; display_name: string; period_days: number }) =>
+    request<RecurringGroup>('/recurring/from-transaction', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: number, data: Partial<RecurringGroup>) =>
     request<RecurringGroup>(`/recurring/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id: number) => request<void>(`/recurring/${id}`, { method: 'DELETE' }),
@@ -153,6 +164,15 @@ export const portfolioApi = {
   },
   priceHistory: (symbols: string[], period = '1y') =>
     request<PriceHistory[]>(`/portfolio/price-history?symbols=${symbols.join(',')}&period=${period}`),
+  searchStocks: (q: string) =>
+    request<StockSearchResult[]>(`/portfolio/search?q=${encodeURIComponent(q)}`),
+  manualPositions: () => request<ManualPosition[]>('/portfolio/manual-positions'),
+  addManualPosition: (data: Omit<ManualPosition, 'id' | 'created_at'>) =>
+    request<ManualPosition>('/portfolio/manual-positions', { method: 'POST', body: JSON.stringify(data) }),
+  updateManualPosition: (id: number, data: { shares?: number; avg_price_eur?: number }) =>
+    request<ManualPosition>(`/portfolio/manual-positions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteManualPosition: (id: number) =>
+    request<void>(`/portfolio/manual-positions/${id}`, { method: 'DELETE' }),
 }
 
 // Budgets
@@ -196,13 +216,17 @@ export interface DashboardOverview { balance: number; income_month: number; expe
 export interface CategoryBreakdown { category_id: number | null; category_name: string; category_color: string; category_icon: string; total: number; count: number }
 export interface MonthlyTrend { month: string; income: number; expenses: number; savings: number }
 export interface UpcomingRecurring { id: number; display_name: string; avg_amount: number; next_expected_date: string | null; days_until: number | null; category: Category | null }
-export interface PortfolioPosition { symbol: string; name: string; asset_class: string; shares: number; avg_buy_price: number; total_invested: number; realized_pnl: number; dividends_received: number; first_purchase_date: string | null; buy_dates: string[]; current_price: number | null; market_value: number | null; unrealized_pnl: number | null; unrealized_pnl_pct: number | null }
+export interface PendingRecurring { group_id: number; display_name: string; avg_amount: number; category_name: string; category_color: string; category_icon: string; next_expected_date: string | null }
+export interface TradeEvent { date: string; shares: number; price_eur: number; total_eur: number }
+export interface PortfolioPosition { symbol: string; name: string; asset_class: string; shares: number; avg_buy_price: number; total_invested: number; realized_pnl: number; dividends_received: number; first_purchase_date: string | null; buy_dates: string[]; sell_dates: string[]; buy_events: TradeEvent[]; sell_events: TradeEvent[]; current_price: number | null; market_value: number | null; unrealized_pnl: number | null; unrealized_pnl_pct: number | null; is_manual?: boolean; manual_id?: number | null }
+export interface StockSearchResult { ticker: string; name: string; exchange: string; currency: string; type_disp: string }
+export interface ManualPosition { id: number; ticker: string; name: string; shares: number; avg_price_eur: number; currency: string; created_at: string }
 export interface PortfolioPerformance { total_invested: number; total_realized_pnl: number; total_fees: number; total_dividends: number; total_market_value: number; total_unrealized_pnl: number; positions: PortfolioPosition[]; dividends_by_asset: { symbol: string; name: string; total: number; count: number }[] }
 export interface PricePoint { date: string; close: number }
 export interface PriceHistory { symbol: string; points: PricePoint[] }
 export interface Budget { id: number; category_id: number | null; category: Category | null; amount: number; month: string | null; is_recurring: boolean }
 export interface BudgetStatus { budget_id: number; category_id: number | null; category_name: string; category_color: string; category_icon: string; budgeted: number; spent: number; remaining: number; pct_used: number }
-export interface MonthlyDetailRow { id: number; date: string; name: string | null; category_id: number | null; category_name: string; category_color: string; category_icon: string; amount: number; exclude_from_stats: boolean }
+export interface MonthlyDetailRow { id: number; date: string; name: string | null; category_id: number | null; category_name: string; category_color: string; category_icon: string; amount: number; exclude_from_stats: boolean; recurring_group_id: number | null }
 export interface NetWorthPoint { month: string; cash: number; portfolio: number; debt: number; net_worth: number }
 export interface Insight { id: number; type: string; title: string; message: string; severity: string; is_read: boolean; created_at: string }
 export interface Webhook { id: number; url: string; events: string[]; is_active: boolean; created_at: string }

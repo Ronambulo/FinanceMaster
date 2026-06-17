@@ -15,8 +15,33 @@ ISIN_TO_YAHOO: Dict[str, Optional[tuple]] = {
     "US0231351067": ("AMZN",    "USD"),   # Amazon
     "US5949181045": ("MSFT",    "USD"),   # Microsoft
     "US61174X1090": ("MNST",    "USD"),   # Monster Beverage
+    "US84615Q1031": ("SPCE",    "USD"),   # SpaceX (IPO 2026 — update ticker if wrong)
     "DE000FD0F1S2": None,                 # Best Turbo Gold (expired derivative)
 }
+
+# Runtime cache for ISINs auto-discovered via yfinance Search (unknown ISINs)
+_isin_search_cache: Dict[str, Optional[tuple]] = {}
+
+
+def _lookup_isin_via_search(isin: str) -> Optional[tuple]:
+    """Try to find a Yahoo Finance ticker for an unknown ISIN using yf.Search."""
+    if isin in _isin_search_cache:
+        return _isin_search_cache[isin]
+    try:
+        import yfinance as yf
+        results = yf.Search(isin, max_results=3)
+        quotes = getattr(results, "quotes", None) or []
+        for q in quotes:
+            sym = q.get("symbol", "")
+            currency = (q.get("currency") or "USD").upper()
+            if sym and len(sym) <= 10:
+                entry: tuple = (sym, currency)
+                _isin_search_cache[isin] = entry
+                return entry
+    except Exception:
+        pass
+    _isin_search_cache[isin] = None
+    return None
 
 # Fuzzy name → (Yahoo ticker, currency) for assets without ISIN in DB
 NAME_TO_YAHOO: Dict[str, Optional[tuple]] = {
@@ -169,13 +194,12 @@ def _get_yahoo_price_in_eur(isin: str) -> Optional[float]:
     If ISIN not in map, try replacing : with . for Euronext format (e.g., DE0005933931 → DE0005933931.DE).
     """
     entry = ISIN_TO_YAHOO.get(isin)
+    # Explicit None in map = known expired/unlisted instrument
+    if isin in ISIN_TO_YAHOO and entry is None:
+        return None
     if entry is None:
-        # Try Euronext ticker: ISIN → ISIN.DE (XETRA), .MC (Madrid), .AS (Amsterdam)
-        for suffix in ['.DE', '.MC', '.AS', '.PA', '.BR', '.MI']:
-            entry = ISIN_TO_YAHOO.get(isin + suffix)
-            if entry is not None:
-                break
-    # Last fallback: use isin as-is, assume EUR
+        entry = _lookup_isin_via_search(isin)
+    # Last fallback: use ISIN string directly as ticker
     if entry is None:
         entry = isin
 
@@ -252,6 +276,27 @@ def _amount_to_eur(amount: float, tx_currency: Optional[str]) -> float:
     return _to_eur(amount, currency)
 
 
+def _get_ticker_price_in_eur(ticker: str) -> Optional[float]:
+    """Fetch current price for a known Yahoo Finance ticker and convert to EUR."""
+    now = time.time()
+    if ticker in _price_cache:
+        price, currency, ts = _price_cache[ticker]
+        if now - ts < _CACHE_TTL:
+            return _to_eur(price, currency)
+    try:
+        import yfinance as yf
+        tk = yf.Ticker(ticker)
+        info = tk.fast_info
+        price = getattr(info, "last_price", None)
+        currency = (getattr(info, "currency", None) or "USD").upper()
+        if price:
+            _price_cache[ticker] = (price, currency, now)
+            return _to_eur(price, currency)
+    except Exception:
+        pass
+    return None
+
+
 def calculate_portfolio(db: Session, user_id: int) -> PortfolioPerformance:
     trading_txs = (
         db.query(models.Transaction)
@@ -293,12 +338,22 @@ def calculate_portfolio(db: Session, user_id: int) -> PortfolioPerformance:
                     "realized_pnl": 0.0,
                     "first_buy_date": str(tx.date) if tx.date else None,
                     "buy_dates": [],
+                    "sell_dates": [],
+                    "buy_events": [],
+                    "sell_events": [],
                 }
             pos = positions[sym]
-            if tx.date:
-                pos["buy_dates"].append(str(tx.date))
             bought = abs(tx.shares or 0.0)
             cost = amount_eur + fee_eur  # cost basis in EUR
+            if tx.date:
+                pos["buy_dates"].append(str(tx.date))
+                price_per_share = round(cost / bought, 4) if bought > 0 else 0.0
+                pos["buy_events"].append({
+                    "date": str(tx.date),
+                    "shares": round(bought, 6),
+                    "price_eur": price_per_share,
+                    "total_eur": round(cost, 2),
+                })
             pos["shares"] += bought
             pos["total_cost"] += cost
             pos["shares_known"] = pos.get("shares_known", True) and tx.shares is not None
@@ -314,10 +369,22 @@ def calculate_portfolio(db: Session, user_id: int) -> PortfolioPerformance:
                     "realized_pnl": 0.0,
                     "first_buy_date": None,
                     "buy_dates": [],
+                    "sell_dates": [],
+                    "buy_events": [],
+                    "sell_events": [],
                 }
             pos = positions[sym]
             sold = abs(tx.shares or 0.0)
             proceeds = amount_eur - fee_eur  # proceeds in EUR
+            if tx.date:
+                pos["sell_dates"].append(str(tx.date))
+                price_per_share = round(proceeds / sold, 4) if sold > 0 else 0.0
+                pos["sell_events"].append({
+                    "date": str(tx.date),
+                    "shares": round(sold, 6),
+                    "price_eur": price_per_share,
+                    "total_eur": round(proceeds, 2),
+                })
             if pos["shares"] > 0:
                 avg_cost_per_share = pos["total_cost"] / pos["shares"]
                 cost_basis = avg_cost_per_share * sold
@@ -373,6 +440,9 @@ def calculate_portfolio(db: Session, user_id: int) -> PortfolioPerformance:
             dividends_received=round(dividends.get(sym, {}).get("total", 0.0), 2),
             first_purchase_date=pos.get("first_buy_date"),
             buy_dates=pos.get("buy_dates", []),
+            sell_dates=pos.get("sell_dates", []),
+            buy_events=pos.get("buy_events", []),
+            sell_events=pos.get("sell_events", []),
             current_price=current_price,
             market_value=market_value,
             unrealized_pnl=unrealized_pnl,
@@ -381,6 +451,34 @@ def calculate_portfolio(db: Session, user_id: int) -> PortfolioPerformance:
         if shares > 0.0001:
             total_invested += total_cost
         total_realized_pnl += pos["realized_pnl"]
+
+    # Merge manual positions (user-entered, not from transactions)
+    for mp in db.query(models.ManualPosition).filter(models.ManualPosition.user_id == user_id).all():
+        total_cost   = round(mp.shares * mp.avg_price_eur, 2)
+        current_price = _get_ticker_price_in_eur(mp.ticker)
+        market_value  = round(mp.shares * current_price, 2) if current_price else None
+        unrealized_pnl     = round(market_value - total_cost, 2)          if market_value is not None else None
+        unrealized_pnl_pct = round((unrealized_pnl / total_cost) * 100, 2) if (unrealized_pnl is not None and total_cost > 0) else None
+        if market_value is not None:
+            total_market_value  += market_value
+            total_unrealized_pnl += unrealized_pnl or 0
+        total_invested += total_cost
+        result_positions.append(PortfolioPosition(
+            symbol=mp.ticker,
+            name=mp.name,
+            asset_class="STOCK",
+            shares=round(mp.shares, 6),
+            avg_buy_price=round(mp.avg_price_eur, 4),
+            total_invested=total_cost,
+            realized_pnl=0.0,
+            dividends_received=0.0,
+            current_price=current_price,
+            market_value=market_value,
+            unrealized_pnl=unrealized_pnl,
+            unrealized_pnl_pct=unrealized_pnl_pct,
+            is_manual=True,
+            manual_id=mp.id,
+        ))
 
     result_positions.sort(key=lambda p: p.total_invested, reverse=True)
 

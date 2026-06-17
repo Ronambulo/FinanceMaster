@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { MessageCircle, X, Send, Mic, MicOff, Sparkles, Trash2 } from 'lucide-react'
+import { X, Send, Mic, MicOff, Sparkles, Trash2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { cn } from '@/lib/utils'
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
+import { useChatStore } from '@/store/chat'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -12,40 +13,77 @@ interface Message {
 }
 
 const ALL_SUGGESTIONS = [
-  // Gastos
-  '¿Cuánto gasté en restaurantes este mes?',
-  '¿En qué categoría gasto más?',
-  '¿Cuál es mi mayor gasto recurrente?',
-  '¿Cuánto llevo gastado esta semana?',
-  'Dime mis 5 gastos más grandes del mes',
-  '¿Cuánto gasto en ocio y entretenimiento?',
-  '¿Cuánto gasto en transporte al mes?',
-  'Compara mis gastos de este mes con el anterior',
-  '¿En qué gasto más dinero sin darme cuenta?',
-  '¿Tengo gastos que podría eliminar?',
+  // Situación financiera
+  '¿Cómo está mi salud financiera general?',
+  '¿Estoy gastando demasiado?',
+  '¿Cuál es mi mayor gasto innecesario?',
+  '¿Cuánto ahorro realmente cada tramo?',
+  '¿Qué gastos puedo reducir sin afectar mi calidad de vida?',
+  '¿Cuál es mi patrimonio neto actual?',
+  '¿Cómo ha evolucionado mi situación financiera este año?',
+  // Presupuesto
+  '¿En qué categoría gasto más dinero?',
+  '¿Dónde estoy gastando más que personas similares a mí?',
+  '¿Qué suscripciones apenas utilizo?',
+  '¿Qué gasto recurrente debería revisar primero?',
+  '¿Cuánto puedo permitirme gastar este tramo?',
   // Ahorro
-  '¿Voy bien con mi objetivo de ahorro?',
-  'Resume mis finanzas de este mes',
-  '¿Cuál es mi tasa de ahorro actual?',
-  '¿Cuánto he ahorrado este año?',
-  '¿Cuándo podré alcanzar mi objetivo de ahorro?',
-  '¿Qué % de mis ingresos estoy ahorrando?',
-  'Dame consejos para ahorrar más',
-  // Inversiones
-  '¿Cómo va mi portfolio este mes?',
-  '¿Cuál es mi mejor inversión?',
+  '¿Estoy ahorrando lo suficiente?',
+  '¿Cuánto debería tener en mi fondo de emergencia?',
+  '¿Cuánto tardaré en alcanzar mis objetivos de ahorro?',
+  '¿Dónde debería guardar mi dinero a corto plazo?',
+  // Inversión
+  '¿Mi cartera está bien diversificada?',
+  '¿Qué porcentaje de mi patrimonio está invertido?',
+  '¿Estoy asumiendo demasiado riesgo?',
+  '¿Qué posiciones están lastrando mi rentabilidad?',
+  '¿Qué posiciones aportan más riesgo que beneficio?',
+  '¿Tengo demasiada exposición a algún sector?',
+  '¿Tengo demasiada exposición a algún país?',
+  '¿Qué ETF podría sustituir a mis fondos actuales?',
+  '¿Cómo se compara mi cartera con un índice global?',
+  // Acciones y ETFs
+  '¿Cuál es el rendimiento real de mis inversiones?',
+  '¿Qué acciones representan un porcentaje excesivo de mi cartera?',
+  '¿Qué empresas tienen peores perspectivas actualmente?',
+  '¿Qué ETFs similares tienen menores comisiones?',
+  '¿Qué oportunidades interesantes hay ahora en el mercado?',
+  '¿Qué cambios recomendarías hoy en mi cartera?',
+  '¿Qué impacto tendría vender una posición concreta?',
+  // Objetivos
+  '¿Cuándo podría jubilarme al ritmo actual?',
+  '¿Cuánto necesito para alcanzar la independencia financiera?',
+  '¿Estoy en camino de comprar una vivienda?',
+  '¿Qué necesito hacer para alcanzar 100.000 € invertidos?',
+  '¿Cuál es el camino más rápido para alcanzar mi objetivo financiero?',
+  // Optimización
+  '¿Qué harías si fueras yo?',
+  '¿Cuáles son mis tres mayores errores financieros?',
+  '¿Cuáles son mis tres mejores decisiones financieras?',
+  '¿Dónde puedo obtener una mejor rentabilidad con riesgo similar?',
+  '¿Qué decisiones financieras deberían ser prioritarias este tramo?',
+  // Fiscalidad
+  '¿Cómo puedo reducir legalmente mis impuestos?',
+  '¿Qué movimientos fiscales me convienen antes de final de año?',
+  '¿Qué plusvalías o minusvalías tengo acumuladas?',
+  '¿Qué impacto fiscal tendría vender esta posición?',
+  // Con contexto de mercado
+  '¿Cómo afectan las últimas noticias a mi cartera?',
+  '¿Hay riesgos recientes relacionados con mis inversiones?',
+  '¿Qué analistas han cambiado su opinión sobre mis posiciones?',
+  '¿Qué eventos próximos podrían afectar a mis activos?',
+  '¿Qué oportunidades han surgido esta semana que encajan con mi perfil?',
+  // Preguntas potentes
+  '¿Qué no estoy viendo?',
+  '¿Cuál es el mayor riesgo oculto de mis finanzas?',
+  '¿Qué decisión tendría el mayor impacto positivo en los próximos 12 meses?',
+  '¿Qué haría un inversor experto en mi situación?',
+  '¿Cuál es el siguiente paso más rentable que puedo dar hoy?',
+  // Clásicos útiles
+  '¿Cuánto llevo gastado este tramo?',
   '¿Cuánto he ganado (o perdido) en bolsa?',
-  '¿Debería diversificar más mi cartera?',
   '¿Cuántos dividendos he cobrado este año?',
-  // Ingresos
-  '¿Cuánto ingreso al mes de media?',
-  '¿Cuándo fue mi último salario?',
-  '¿He cobrado intereses este mes?',
-  // Panorama general
-  '¿Cuál es mi patrimonio neto ahora mismo?',
-  'Dame un resumen financiero completo',
-  '¿Estoy mejorando respecto al mes pasado?',
-  '¿Cuánto dinero tengo en efectivo?',
+  'Resume mis finanzas de este tramo',
   '¿Cuáles son mis próximos pagos recurrentes?',
   'Dime algo que no sepa de mis finanzas',
 ]
@@ -81,7 +119,7 @@ const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>['components'] = 
 }
 
 export function AiChat() {
-  const [isOpen, setIsOpen] = useState(false)
+  const { isOpen, close: closeChat } = useChatStore()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -222,7 +260,7 @@ export function AiChat() {
       <div
         className={cn(
           'fixed inset-y-0 right-0 z-[60] flex flex-col',
-          'w-[50vw] max-w-[calc(100vw-2rem)] min-w-80',
+          'w-full md:w-[50vw] md:max-w-[calc(100vw-2rem)] md:min-w-80',
           'bg-[hsl(228_22%_8%)] border-l border-white/[0.07]',
           'shadow-[-24px_0_80px_rgba(0,0,0,0.6)]',
           'transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
@@ -252,7 +290,7 @@ export function AiChat() {
               </button>
             )}
             <button
-              onClick={() => setIsOpen(false)}
+              onClick={closeChat}
               className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
               aria-label="Cerrar asistente"
             >
@@ -435,35 +473,12 @@ export function AiChat() {
         </div>
       </div>
 
-      {/* ── Backdrop (mobile) ── */}
+      {/* ── Backdrop ── */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-[59] bg-black/40 backdrop-blur-[2px] md:hidden"
-          onClick={() => setIsOpen(false)}
+          className="fixed inset-0 z-[59] bg-black/40 backdrop-blur-[2px]"
+          onClick={closeChat}
         />
-      )}
-
-      {/* ── Floating action button ── */}
-      {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          className={cn(
-            'fixed bottom-24 right-4 z-50 md:bottom-6 md:right-6',
-            'flex items-center justify-center rounded-full',
-            'bg-gradient-to-br from-primary to-primary/70',
-            'shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_0_1px_rgba(255,255,255,0.1)]',
-            'text-primary-foreground transition-all duration-200',
-            'hover:scale-105 hover:shadow-[0_12px_40px_rgba(0,0,0,0.6)]',
-            'active:scale-95'
-          )}
-          aria-label="Abrir asistente IA"
-          style={{ height: '3.25rem', width: '3.25rem' }}
-        >
-          <MessageCircle className="h-5 w-5" />
-          {hasUnread && (
-            <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 ring-2 ring-[hsl(228_22%_8%)]" />
-          )}
-        </button>
       )}
     </>
   )

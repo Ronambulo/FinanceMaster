@@ -38,66 +38,68 @@ def _extract_shares_from_detail(detail: dict) -> "float | None":
     """
     Extract share count from TR timelineDetailV2 response.
 
-    Real TR structure (confirmed from live data):
-      sections[N].data  — list of rows when section type == "table"
-      Each row: {title, detail: {text, displayValue: {text, prefix}, ...}}
-
-    Shares appear in two ways:
+    Handles:
       A) Row title "Acciones"/"Stück" etc. → detail.text = "0,110756"
-      B) Row title "Transacción"/"Transaktion" etc. → detail.text = "0,110756 × 116,76 €"
-         or detail.displayValue.prefix = "0,110756 × "
+      B) Row title "Transacción" etc. → detail.displayValue.prefix = "0,110756 × "
+         or detail.text = "0,110756 × 116,76 €"
+      C) OPI/IPO: "Transacción" row has nested detail.action.payload.sections
+         with an "Acciones" row inside
     """
     if not isinstance(detail, dict):
         return None
 
-    SHARE_TITLES  = ("acciones", "stück", "shares", "cantidad", "qty", "units", "anzahl", "participaciones", "stukken")
-    TX_TITLES     = ("transacci", "transaktion", "transaction", "order ejecutad", "orden")
+    SHARE_TITLES = ("acciones", "stück", "shares", "cantidad", "qty", "units", "anzahl", "participaciones", "stukken")
+    TX_TITLES    = ("transacci", "transaktion", "transaction", "order ejecutad", "orden", "suscripci", "opi", "asignaci")
 
-    for section in detail.get("sections", []):
-        if not isinstance(section, dict):
-            continue
-        data = section.get("data")
-        if not isinstance(data, list):
-            continue
-
-        for row in data:
-            if not isinstance(row, dict):
+    def _search_sections(sections: list) -> "float | None":
+        for section in sections:
+            if not isinstance(section, dict):
                 continue
-            title = str(row.get("title", "")).lower()
-            row_detail = row.get("detail") or {}
-            if not isinstance(row_detail, dict):
+            data = section.get("data")
+            if not isinstance(data, list):
                 continue
+            for row in data:
+                if not isinstance(row, dict):
+                    continue
+                title = str(row.get("title", "")).lower()
+                row_detail = row.get("detail") or {}
+                if not isinstance(row_detail, dict):
+                    continue
 
-            # A) Direct shares row
-            if any(k in title for k in SHARE_TITLES):
-                text = row_detail.get("text") or (row_detail.get("displayValue") or {}).get("text")
-                if text:
-                    v = _parse_tr_number(str(text))
-                    if v is not None and v > 0:
-                        return v
-
-            # B) Transaction row: "0,110756 × 116,762806 €"
-            if any(k in title for k in TX_TITLES):
-                # Try displayValue.prefix first ("0,110756 × ")
-                prefix = (row_detail.get("displayValue") or {}).get("prefix") or ""
-                for sep in ("×", "x ", "X "):
-                    if sep in prefix:
-                        part = prefix.split(sep)[0].strip()
-                        v = _parse_tr_number(part)
+                # A) Direct shares row
+                if any(k in title for k in SHARE_TITLES):
+                    text = row_detail.get("text") or (row_detail.get("displayValue") or {}).get("text")
+                    if text:
+                        v = _parse_tr_number(str(text))
                         if v is not None and v > 0:
                             return v
-                        break
-                # Fall back to detail.text ("0,110756 × 116,762806 €")
-                text = row_detail.get("text") or ""
-                for sep in ("×", " x ", " X "):
-                    if sep in text:
-                        part = text.split(sep)[0].strip()
-                        v = _parse_tr_number(part)
-                        if v is not None and v > 0:
-                            return v
-                        break
 
-    return None
+                # B) Transaction row with × separator
+                if any(k in title for k in TX_TITLES):
+                    prefix = (row_detail.get("displayValue") or {}).get("prefix") or ""
+                    for sep in ("×", "x ", "X "):
+                        if sep in prefix:
+                            v = _parse_tr_number(prefix.split(sep)[0].strip())
+                            if v is not None and v > 0:
+                                return v
+                            break
+                    text = row_detail.get("text") or ""
+                    for sep in ("×", " x ", " X "):
+                        if sep in text:
+                            v = _parse_tr_number(text.split(sep)[0].strip())
+                            if v is not None and v > 0:
+                                return v
+                            break
+
+                    # C) Nested infoPage payload (OPI/IPO subscriptions)
+                    nested_payload = (row_detail.get("action") or {}).get("payload")
+                    if isinstance(nested_payload, dict):
+                        v = _search_sections(nested_payload.get("sections") or [])
+                        if v is not None:
+                            return v
+        return None
+
+    return _search_sections(detail.get("sections") or [])
 
 
 def _extract_isin_from_detail(detail: dict) -> "str | None":

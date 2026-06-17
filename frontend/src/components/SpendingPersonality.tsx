@@ -92,60 +92,48 @@ export function SpendingPersonality() {
 
   return (
     <div
-      className="relative overflow-hidden rounded-2xl bg-card p-5 shadow-[0_4px_24px_rgba(0,0,0,0.4)]"
+      className="relative overflow-hidden rounded-2xl bg-card px-4 py-5 shadow-[0_4px_24px_rgba(0,0,0,0.4)] flex flex-col items-center justify-between text-center h-full"
       style={{ border: `1px solid ${personality.color}28` }}
     >
       {/* Background glow */}
       <div
-        className="pointer-events-none absolute -top-10 -right-10 h-40 w-40 rounded-full blur-3xl opacity-20"
-        style={{ background: personality.color }}
+        className="pointer-events-none absolute inset-0 opacity-10 blur-2xl"
+        style={{ background: `radial-gradient(circle at 50% 50%, ${personality.color}, transparent 70%)` }}
       />
+
+      {/* Label */}
+      <p className="relative text-[9px] font-semibold uppercase tracking-widest"
+         style={{ color: personality.color + '99' }}>
+        Tu perfil financiero
+      </p>
+
+      {/* Emoji */}
       <div
-        className="pointer-events-none absolute -bottom-8 -left-8 h-32 w-32 rounded-full blur-2xl opacity-10"
-        style={{ background: personality.color }}
-      />
+        className="relative flex h-20 w-20 items-center justify-center rounded-2xl text-5xl"
+        style={{
+          background: `linear-gradient(135deg, ${personality.color}25, ${personality.color}0a)`,
+          border: `1px solid ${personality.color}35`,
+          boxShadow: `0 0 28px ${personality.color}30`,
+        }}
+      >
+        {personality.emoji}
+      </div>
 
-      <div className="relative">
-        {/* Label */}
-        <p className="text-[10px] font-semibold uppercase tracking-widest mb-3"
-           style={{ color: personality.color + 'aa' }}>
-          Tu perfil financiero
-        </p>
+      {/* Name */}
+      <p className="relative text-2xl font-bold leading-tight tracking-tight"
+         style={{ color: personality.color }}>
+        {personality.name}
+      </p>
 
-        {/* Main content */}
-        <div className="flex items-center gap-4">
-          {/* Emoji badge */}
-          <div
-            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl text-4xl shadow-lg"
-            style={{
-              background: `linear-gradient(135deg, ${personality.color}25, ${personality.color}10)`,
-              border: `1px solid ${personality.color}35`,
-              boxShadow: `0 4px 20px ${personality.color}20`,
-            }}
-          >
-            {personality.emoji}
-          </div>
-
-          {/* Text */}
-          <div className="min-w-0">
-            <p className="text-lg font-bold leading-tight tracking-tight"
-               style={{ color: personality.color }}>
-              {personality.name}
-            </p>
-            <p className="text-xs text-muted-foreground leading-relaxed mt-1">
-              {personality.desc}
-            </p>
-          </div>
-        </div>
-
-        {/* Detail stat pill */}
-        <div className="mt-4 inline-flex items-center gap-1.5 rounded-full px-3 py-1"
-             style={{ background: personality.color + '15', border: `1px solid ${personality.color}25` }}>
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: personality.color }} />
-          <span className="text-[11px] font-medium" style={{ color: personality.color + 'dd' }}>
-            {personality.detail}
-          </span>
-        </div>
+      {/* Detail stat pill */}
+      <div
+        className="relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5"
+        style={{ background: personality.color + '15', border: `1px solid ${personality.color}25` }}
+      >
+        <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: personality.color }} />
+        <span className="text-[11px] font-medium" style={{ color: personality.color + 'dd' }}>
+          {personality.detail}
+        </span>
       </div>
     </div>
   )

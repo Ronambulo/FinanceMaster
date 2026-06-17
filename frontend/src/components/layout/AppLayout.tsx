@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { Outlet, NavLink, Link } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowLeftRight, TrendingUp,
-  CreditCard, Target, Settings, LogOut, X, CalendarDays,
+  CreditCard, Target, Settings, LogOut, CalendarDays, Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Sidebar } from './Sidebar'
 import { useAuthStore } from '@/store/auth'
+import { useChatStore } from '@/store/chat'
 
 /* Mobile bottom-nav — 6 slots (Recurrentes vive dentro de Mensual) */
 const mobileNav = [
@@ -63,6 +64,7 @@ function ProfileSheet({ onClose }: { onClose: () => void }) {
 export function AppLayout() {
   const user         = useAuthStore(s => s.user)
   const [profileOpen, setProfileOpen] = useState(false)
+  const { toggle: toggleChat, isOpen: chatOpen } = useChatStore()
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -85,12 +87,25 @@ export function AppLayout() {
             />
             <span className="text-sm font-semibold tracking-tight">FinanceMaster</span>
           </div>
-          <button
-            onClick={() => setProfileOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20 transition-all active:scale-95"
-          >
-            <span className="text-xs font-bold text-primary">{(user?.email?.[0] ?? '?').toUpperCase()}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleChat}
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-full transition-all active:scale-95',
+                chatOpen
+                  ? 'bg-primary/20 ring-1 ring-primary/40'
+                  : 'bg-white/[0.06] ring-1 ring-white/10',
+              )}
+            >
+              <Sparkles className={cn('h-4 w-4', chatOpen ? 'text-primary' : 'text-muted-foreground')} />
+            </button>
+            <button
+              onClick={() => setProfileOpen(true)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20 transition-all active:scale-95"
+            >
+              <span className="text-xs font-bold text-primary">{(user?.email?.[0] ?? '?').toUpperCase()}</span>
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 pb-32 md:p-6 md:pb-6">

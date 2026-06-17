@@ -52,6 +52,7 @@ class User(Base):
     budgets = relationship("Budget", back_populates="user", cascade="all, delete-orphan")
     webhooks = relationship("Webhook", back_populates="user", cascade="all, delete-orphan")
     bank_connections = relationship("BankConnection", back_populates="user", cascade="all, delete-orphan")
+    manual_positions = relationship("ManualPosition", back_populates="user", cascade="all, delete-orphan")
 
 
 class Category(Base):
@@ -248,6 +249,20 @@ class Webhook(Base):
     created_at = Column(DateTime, default=_dt.utcnow)
 
     user = relationship("User", back_populates="webhooks")
+
+
+class ManualPosition(Base):
+    __tablename__ = "manual_positions"
+    id            = Column(Integer, primary_key=True, index=True)
+    user_id       = Column(Integer, ForeignKey("users.id"), nullable=False)
+    ticker        = Column(String, nullable=False)
+    name          = Column(String, nullable=False)
+    shares        = Column(Float, nullable=False)
+    avg_price_eur = Column(Float, nullable=False)
+    currency      = Column(String, default="EUR")
+    created_at    = Column(DateTime, default=_dt.utcnow)
+
+    user = relationship("User", back_populates="manual_positions")
 
 
 class BankConnection(Base):

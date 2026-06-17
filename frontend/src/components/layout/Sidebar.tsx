@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowLeftRight, TrendingUp,
-  CreditCard, Target, Settings, LogOut, CalendarDays, Flame, Search,
+  CreditCard, Target, Settings, LogOut, CalendarDays, Flame, Search, Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
 import { useInsightsUnreadCount } from '@/components/InsightsWidget'
+import { useChatStore } from '@/store/chat'
 
 const nav = [
   { to: '/',              icon: LayoutDashboard, label: 'Dashboard',      badge: 'insights' as const },
@@ -21,6 +22,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const logout = useAuthStore(s => s.logout)
   const user   = useAuthStore(s => s.user)
   const unreadInsights = useInsightsUnreadCount()
+  const { toggle: toggleChat, isOpen: chatOpen } = useChatStore()
 
   return (
     <div className="flex h-full flex-col bg-background border-r border-border">
@@ -101,6 +103,23 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
       {/* ── Bottom ── */}
       <div className="px-3 pb-4 pt-2 border-t border-white/[0.06] space-y-0.5">
+
+        {/* AI Chat button */}
+        <button
+          onClick={toggleChat}
+          className={cn(
+            'group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium',
+            'transition-all duration-150',
+            chatOpen
+              ? 'text-primary bg-primary/[0.08]'
+              : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]',
+          )}
+        >
+          <Sparkles className={cn('h-4 w-4 shrink-0 transition-colors', chatOpen ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground')} />
+          <span>Asistente IA</span>
+          <span className="ml-auto rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary">Beta</span>
+        </button>
+
         <NavLink
           to="/ajustes"
           onClick={onClose}

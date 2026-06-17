@@ -5,11 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, Pencil, Check, X, Radio } from 'lucide-react'
+import { Loader2, Pencil, Check, X, Radio, Plus, Trash2, Search } from 'lucide-react'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import type { PortfolioPosition } from '@/lib/api'
+import type { PortfolioPosition, StockSearchResult } from '@/lib/api'
+import { useToast } from '@/components/ui/toast'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
   ResponsiveContainer, ReferenceLine, CartesianGrid,
@@ -159,8 +160,76 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
   const sharesOf   = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.shares])), [positions])
   const priceEurOf = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.current_price])), [positions])
   const firstBuyOf    = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, p.first_purchase_date ?? null])), [positions])
-  const buyDatesOf    = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, new Set(p.buy_dates)])), [positions])
+  const buyDatesOf     = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, new Set(p.buy_dates)])), [positions])
   const allBuyDatesSet = useMemo(() => new Set(positions.flatMap(p => p.buy_dates)), [positions])
+  const sellDatesOf    = useMemo(() => Object.fromEntries(positions.map(p => [p.symbol, new Set(p.sell_dates ?? [])])), [positions])
+  const allSellDatesSet = useMemo(() => new Set(positions.flatMap(p => p.sell_dates ?? [])), [positions])
+
+  // date → [{sym, event}] for tooltip detail
+  const buyEventsByDate = useMemo(() => {
+    const map = new Map<string, { sym: string; name: string; shares: number; price_eur: number; total_eur: number }[]>()
+    for (const p of positions) {
+      for (const ev of p.buy_events ?? []) {
+        if (!map.has(ev.date)) map.set(ev.date, [])
+        map.get(ev.date)!.push({ sym: p.symbol, name: p.name, shares: ev.shares, price_eur: ev.price_eur, total_eur: ev.total_eur })
+      }
+    }
+    return map
+  }, [positions])
+
+  const sellEventsByDate = useMemo(() => {
+    const map = new Map<string, { sym: string; name: string; shares: number; price_eur: number; total_eur: number }[]>()
+    for (const p of positions) {
+      for (const ev of p.sell_events ?? []) {
+        if (!map.has(ev.date)) map.set(ev.date, [])
+        map.get(ev.date)!.push({ sym: p.symbol, name: p.name, shares: ev.shares, price_eur: ev.price_eur, total_eur: ev.total_eur })
+      }
+    }
+    return map
+  }, [positions])
+
+  // Per-symbol intervals where shares > 0, derived from buy/sell events.
+  // Clamps running total to 0 (instead of going negative) to tolerate rounding
+  // differences between estimated buys and actual sells.
+  // Falls back to always-active ([]) only when the computed periods contradict the
+  // current position (shares > 0 but no open period) — this means the data is too
+  // incomplete to determine the history reliably.
+  const activePeriodsOf = useMemo(() => {
+    const result: Record<string, { from: string; to: string | null }[]> = {}
+    for (const p of positions) {
+      // Filter 0-share events — transactions with null shares in the DB produce
+      // delta=0 entries that stall the running total.
+      const events = [
+        ...(p.buy_events  ?? []).filter(e => e.shares > 0.0001).map(e => ({ date: e.date, delta:  e.shares })),
+        ...(p.sell_events ?? []).filter(e => e.shares > 0.0001).map(e => ({ date: e.date, delta: -e.shares })),
+      ].sort((a, b) => a.date.localeCompare(b.date))
+
+      if (!events.length) { result[p.symbol] = []; continue }
+
+      let running = 0, start: string | null = null
+      const periods: { from: string; to: string | null }[] = []
+
+      for (const ev of events) {
+        const wasActive = running > 0.0001
+        running = Math.max(0, running + ev.delta)  // clamp — sells slightly exceeding buys is normal rounding
+        const isActive = running > 0.0001
+        if (!wasActive && isActive)  { start = ev.date }
+        else if (wasActive && !isActive && start) { periods.push({ from: start, to: ev.date }); start = null }
+      }
+      if (start) periods.push({ from: start, to: null })
+
+      // Sanity: position has shares today but algo computed no open period
+      // → data too incomplete to be trusted → show line for all dates
+      if (p.shares > 0.0001 && !periods.some(pp => pp.to === null)) {
+        result[p.symbol] = []
+        continue
+      }
+
+      result[p.symbol] = periods
+    }
+    return result
+  }, [positions])
+
   // Stable per-symbol color derived from palette index (not hash) so colors stay distinct
   const colorOf    = useMemo(
     () => Object.fromEntries(symbols.map((sym, i) => [sym, CHART_PALETTE[i % CHART_PALETTE.length]])),
@@ -175,7 +244,7 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
     retry: 1,
   })
 
-  type ChartRow = Record<string, number | string>
+  type ChartRow = Record<string, number | string | undefined>
 
   const chartData = useMemo((): ChartRow[] => {
     if (!data) return []
@@ -196,26 +265,47 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
     if (!chartData.length) return {} as Record<string, number>
     const base: Record<string, number> = {}
     for (const sym of symbols) {
-      const cutoff = sinceMyBuy ? (firstBuyOf[sym] ?? null) : null
-      const first = chartData.find(d => d[sym] !== undefined && (!cutoff || (d.date as string) >= cutoff))
+      const cutoff  = sinceMyBuy ? (firstBuyOf[sym] ?? null) : null
+      const periods = activePeriodsOf[sym] ?? []
+      const first = chartData.find(d => {
+        const date = d.date as string
+        if (d[sym] === undefined) return false
+        if (cutoff && date < cutoff) return false
+        if (periods.length > 0 && !periods.some(p => date >= p.from && (p.to === null || date <= p.to))) return false
+        return true
+      })
       if (first) base[sym] = first[sym] as number
     }
     return base
-  }, [chartData, symbols, sinceMyBuy, firstBuyOf])
+  }, [chartData, symbols, sinceMyBuy, firstBuyOf, activePeriodsOf])
 
-  const normalisedData = useMemo((): ChartRow[] =>
-    chartData.map(row => {
+  const normalisedData = useMemo((): ChartRow[] => {
+    const lastNorm: Record<string, number> = {}
+    return chartData.map(row => {
       const out: ChartRow = { date: row.date }
+      const date = row.date as string
       for (const sym of symbols) {
-        const base   = baseValues[sym]
-        const val    = row[sym] as number | undefined
-        const cutoff = sinceMyBuy ? (firstBuyOf[sym] ?? null) : null
-        if (base && val !== undefined && (!cutoff || (row.date as string) >= cutoff)) {
-          out[sym] = parseFloat(((val / base) * 100).toFixed(2))
+        const base    = baseValues[sym]
+        const val     = row[sym] as number | undefined
+        const cutoff  = sinceMyBuy ? (firstBuyOf[sym] ?? null) : null
+        const periods = activePeriodsOf[sym] ?? []
+        const active  = periods.length === 0 || periods.some(p => date >= p.from && (p.to === null || date <= p.to))
+        if (active && base && (!cutoff || date >= cutoff)) {
+          if (val !== undefined) {
+            const norm = parseFloat(((val / base) * 100).toFixed(2))
+            lastNorm[sym] = norm
+            out[sym] = norm
+          } else if (lastNorm[sym] !== undefined) {
+            // Active period but no price data for this date (exchange holiday mismatch):
+            // carry-forward so we don't create false gaps.
+            out[sym] = lastNorm[sym]
+          }
         }
+        // inactive → leave undefined → visual gap
       }
       return out
-    }), [chartData, baseValues, symbols, sinceMyBuy, firstBuyOf])
+    })
+  }, [chartData, baseValues, symbols, sinceMyBuy, firstBuyOf, activePeriodsOf])
 
   const fxOf = useMemo((): Record<string, number> => {
     if (!data) return {}
@@ -236,6 +326,7 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
     const lastSeen: Record<string, number> = {}
     const result: ChartRow[] = []
     for (const row of chartData) {
+      const date = row.date as string
       // Update last-seen prices for gap-filling
       for (const sym of symbols) {
         const p = row[sym] as number | undefined
@@ -244,8 +335,11 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
       let total = 0
       let hasAny = false
       for (const sym of symbols) {
-        const cutoff = sinceMyBuy ? (firstBuyOf[sym] ?? null) : null
-        if (cutoff && (row.date as string) < cutoff) continue
+        const cutoff  = sinceMyBuy ? (firstBuyOf[sym] ?? null) : null
+        if (cutoff && date < cutoff) continue
+        const periods = activePeriodsOf[sym] ?? []
+        const active  = periods.length === 0 || periods.some(p => date >= p.from && (p.to === null || date <= p.to))
+        if (!active) continue
         // Use today's price or fall back to last seen (carry-forward avoids gap spikes)
         const price = ((row[sym] as number | undefined) ?? lastSeen[sym])
         if (price !== undefined && price > 0) {
@@ -253,7 +347,7 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
           hasAny = true
         }
       }
-      if (hasAny) result.push({ date: row.date, total: parseFloat(total.toFixed(2)) })
+      result.push({ date: row.date, total: hasAny ? parseFloat(total.toFixed(2)) : undefined })
     }
     return result
   }, [chartData, symbols, sharesOf, fxOf, sinceMyBuy, firstBuyOf])
@@ -273,25 +367,26 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
 
   const ChartTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null
-    const isBuyDay = allBuyDatesSet.has(label as string)
+    const date      = label as string
+    const buyEvs    = buyEventsByDate.get(date) ?? []
+    const sellEvs   = sellEventsByDate.get(date) ?? []
+    const hasEvents = buyEvs.length > 0 || sellEvs.length > 0
     const dateLabel = (() => {
       try {
-        return new Date(label + 'T00:00:00').toLocaleDateString('es-ES', {
+        return new Date(date + 'T00:00:00').toLocaleDateString('es-ES', {
           day: 'numeric', month: 'short', year: 'numeric',
         })
-      } catch { return label }
+      } catch { return date }
     })()
+    const fmtShares = (n: number) =>
+      n % 1 === 0 ? String(n) : n.toFixed(n < 1 ? 4 : 2)
     return (
-      <div className="rounded-xl border border-white/10 bg-[hsl(228_22%_6%)] p-3 text-xs shadow-2xl min-w-[190px]">
-        <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-white/[0.07]">
-          <p className="font-semibold text-foreground/60">{dateLabel}</p>
-          {isBuyDay && (
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/20 text-primary">
-              Compra
-            </span>
-          )}
-        </div>
-        <div className="space-y-1.5">
+      <div className="rounded-xl border border-white/10 bg-[hsl(228_22%_6%)] p-3 text-xs shadow-2xl min-w-[200px] max-w-[260px]">
+        {/* Header */}
+        <p className="font-semibold text-foreground/60 mb-2 pb-1.5 border-b border-white/[0.07]">{dateLabel}</p>
+
+        {/* Price rows */}
+        <div className="space-y-1.5 mb-2">
           {payload.map((p: any) => (
             <div key={p.dataKey} className="flex items-center justify-between gap-4" style={{ color: p.stroke }}>
               <span className="flex items-center gap-1.5">
@@ -308,6 +403,42 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
             </div>
           ))}
         </div>
+
+        {/* Trade events */}
+        {hasEvents && (
+          <div className="pt-1.5 border-t border-white/[0.07] space-y-2">
+            {buyEvs.map((ev, i) => (
+              <div key={`buy-${i}`} className="space-y-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                  <span className="font-semibold text-primary">Compra</span>
+                  <span className="text-foreground/50 truncate">{ev.name}</span>
+                </div>
+                <div className="pl-3.5 text-foreground/60 tabular-nums">
+                  {fmtShares(ev.shares)} acc. × {formatCurrency(ev.price_eur)}
+                </div>
+                <div className="pl-3.5 font-semibold text-foreground/80 tabular-nums">
+                  Total {formatCurrency(ev.total_eur)}
+                </div>
+              </div>
+            ))}
+            {sellEvs.map((ev, i) => (
+              <div key={`sell-${i}`} className="space-y-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0" />
+                  <span className="font-semibold text-orange-400">Venta</span>
+                  <span className="text-foreground/50 truncate">{ev.name}</span>
+                </div>
+                <div className="pl-3.5 text-foreground/60 tabular-nums">
+                  {fmtShares(ev.shares)} acc. × {formatCurrency(ev.price_eur)}
+                </div>
+                <div className="pl-3.5 font-semibold text-foreground/80 tabular-nums">
+                  Total {formatCurrency(ev.total_eur)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -474,13 +605,32 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
                   stroke="hsl(var(--primary))"
                   fill="url(#colorTotal)"
                   strokeWidth={2.5}
-                  connectNulls
                   dot={(props: any) => {
                     const date = props.payload?.date as string
-                    if (!allBuyDatesSet.has(date)) return <g key={`nd-${date}`} />
+                    const isBuy  = allBuyDatesSet.has(date)
+                    const isSell = allSellDatesSet.has(date)
+                    if (!isBuy && !isSell) return <g key={`nd-${date}`} />
+                    const both = isBuy && isSell
                     return (
-                      <circle key={`bd-${date}`} cx={props.cx} cy={props.cy} r={5}
-                        fill="hsl(var(--primary))" stroke="hsl(var(--background))" strokeWidth={2} />
+                      <g key={`dot-${date}`}>
+                        <circle cx={props.cx} cy={props.cy} r={14} fill="transparent" stroke="none" />
+                        {isBuy && (
+                          <>
+                            <circle cx={props.cx} cy={both ? props.cy - 7 : props.cy} r={8}
+                              fill="hsl(var(--primary))" fillOpacity={0.15} stroke="none" />
+                            <circle cx={props.cx} cy={both ? props.cy - 7 : props.cy} r={5}
+                              fill="hsl(var(--primary))" stroke="hsl(var(--background))" strokeWidth={2} />
+                          </>
+                        )}
+                        {isSell && (
+                          <>
+                            <circle cx={props.cx} cy={both ? props.cy + 7 : props.cy} r={8}
+                              fill="#f97316" fillOpacity={0.15} stroke="none" />
+                            <circle cx={props.cx} cy={both ? props.cy + 7 : props.cy} r={5}
+                              fill="#f97316" stroke="hsl(var(--background))" strokeWidth={2} />
+                          </>
+                        )}
+                      </g>
                     )
                   }}
                   activeDot={{ r: 5, fill: 'hsl(var(--primary))', stroke: 'hsl(var(--background))', strokeWidth: 2 }}
@@ -498,13 +648,32 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
                     stroke={colorOf[sym]}
                     fill={`url(#color_${sym})`}
                     strokeWidth={2}
-                    connectNulls
                     dot={(props: any) => {
                       const date = props.payload?.date as string
-                      if (!buyDatesOf[sym]?.has(date)) return <g key={`nd-${sym}-${date}`} />
+                      const isBuy  = buyDatesOf[sym]?.has(date)
+                      const isSell = sellDatesOf[sym]?.has(date)
+                      if (!isBuy && !isSell) return <g key={`nd-${sym}-${date}`} />
+                      const both = isBuy && isSell
                       return (
-                        <circle key={`bd-${sym}-${date}`} cx={props.cx} cy={props.cy} r={4.5}
-                          fill={colorOf[sym]} stroke="hsl(var(--background))" strokeWidth={2} />
+                        <g key={`dot-${sym}-${date}`}>
+                          <circle cx={props.cx} cy={props.cy} r={14} fill="transparent" stroke="none" />
+                          {isBuy && (
+                            <>
+                              <circle cx={props.cx} cy={both ? props.cy - 7 : props.cy} r={8}
+                                fill={colorOf[sym]} fillOpacity={0.15} stroke="none" />
+                              <circle cx={props.cx} cy={both ? props.cy - 7 : props.cy} r={4.5}
+                                fill={colorOf[sym]} stroke="hsl(var(--background))" strokeWidth={2} />
+                            </>
+                          )}
+                          {isSell && (
+                            <>
+                              <circle cx={props.cx} cy={both ? props.cy + 7 : props.cy} r={8}
+                                fill="#f97316" fillOpacity={0.15} stroke="none" />
+                              <circle cx={props.cx} cy={both ? props.cy + 7 : props.cy} r={4.5}
+                                fill="#f97316" stroke="hsl(var(--background))" strokeWidth={2} />
+                            </>
+                          )}
+                        </g>
                       )
                     }}
                     activeDot={{ r: 4, fill: colorOf[sym], stroke: 'hsl(var(--background))', strokeWidth: 2 }}
@@ -535,6 +704,186 @@ function applyOverrides(positions: PortfolioPosition[]): PortfolioPosition[] {
 
 function round2(v: number) { return Math.round(v * 100) / 100 }
 
+function AddManualPositionModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const qc = useQueryClient()
+  const { toast } = useToast()
+  const [query, setQuery]           = useState('')
+  const [results, setResults]       = useState<StockSearchResult[]>([])
+  const [searching, setSearching]   = useState(false)
+  const [selected, setSelected]     = useState<StockSearchResult | null>(null)
+  const [shares, setShares]         = useState('')
+  const [avgPrice, setAvgPrice]     = useState('')
+  const [saving, setSaving]         = useState(false)
+  const debounce = useRef<ReturnType<typeof setTimeout>>()
+
+  const addMutation = useMutation({
+    mutationFn: portfolioApi.addManualPosition,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['portfolio'] })
+      qc.invalidateQueries({ queryKey: ['portfolio-live'] })
+      toast('Posición añadida correctamente', 'success')
+      handleClose()
+    },
+    onError: () => toast('Error al añadir la posición', 'error'),
+  })
+
+  useEffect(() => {
+    if (query.length < 2) { setResults([]); return }
+    clearTimeout(debounce.current)
+    debounce.current = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const data = await portfolioApi.searchStocks(query)
+        setResults(data)
+      } catch { setResults([]) }
+      finally { setSearching(false) }
+    }, 350)
+    return () => clearTimeout(debounce.current)
+  }, [query])
+
+  function handleSelect(r: StockSearchResult) {
+    setSelected(r)
+    setQuery(r.name)
+    setResults([])
+  }
+
+  function handleClose() {
+    setQuery(''); setResults([]); setSelected(null)
+    setShares(''); setAvgPrice(''); setSaving(false)
+    onClose()
+  }
+
+  function handleSubmit() {
+    if (!selected || !shares || !avgPrice) return
+    const sharesNum = parseFloat(shares.replace(',', '.'))
+    const priceNum  = parseFloat(avgPrice.replace(',', '.'))
+    if (isNaN(sharesNum) || isNaN(priceNum) || sharesNum <= 0 || priceNum <= 0) {
+      toast('Introduce valores válidos', 'error'); return
+    }
+    addMutation.mutate({ ticker: selected.ticker, name: selected.name, shares: sharesNum, avg_price_eur: priceNum, currency: selected.currency })
+  }
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={handleClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-md rounded-2xl border border-white/[0.08] bg-card shadow-2xl p-6 space-y-5"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold">Añadir posición manual</h2>
+          <button onClick={handleClose} className="text-muted-foreground hover:text-foreground transition-colors">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground font-medium">Buscar acción / ETF</label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input
+              className="pl-9"
+              placeholder="Apple, MSCI World, AAPL…"
+              value={query}
+              onChange={e => { setQuery(e.target.value); if (selected) setSelected(null) }}
+              autoFocus
+            />
+            {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />}
+          </div>
+
+          {/* Results dropdown */}
+          {results.length > 0 && (
+            <div className="rounded-xl border border-white/[0.08] bg-popover shadow-xl overflow-hidden">
+              {results.map(r => (
+                <button
+                  key={r.ticker}
+                  onClick={() => handleSelect(r)}
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-white/[0.05] transition-colors"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{r.name}</p>
+                    <p className="text-[11px] text-muted-foreground">{r.ticker} · {r.exchange} · {r.currency}</p>
+                  </div>
+                  {r.type_disp && (
+                    <span className="shrink-0 text-[10px] text-muted-foreground/60 border border-border rounded px-1.5 py-0.5">
+                      {r.type_disp}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Fields — shown once a ticker is selected */}
+        {selected && (
+          <>
+            <div className="rounded-xl border border-primary/20 bg-primary/[0.06] px-3 py-2 flex items-center gap-2">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate">{selected.name}</p>
+                <p className="text-[11px] text-muted-foreground">{selected.ticker} · {selected.exchange}</p>
+              </div>
+              <button onClick={() => { setSelected(null); setQuery('') }} className="text-muted-foreground hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground font-medium">Nº de acciones</label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="10"
+                  value={shares}
+                  onChange={e => setShares(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground font-medium">Precio medio (€/acción)</label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="150.00"
+                  value={avgPrice}
+                  onChange={e => setAvgPrice(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {shares && avgPrice && (
+              <p className="text-xs text-muted-foreground">
+                Coste total estimado: <span className="text-foreground font-medium">
+                  {new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(
+                    parseFloat(shares.replace(',', '.')) * parseFloat(avgPrice.replace(',', '.'))
+                  )}
+                </span>
+              </p>
+            )}
+          </>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          <Button variant="outline" className="flex-1" onClick={handleClose}>Cancelar</Button>
+          <Button
+            className="flex-1"
+            disabled={!selected || !shares || !avgPrice || addMutation.isPending}
+            onClick={handleSubmit}
+          >
+            {addMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Añadir posición'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
 export function Portfolio() {
   const { data: trStatus } = useQuery({ queryKey: ['tr-status'], queryFn: trApi.status, staleTime: 30_000 })
   const trConnected = trStatus?.connected ?? false
@@ -560,6 +909,9 @@ export function Portfolio() {
   const { data: history } = useQuery({ queryKey: ['portfolio-history'], queryFn: () => portfolioApi.history({ page_size: 50 }) })
   const [tab, setTab] = useState('charts')
   const [, refresh] = useState(0)
+  const [addModalOpen, setAddModalOpen] = useState(false)
+  const { toast } = useToast()
+  const qc = useQueryClient()
 
   // ── SSE live price stream ──────────────────────────────────────────────────
   const [livePrices, setLivePrices] = useState<Record<string, number>>({})
@@ -630,8 +982,12 @@ export function Portfolio() {
           <h1 className="text-xl font-semibold tracking-tight">Portfolio de Inversiones</h1>
           <p className="text-sm text-muted-foreground">Seguimiento de tus activos financieros</p>
         </div>
-        {/* Live indicator */}
+        {/* Actions + live indicator */}
         <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setAddModalOpen(true)}>
+            <Plus className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Añadir posición</span>
+          </Button>
           {livePerf && (
             <span className="text-xs text-emerald-400/70 bg-emerald-500/10 px-2 py-1 rounded-full">
               Posiciones de TR
@@ -807,13 +1163,18 @@ export function Portfolio() {
                     return (
                     <div key={p.symbol} className="px-4 py-3 flex items-center gap-3">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{p.name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-medium truncate">{p.name}</p>
+                          {p.is_manual && (
+                            <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wider text-primary/70 border border-primary/20 rounded px-1 py-0.5">manual</span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <Badge variant="muted" className="text-xs">{p.symbol}</Badge>
                           <span className="text-xs text-muted-foreground">
                             {sharesKnown ? `${p.shares.toFixed(6)} acc.` : '? acc.'}
                           </span>
-                          {!sharesKnown && (
+                          {!sharesKnown && !p.is_manual && (
                             <span className="text-xs text-amber-400/70" title="Reconecta TR para ver acciones">sync pendiente</span>
                           )}
                         </div>
@@ -833,6 +1194,18 @@ export function Portfolio() {
                           </p>
                         )}
                       </div>
+                      {p.is_manual && p.manual_id != null && (
+                        <button
+                          onClick={() => portfolioApi.deleteManualPosition(p.manual_id!).then(() => {
+                            qc.invalidateQueries({ queryKey: ['portfolio'] })
+                            qc.invalidateQueries({ queryKey: ['portfolio-live'] })
+                            toast('Posición eliminada', 'success')
+                          }).catch(() => toast('Error al eliminar', 'error'))}
+                          className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-negative hover:bg-negative/10 transition-colors"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                     )
                   })}
@@ -860,6 +1233,8 @@ export function Portfolio() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <AddManualPositionModal open={addModalOpen} onClose={() => setAddModalOpen(false)} />
     </div>
   )
 }

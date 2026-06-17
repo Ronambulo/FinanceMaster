@@ -1,3 +1,4 @@
+from datetime import timedelta
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session, joinedload
@@ -29,6 +30,40 @@ def list_recurring(
         out.transaction_count = count
         result.append(out)
     return result
+
+
+@router.post("/from-transaction", response_model=schemas.RecurringGroupOut)
+def create_from_transaction(
+    data: schemas.RecurringGroupCreate,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    tx = db.query(models.Transaction).filter(
+        models.Transaction.id == data.transaction_id,
+        models.Transaction.user_id == current_user.id,
+    ).first()
+    if not tx:
+        raise HTTPException(404, "Transacción no encontrada")
+
+    normalized = data.display_name.strip().lower()
+    group = models.RecurringGroup(
+        user_id=current_user.id,
+        normalized_name=normalized,
+        display_name=data.display_name.strip(),
+        avg_amount=abs(tx.amount),
+        period_days=data.period_days,
+        category_id=tx.category_id,
+        next_expected_date=tx.date + timedelta(days=data.period_days),
+        is_active=True,
+    )
+    db.add(group)
+    db.flush()
+    tx.recurring_group_id = group.id
+    db.commit()
+    db.refresh(group)
+    out = schemas.RecurringGroupOut.model_validate(group)
+    out.transaction_count = 1
+    return out
 
 
 @router.post("/detect")
