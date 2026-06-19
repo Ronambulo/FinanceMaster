@@ -67,8 +67,9 @@ export function InsightsWidget() {
   })
 
   const unread = insights.filter(i => !i.is_read)
-  const current = insights[idx]
-  const total = insights.length
+  const displayIdx = Math.min(idx, Math.max(0, unread.length - 1))
+  const current = unread[displayIdx]
+  const total = unread.length
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-card p-5 shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
@@ -123,20 +124,20 @@ export function InsightsWidget() {
           <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/[0.05]">
             <button
               onClick={() => setIdx(i => Math.max(0, i - 1))}
-              disabled={idx === 0}
+              disabled={displayIdx === 0}
               className="rounded-lg p-1 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
 
             <div className="flex items-center gap-1.5">
-              {insights.map((ins, i) => (
+              {unread.map((ins, i) => (
                 <button
                   key={ins.id}
                   onClick={() => setIdx(i)}
                   className={cn(
                     'h-1.5 rounded-full transition-all',
-                    i === idx ? 'w-4 bg-sky-400' : 'w-1.5 bg-white/20 hover:bg-white/40'
+                    i === displayIdx ? 'w-4 bg-sky-400' : 'w-1.5 bg-white/20 hover:bg-white/40'
                   )}
                 />
               ))}
@@ -144,7 +145,7 @@ export function InsightsWidget() {
 
             <button
               onClick={() => setIdx(i => Math.min(total - 1, i + 1))}
-              disabled={idx === total - 1}
+              disabled={displayIdx === total - 1}
               className="rounded-lg p-1 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronRight className="h-4 w-4" />
