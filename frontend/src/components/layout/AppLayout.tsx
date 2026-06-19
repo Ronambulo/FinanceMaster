@@ -2,26 +2,25 @@ import { useState } from 'react'
 import { Outlet, NavLink, Link } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowLeftRight, TrendingUp,
-  CreditCard, Target, Settings, LogOut, CalendarDays, Sparkles,
+  CreditCard, Target, Settings, LogOut, CalendarDays, Sparkles, Flame, Baby, Trophy, RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Sidebar } from './Sidebar'
 import { useAuthStore } from '@/store/auth'
 import { useChatStore } from '@/store/chat'
-
-/* Mobile bottom-nav — 6 slots (Recurrentes vive dentro de Mensual) */
-const mobileNav = [
-  { to: '/',              icon: LayoutDashboard, label: 'Inicio' },
-  { to: '/transacciones', icon: ArrowLeftRight,  label: 'Txns' },
-  { to: '/monthly',       icon: CalendarDays,    label: 'Mensual' },
-  { to: '/portfolio',     icon: TrendingUp,      label: 'Portfolio' },
-  { to: '/deudas',        icon: CreditCard,      label: 'Deudas' },
-  { to: '/objetivos',     icon: Target,          label: 'Metas' },
-]
+import { useFeaturesStore } from '@/store/features'
 
 function ProfileSheet({ onClose }: { onClose: () => void }) {
-  const user   = useAuthStore(s => s.user)
-  const logout = useAuthStore(s => s.logout)
+  const user     = useAuthStore(s => s.user)
+  const logout   = useAuthStore(s => s.logout)
+  const features = useFeaturesStore(s => s.features)
+
+  const extra = [
+    { to: '/fire',       icon: Flame,     label: 'Calculadora FIRE', show: features.fire },
+    { to: '/logros',     icon: Trophy,    label: 'Logros',           show: features.achievements },
+    { to: '/recurrentes',icon: RefreshCw, label: 'Recurrentes',      show: features.recurring },
+    { to: '/baby-steps', icon: Baby,      label: '7 Baby Steps',     show: features.babySteps },
+  ].filter(n => n.show)
 
   return (
     <div className="fixed inset-0 z-50 md:hidden">
@@ -37,6 +36,18 @@ function ProfileSheet({ onClose }: { onClose: () => void }) {
             <p className="text-xs text-muted-foreground">Mi cuenta</p>
           </div>
         </div>
+
+        {extra.map(({ to, icon: Icon, label }) => (
+          <Link
+            key={to}
+            to={to}
+            onClick={onClose}
+            className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium hover:bg-accent transition-colors"
+          >
+            <Icon className="h-4 w-4 text-muted-foreground" />
+            {label}
+          </Link>
+        ))}
 
         <Link
           to="/ajustes"
@@ -62,9 +73,19 @@ function ProfileSheet({ onClose }: { onClose: () => void }) {
 }
 
 export function AppLayout() {
-  const user         = useAuthStore(s => s.user)
+  const user     = useAuthStore(s => s.user)
+  const features = useFeaturesStore(s => s.features)
   const [profileOpen, setProfileOpen] = useState(false)
   const { toggle: toggleChat, isOpen: chatOpen } = useChatStore()
+
+  const mobileNav = [
+    { to: '/',              icon: LayoutDashboard, label: 'Inicio',   show: true },
+    { to: '/transacciones', icon: ArrowLeftRight,  label: 'Txns',     show: true },
+    { to: '/monthly',       icon: CalendarDays,    label: 'Mensual',  show: true },
+    { to: '/portfolio',     icon: TrendingUp,      label: 'Portfolio',show: true },
+    { to: '/deudas',        icon: CreditCard,      label: 'Deudas',   show: features.debts },
+    { to: '/objetivos',     icon: Target,          label: 'Metas',    show: features.goals },
+  ].filter(n => n.show)
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -113,9 +134,12 @@ export function AppLayout() {
         </main>
       </div>
 
-      {/* ── Mobile bottom nav — 6 columnas fijas ── */}
+      {/* ── Mobile bottom nav ── */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 h-[78px] border-t border-border bg-background/95 backdrop-blur-xl">
-        <div className="grid h-full grid-cols-6">
+        <div
+          className="grid h-full"
+          style={{ gridTemplateColumns: `repeat(${mobileNav.length}, minmax(0, 1fr))` }}
+        >
           {mobileNav.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}

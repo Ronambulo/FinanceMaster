@@ -5,10 +5,12 @@ import {
   LayoutDashboard, ArrowLeftRight, TrendingUp, CalendarDays,
   RefreshCw, CreditCard, Target, Settings, Flame, Upload,
   Plus, Palette, Trophy, Moon, Sun, Minimize2, Maximize2,
-  PiggyBank, FileText, FileSpreadsheet, Wallet,
+  PiggyBank, FileText, FileSpreadsheet, Wallet, Baby,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getCompact, setCompact, getTheme, applyTheme, ACCENT_KEY } from '@/lib/theme'
+import { useFeaturesStore } from '@/store/features'
+import type { FeatureId } from '@/lib/features'
 
 interface CmdItem {
   id: string
@@ -18,6 +20,7 @@ interface CmdItem {
   action: () => void
   group: string
   keywords?: string
+  feature?: FeatureId
 }
 
 export function CommandPalette() {
@@ -25,6 +28,7 @@ export function CommandPalette() {
   const [isDark, setIsDark] = useState(() => getTheme() !== 'light')
   const [isCompact, setIsCompact] = useState(() => getCompact())
   const navigate = useNavigate()
+  const features = useFeaturesStore(s => s.features)
 
   const go = useCallback((path: string) => { navigate(path); setOpen(false) }, [navigate])
 
@@ -43,32 +47,36 @@ export function CommandPalette() {
     setOpen(false)
   }
 
-  const items: CmdItem[] = [
-    // Navegación
+  const allItems: CmdItem[] = [
+    // Navegación — siempre visible
     { id: 'dashboard',    group: 'Navegación', icon: <LayoutDashboard className="h-4 w-4" />, label: 'Dashboard',         desc: 'Resumen general y KPIs',              action: () => go('/'),              keywords: 'inicio home' },
     { id: 'transactions', group: 'Navegación', icon: <ArrowLeftRight  className="h-4 w-4" />, label: 'Transacciones',     desc: 'Ver y gestionar movimientos',         action: () => go('/transacciones'), keywords: 'movimientos gastos' },
     { id: 'monthly',      group: 'Navegación', icon: <CalendarDays    className="h-4 w-4" />, label: 'Mensual',           desc: 'Resumen por tramo de nómina',         action: () => go('/monthly'),       keywords: 'nomina tramo mes presupuesto' },
     { id: 'portfolio',    group: 'Navegación', icon: <TrendingUp      className="h-4 w-4" />, label: 'Portfolio',         desc: 'Inversiones y rentabilidad',          action: () => go('/portfolio'),     keywords: 'inversiones acciones etf' },
-    { id: 'recurring',    group: 'Navegación', icon: <RefreshCw       className="h-4 w-4" />, label: 'Recurrentes',       desc: 'Suscripciones y pagos fijos',         action: () => go('/recurrentes'),   keywords: 'suscripciones pagos fijos' },
-    { id: 'debts',        group: 'Navegación', icon: <CreditCard      className="h-4 w-4" />, label: 'Deudas',            desc: 'Préstamos y deudas pendientes',       action: () => go('/deudas'),        keywords: 'prestamo credito' },
-    { id: 'goals',        group: 'Navegación', icon: <Target          className="h-4 w-4" />, label: 'Objetivos',         desc: 'Metas de ahorro e inversión',         action: () => go('/objetivos'),     keywords: 'metas ahorro objetivo' },
-    { id: 'fire',         group: 'Navegación', icon: <Flame           className="h-4 w-4" />, label: 'Calculadora FIRE',  desc: '¿Cuándo puedes retirarte?',           action: () => go('/fire'),          keywords: 'independencia financiera jubilacion retiro' },
+    // Navegación — feature-gated
+    { id: 'recurring',    group: 'Navegación', icon: <RefreshCw       className="h-4 w-4" />, label: 'Recurrentes',       desc: 'Suscripciones y pagos fijos',         action: () => go('/recurrentes'),   keywords: 'suscripciones pagos fijos',              feature: 'recurring' },
+    { id: 'debts',        group: 'Navegación', icon: <CreditCard      className="h-4 w-4" />, label: 'Deudas',            desc: 'Préstamos y deudas pendientes',       action: () => go('/deudas'),        keywords: 'prestamo credito',                       feature: 'debts' },
+    { id: 'goals',        group: 'Navegación', icon: <Target          className="h-4 w-4" />, label: 'Objetivos',         desc: 'Metas de ahorro e inversión',         action: () => go('/objetivos'),     keywords: 'metas ahorro objetivo',                  feature: 'goals' },
+    { id: 'fire',         group: 'Navegación', icon: <Flame           className="h-4 w-4" />, label: 'Calculadora FIRE',  desc: '¿Cuándo puedes retirarte?',           action: () => go('/fire'),          keywords: 'independencia financiera jubilacion retiro', feature: 'fire' },
+    { id: 'achievements', group: 'Navegación', icon: <Trophy          className="h-4 w-4" />, label: 'Mis logros',        desc: 'Ver logros desbloqueados',            action: () => go('/logros'),        keywords: 'logros badges gamificacion',              feature: 'achievements' },
+    { id: 'baby-steps',   group: 'Navegación', icon: <Baby            className="h-4 w-4" />, label: '7 Baby Steps',      desc: 'Plan de Dave Ramsey',                 action: () => go('/baby-steps'),    keywords: 'dave ramsey pasos finanzas',              feature: 'babySteps' },
     { id: 'settings',     group: 'Navegación', icon: <Settings        className="h-4 w-4" />, label: 'Ajustes',           desc: 'Categorías, tema y seguridad',        action: () => go('/ajustes'),       keywords: 'configuracion tema color' },
-    { id: 'achievements', group: 'Navegación', icon: <Trophy          className="h-4 w-4" />, label: 'Mis logros',        desc: 'Ver logros desbloqueados',            action: () => go('/ajustes?tab=achievements'), keywords: 'logros badges gamificacion' },
 
-    // Acciones rápidas
+    // Acciones rápidas — algunas feature-gated
     { id: 'import',       group: 'Acciones',   icon: <Upload          className="h-4 w-4" />, label: 'Importar CSV',      desc: 'Subir extracto de Trade Republic',    action: () => { navigate('/transacciones?import=1'); setOpen(false) }, keywords: 'trade republic csv subir' },
     { id: 'add-tx',       group: 'Acciones',   icon: <Plus            className="h-4 w-4" />, label: 'Nueva transacción', desc: 'Añadir movimiento manual',            action: () => { navigate('/transacciones?add=1'); setOpen(false) },    keywords: 'crear transaccion manual nueva' },
-    { id: 'add-goal',     group: 'Acciones',   icon: <PiggyBank       className="h-4 w-4" />, label: 'Nuevo objetivo',    desc: 'Crear meta de ahorro',                action: () => { navigate('/objetivos?add=1'); setOpen(false) },         keywords: 'crear objetivo meta ahorro nuevo' },
+    { id: 'add-goal',     group: 'Acciones',   icon: <PiggyBank       className="h-4 w-4" />, label: 'Nuevo objetivo',    desc: 'Crear meta de ahorro',                action: () => { navigate('/objetivos?add=1'); setOpen(false) },         keywords: 'crear objetivo meta ahorro nuevo', feature: 'goals' },
     { id: 'export-pdf',   group: 'Acciones',   icon: <FileText        className="h-4 w-4" />, label: 'Exportar PDF',      desc: 'Descargar resumen del mes actual',    action: () => { navigate('/monthly?export=pdf'); setOpen(false) },     keywords: 'pdf descargar exportar' },
     { id: 'export-xlsx',  group: 'Acciones',   icon: <FileSpreadsheet className="h-4 w-4" />, label: 'Exportar Excel',    desc: 'Descargar Excel del mes actual',      action: () => { navigate('/monthly?export=xlsx'); setOpen(false) },    keywords: 'excel xlsx descargar exportar' },
 
-    // Personalización
+    // Apariencia
     { id: 'theme',        group: 'Apariencia', icon: isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />, label: isDark ? 'Modo claro' : 'Modo oscuro', desc: 'Cambiar entre tema claro y oscuro', action: toggleTheme,  keywords: 'tema oscuro claro color' },
     { id: 'compact',      group: 'Apariencia', icon: isCompact ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />, label: isCompact ? 'Desactivar modo compacto' : 'Activar modo compacto', desc: 'Reduce el espaciado de la interfaz', action: toggleCompact, keywords: 'compacto denso espaciado ui' },
     { id: 'palette',      group: 'Apariencia', icon: <Palette         className="h-4 w-4" />, label: 'Cambiar color de acento', desc: 'Personalizar el color principal', action: () => go('/ajustes?tab=appearance'), keywords: 'color acento tema palette' },
     { id: 'balance',      group: 'Apariencia', icon: <Wallet          className="h-4 w-4" />, label: 'Ver balance',       desc: 'Ir al dashboard principal',           action: () => go('/'),              keywords: 'balance patrimonio total' },
   ]
+
+  const items = allItems.filter(item => !item.feature || features[item.feature])
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {

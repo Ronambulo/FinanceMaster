@@ -71,6 +71,18 @@ def get_api_token(current_user: models.User = Depends(auth.get_current_user)):
     return {"token": token, "expires_in_days": 365}
 
 
+@router.delete("/account", status_code=204)
+def delete_account(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete the user account and all associated data."""
+    from ..services.trade_republic_api import remove_client
+    remove_client(current_user.id)
+    db.delete(current_user)
+    db.commit()
+
+
 @router.delete("/data")
 def delete_all_data(
     current_user: models.User = Depends(auth.get_current_user),

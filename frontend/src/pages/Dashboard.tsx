@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useFeaturesStore } from '@/store/features'
 import { useQuery, useQueries } from '@tanstack/react-query'
 import { dashApi, txApi, goalApi, portfolioApi, budgetApi } from '@/lib/api'
 import type { Goal, PendingRecurring } from '@/lib/api'
@@ -300,6 +301,7 @@ export function Dashboard() {
   } = usePayrollCycle(0)
 
   const layout = useDashboardLayout()
+  const features = useFeaturesStore(s => s.features)
 
   const { data: overview  } = useQuery({ queryKey: ['overview'],  queryFn: () => dashApi.overview() })
   const { data: cycleDetail } = useQuery({
@@ -564,11 +566,13 @@ export function Dashboard() {
     insights: <InsightsWidget />,
     networth: <NetWorthChart months={24} />,
     personality: (
-      <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
+      <div className={`grid gap-4 ${features.achievements ? 'lg:grid-cols-[1fr_2fr]' : ''}`}>
         <SpendingPersonality />
-        <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-card p-5 shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
-          <Achievements compact />
-        </div>
+        {features.achievements && (
+          <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-card p-5 shadow-[0_4px_24px_rgba(0,0,0,0.4)]">
+            <Achievements compact />
+          </div>
+        )}
       </div>
     ),
     upcoming: (

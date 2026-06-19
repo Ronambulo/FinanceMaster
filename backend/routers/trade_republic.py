@@ -367,7 +367,30 @@ def _resolve_tr_type(event: dict, amount: float) -> str | None:
     return "CARD_TRANSACTION" if amount < 0 else "CUSTOMER_INPAYMENT"
 
 
+_CANCELLED_SUBTITLES = {
+    # Spanish
+    "cancelada", "cancelado", "rechazada", "rechazado", "fallida", "fallido",
+    # German
+    "storniert", "abgelehnt", "fehlgeschlagen",
+    # English
+    "cancelled", "canceled", "rejected", "failed",
+}
+
+
+def _is_cancelled_event(event: dict) -> bool:
+    """Return True if TR reports this event as cancelled/rejected (should not affect balance)."""
+    for field in ("subtitle", "description", "body"):
+        val = event.get(field)
+        if val and str(val).strip().lower() in _CANCELLED_SUBTITLES:
+            return True
+    return False
+
+
 def _map_tr_event(event: dict) -> dict | None:
+    # Skip cancelled / rejected events — they never affect the real cash balance
+    if _is_cancelled_event(event):
+        return None
+
     # Amount
     amt_raw = event.get("amount") or {}
     if isinstance(amt_raw, dict):
@@ -443,6 +466,25 @@ def _map_tr_event(event: dict) -> dict | None:
 
 
 # ── Sync ──────────────────────────────────────────────────────────────────────
+
+@router.post("/fix-cancelled")
+async def tr_fix_cancelled(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete transactions that were imported with a cancelled/rejected status from TR."""
+    from sqlalchemy import func as sqlfunc
+    rows = db.query(models.Transaction).filter(
+        models.Transaction.user_id == current_user.id,
+        models.Transaction.description.isnot(None),
+        sqlfunc.lower(models.Transaction.description).in_(_CANCELLED_SUBTITLES),
+    ).all()
+    count = len(rows)
+    for r in rows:
+        db.delete(r)
+    db.commit()
+    return {"deleted": count}
+
 
 @router.post("/dedupe")
 async def tr_dedupe(
@@ -701,8 +743,10 @@ async def tr_sync(
                 skipped += 1
             continue
 
-        # ── Secondary dedup: same (date, amount, type) — CSV duplicate ────
-        if _already_exists(db, current_user.id, row):
+        # ── Secondary dedup: same (date, amount, type) — only for CSV imports ──
+        # Events with an external_id are authoritative; skip secondary dedup to
+        # avoid blocking genuinely distinct transactions with the same amount/date/type.
+        if not row.get("external_id") and _already_exists(db, current_user.id, row):
             skipped += 1
             continue
 
@@ -730,13 +774,33 @@ async def tr_sync(
     except Exception:
         pass
 
+    # Resolve ISIN/name → Yahoo ticker for all unresolved positions
+    resolve_result = {"resolved": 0, "skipped": 0, "total": 0}
+    try:
+        from ..services.portfolio_calculator import resolve_all_symbols
+        resolve_result = resolve_all_symbols(db, current_user.id)
+    except Exception:
+        pass
+
     return {
         "synced": imported,
         "updated": updated,
         "skipped": skipped,
         "errors": errors,
         "total_events": len(events),
+        "tickers_resolved": resolve_result.get("resolved", 0),
     }
+
+
+@router.post("/fix-tickers")
+async def tr_fix_tickers(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Resolve ISIN/name → Yahoo Finance ticker for all unresolved BUY/SELL positions."""
+    from ..services.portfolio_calculator import resolve_all_symbols
+    result = resolve_all_symbols(db, current_user.id)
+    return result
 
 
 @router.get("/debug-events")
@@ -749,7 +813,6 @@ async def tr_debug_events(
         raise HTTPException(400, "No conectado a Trade Republic")
     try:
         events = await client.get_timeline_raw()
-        # Show card transactions specifically so we can check mcc_code extraction
         card_events = [e for e in events if "card" in str(e.get("eventType", "")).lower()]
         return {
             "count": len(events),
@@ -758,6 +821,344 @@ async def tr_debug_events(
         }
     except TRConnectionError as e:
         raise HTTPException(503, str(e))
+
+
+@router.get("/debug-skipped")
+async def tr_debug_skipped(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Show ALL events TR has that were skipped during import (cancelled events, unknown types, etc.)
+    and their total cash impact. Helps diagnose balance discrepancies.
+    """
+    client = get_client(current_user.id)
+    if not client or not client.is_connected():
+        raise HTTPException(400, "No conectado a Trade Republic")
+
+    existing_ids = {
+        r[0] for r in db.query(models.Transaction.external_id)
+        .filter(models.Transaction.user_id == current_user.id)
+        .filter(models.Transaction.external_id.isnot(None))
+        .all()
+    }
+
+    try:
+        all_events = await client.get_timeline_raw()
+    except TRConnectionError as e:
+        raise HTTPException(503, str(e))
+
+    skipped_cancelled = []
+    skipped_zero = []
+    skipped_no_date = []
+    skipped_type_none = []
+    already_imported = []
+    imported_ok = []
+
+    for event in all_events:
+        eid = event.get("id") or event.get("transactionId")
+
+        if eid and eid in existing_ids:
+            already_imported.append(eid)
+            continue
+
+        if _is_cancelled_event(event):
+            amt_raw = event.get("amount") or {}
+            amount = float(str(amt_raw.get("value", "0")).replace(",", ".")) if isinstance(amt_raw, dict) else float(amt_raw or 0)
+            skipped_cancelled.append({
+                "id": eid,
+                "date": event.get("timestamp") or event.get("date"),
+                "title": event.get("title"),
+                "subtitle": event.get("subtitle"),
+                "amount": amount,
+                "eventType": event.get("eventType"),
+            })
+            continue
+
+        row = _map_tr_event(event)
+        if row is None:
+            amt_raw = event.get("amount") or {}
+            try:
+                amount = float(str(amt_raw.get("value", "0")).replace(",", ".")) if isinstance(amt_raw, dict) else float(amt_raw or 0)
+            except (ValueError, TypeError):
+                amount = 0
+            skipped_type_none.append({
+                "id": eid,
+                "date": event.get("timestamp") or event.get("date"),
+                "title": event.get("title"),
+                "subtitle": event.get("subtitle"),
+                "amount": amount,
+                "eventType": event.get("eventType"),
+            })
+        else:
+            imported_ok.append(row.get("external_id"))
+
+    total_skipped_cash = round(
+        sum(e["amount"] for e in skipped_cancelled) +
+        sum(e["amount"] for e in skipped_type_none),
+        2
+    )
+
+    return {
+        "total_events_from_tr": len(all_events),
+        "already_in_db": len(already_imported),
+        "would_import": len(imported_ok),
+        "skipped_cancelled": skipped_cancelled,
+        "skipped_other": skipped_type_none,
+        "total_skipped_cash_impact": total_skipped_cash,
+    }
+
+
+@router.get("/debug-balance")
+async def tr_debug_balance(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Compare the sum of all TR timeline amounts against the DB sum.
+    Shows which external_ids are in the DB but not in the TR timeline (orphans)
+    and which are in TR but not the DB (missing).
+    Helps find the root cause of balance discrepancies.
+    """
+    client = get_client(current_user.id)
+    if not client or not client.is_connected():
+        raise HTTPException(400, "No conectado a Trade Republic")
+
+    try:
+        all_events = await client.get_timeline_raw()
+    except TRConnectionError as e:
+        raise HTTPException(503, str(e))
+
+    # Build a map of external_id → mapped amount from TR timeline
+    tr_amounts: dict[str, float] = {}
+    tr_skipped_cancelled: dict[str, float] = {}
+    tr_skipped_zero: list[str] = []
+    tr_unmapped: list[dict] = []
+
+    for event in all_events:
+        eid = event.get("id") or event.get("transactionId")
+        if not eid:
+            continue
+        amt_raw = event.get("amount") or {}
+        try:
+            amt = float(str(amt_raw.get("value", "0")).replace(",", ".")) if isinstance(amt_raw, dict) else float(amt_raw or 0)
+        except (ValueError, TypeError):
+            amt = 0
+
+        if _is_cancelled_event(event):
+            tr_skipped_cancelled[eid] = amt
+            continue
+
+        row = _map_tr_event(event)
+        if row is None:
+            if amt == 0:
+                tr_skipped_zero.append(eid)
+            else:
+                tr_unmapped.append({"id": eid, "amount": amt, "eventType": event.get("eventType"), "subtitle": event.get("subtitle")})
+            continue
+
+        tr_amounts[eid] = row["amount"]  # use mapped amount (may differ from raw for deposits)
+
+    tr_sum = round(sum(tr_amounts.values()), 2)
+
+    # Get all DB transactions for this user
+    db_rows = db.query(models.Transaction).filter(
+        models.Transaction.user_id == current_user.id
+    ).all()
+
+    db_sum = round(sum(r.amount for r in db_rows), 2)
+    db_by_eid = {r.external_id: r for r in db_rows if r.external_id}
+
+    # Orphan DB rows: in DB but NOT in TR timeline (and not in cancelled/skipped)
+    orphan_ids = set(db_by_eid.keys()) - set(tr_amounts.keys()) - set(tr_skipped_cancelled.keys())
+    orphans = [
+        {
+            "external_id": eid,
+            "date": str(db_by_eid[eid].date),
+            "name": db_by_eid[eid].name,
+            "amount": db_by_eid[eid].amount,
+            "type": db_by_eid[eid].type,
+        }
+        for eid in sorted(orphan_ids)
+    ]
+
+    # Missing DB rows: in TR timeline but NOT in DB
+    missing_ids = set(tr_amounts.keys()) - set(db_by_eid.keys())
+    missing = [{"id": mid, "amount": tr_amounts[mid]} for mid in sorted(missing_ids)]
+
+    # Amount mismatches: same external_id but different amount
+    mismatches = []
+    for eid in set(tr_amounts.keys()) & set(db_by_eid.keys()):
+        tr_a = round(tr_amounts[eid], 4)
+        db_a = round(db_by_eid[eid].amount, 4)
+        if abs(tr_a - db_a) > 0.005:
+            mismatches.append({
+                "external_id": eid,
+                "tr_amount": tr_a,
+                "db_amount": db_a,
+                "diff": round(tr_a - db_a, 4),
+                "name": db_by_eid[eid].name,
+                "date": str(db_by_eid[eid].date),
+            })
+
+    orphan_sum = round(sum(o["amount"] for o in orphans), 2)
+    mismatch_sum = round(sum(m["diff"] for m in mismatches), 2)
+
+    return {
+        "tr_timeline_sum": tr_sum,
+        "db_sum": db_sum,
+        "db_vs_tr_diff": round(db_sum - tr_sum, 2),
+        "tr_total_events": len(all_events),
+        "tr_mapped_events": len(tr_amounts),
+        "tr_skipped_cancelled": len(tr_skipped_cancelled),
+        "tr_skipped_zero_amount": len(tr_skipped_zero),
+        "tr_unmapped_nonzero": tr_unmapped,
+        "orphan_db_rows": orphans,
+        "orphan_sum": orphan_sum,
+        "missing_from_db": missing,
+        "amount_mismatches": mismatches,
+        "mismatch_sum": mismatch_sum,
+    }
+
+
+@router.post("/fix-orphans")
+async def tr_fix_orphans(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete DB transactions whose external_id appears in TR's timeline as CANCELLED,
+    plus any whose external_id does NOT appear in TR's timeline at all (true orphans).
+    ONLY call this after reviewing /debug-balance output first.
+    """
+    client = get_client(current_user.id)
+    if not client or not client.is_connected():
+        raise HTTPException(400, "No conectado a Trade Republic")
+
+    try:
+        all_events = await client.get_timeline_raw()
+    except TRConnectionError as e:
+        raise HTTPException(503, str(e))
+
+    tr_event_ids: set[str] = set()
+    cancelled_ids: set[str] = set()
+
+    for event in all_events:
+        eid = event.get("id") or event.get("transactionId")
+        if not eid:
+            continue
+        if _is_cancelled_event(event):
+            cancelled_ids.add(eid)
+        else:
+            tr_event_ids.add(eid)
+
+    db_rows = db.query(models.Transaction).filter(
+        models.Transaction.user_id == current_user.id,
+        models.Transaction.external_id.isnot(None),
+    ).all()
+
+    deleted_cancelled = []
+    deleted_orphan = []
+
+    for row in db_rows:
+        eid = row.external_id
+        if eid in cancelled_ids:
+            deleted_cancelled.append({"id": row.id, "name": row.name, "amount": row.amount, "external_id": eid})
+            db.delete(row)
+        elif eid not in tr_event_ids:
+            deleted_orphan.append({"id": row.id, "name": row.name, "amount": row.amount, "date": str(row.date), "external_id": eid})
+            db.delete(row)
+
+    db.commit()
+    return {
+        "deleted_cancelled": deleted_cancelled,
+        "deleted_orphan": deleted_orphan,
+        "total_deleted": len(deleted_cancelled) + len(deleted_orphan),
+    }
+
+
+@router.post("/import-missing")
+async def tr_import_missing(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Import TR timeline events that have external_ids not yet in the DB.
+    Skips the secondary (date/amount/type) dedup — uses external_id as the sole key.
+    This fixes transactions that were blocked by false-positive dedup against
+    a different transaction with matching date/amount/type.
+    """
+    from sqlalchemy.exc import IntegrityError
+    from ..services.categorizer import auto_categorize
+
+    client = get_client(current_user.id)
+    if not client or not client.is_connected():
+        raise HTTPException(400, "No conectado a Trade Republic")
+
+    existing_ids = {
+        r[0] for r in db.query(models.Transaction.external_id)
+        .filter(models.Transaction.user_id == current_user.id)
+        .filter(models.Transaction.external_id.isnot(None))
+        .all()
+    }
+
+    try:
+        all_events = await client.get_timeline_raw()
+    except TRConnectionError as e:
+        raise HTTPException(503, str(e))
+
+    imported = 0
+    skipped = 0
+    imported_details = []
+
+    for event in all_events:
+        eid = event.get("id") or event.get("transactionId")
+        if not eid or eid in existing_ids:
+            continue
+
+        if _is_cancelled_event(event):
+            continue
+
+        row = _map_tr_event(event)
+        if row is None:
+            continue
+
+        # external_id guaranteed unique — skip secondary dedup entirely
+        category_id, is_auto, is_internal = auto_categorize(
+            db=db,
+            user_id=current_user.id,
+            tx_type=row["type"],
+            tx_name=row.get("name"),
+            tx_description=row.get("description"),
+            mcc_code=row.get("mcc_code"),
+            counterparty_name=row.get("counterparty_name"),
+            amount=row["amount"],
+            user_own_name=current_user.username,
+        )
+
+        tx = models.Transaction(
+            user_id=current_user.id,
+            category_id=category_id,
+            is_auto_categorized=is_auto,
+            is_internal_transfer=is_internal,
+            **row,
+        )
+        try:
+            with db.begin_nested():
+                db.add(tx)
+            imported += 1
+            imported_details.append({
+                "external_id": eid,
+                "name": row.get("name"),
+                "date": str(row.get("date")),
+                "amount": row.get("amount"),
+                "type": row.get("type"),
+            })
+        except IntegrityError:
+            skipped += 1
+
+    db.commit()
+    return {"imported": imported, "skipped_integrity": skipped, "details": imported_details}
 
 
 @router.post("/disconnect")

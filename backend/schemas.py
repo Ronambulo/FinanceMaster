@@ -82,6 +82,7 @@ class TransactionUpdate(BaseModel):
     description: Optional[str] = None
     is_internal_transfer: Optional[bool] = None
     exclude_from_stats: Optional[bool] = None
+    is_pending: Optional[bool] = None
     is_auto_categorized: Optional[bool] = None
     is_ai_categorized: Optional[bool] = None
 
@@ -110,6 +111,7 @@ class TransactionOut(BaseModel):
     is_ai_categorized: bool = False
     is_internal_transfer: bool
     exclude_from_stats: bool = False
+    is_pending: bool = False
     recurring_group_id: Optional[int]
     model_config = {"from_attributes": True}
 

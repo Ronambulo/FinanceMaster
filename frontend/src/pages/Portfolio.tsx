@@ -128,6 +128,11 @@ function symbolColor(sym: string): string {
   return CHART_PALETTE[Math.abs(hash) % CHART_PALETTE.length]
 }
 
+// SVG ids cannot contain spaces or special chars — use a stable index-based id
+function gradientId(index: number): string {
+  return `cgr_${index}`
+}
+
 function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosition[]; totalInvested?: number }) {
   const [period, setPeriod]         = useState('1y')
   const [cumulative, setCumulative] = useState(false)
@@ -200,8 +205,8 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
       // Filter 0-share events — transactions with null shares in the DB produce
       // delta=0 entries that stall the running total.
       const events = [
-        ...(p.buy_events  ?? []).filter(e => e.shares > 0.0001).map(e => ({ date: e.date, delta:  e.shares })),
-        ...(p.sell_events ?? []).filter(e => e.shares > 0.0001).map(e => ({ date: e.date, delta: -e.shares })),
+        ...(p.buy_events  ?? []).map(e => ({ date: e.date, delta:  (e.shares > 0.0001 ? e.shares : 1) })),
+        ...(p.sell_events ?? []).map(e => ({ date: e.date, delta: -(e.shares > 0.0001 ? e.shares : 1) })),
       ].sort((a, b) => a.date.localeCompare(b.date))
 
       if (!events.length) { result[p.symbol] = []; continue }
@@ -240,7 +245,8 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
     queryKey: ['price-history', symbols.join(','), period],
     queryFn: () => portfolioApi.priceHistory(symbols, period),
     enabled: symbols.length > 0,
-    staleTime: 5 * 60_000,
+    staleTime: 0,
+    gcTime: 0,
     retry: 1,
   })
 
@@ -352,7 +358,64 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
     return result
   }, [chartData, symbols, sharesOf, fxOf, sinceMyBuy, firstBuyOf])
 
-  const displayData = cumulative ? cumulativeData : normalisedData
+  // Ghost key: index-based to avoid dots (Recharts uses dot-notation in dataKey).
+  // "ghost0", "ghost1", ... — no external function, no closure risk.
+  const ghostKeys = useMemo(
+    () => Object.fromEntries(symbols.map((sym, idx) => [sym, `ghost${idx}`])),
+    [symbols]
+  )
+
+  // Fallback ghost base: first price in chartData regardless of ownership period.
+  // Used when baseValues[sym] is undefined (e.g. no active period in current chart range).
+  const ghostBaseOf = useMemo(() => {
+    const gb: Record<string, number> = {}
+    for (const sym of symbols) {
+      if (baseValues[sym] !== undefined) {
+        gb[sym] = baseValues[sym]
+        continue
+      }
+      const firstRow = chartData.find(r => r[sym] !== undefined)
+      if (firstRow) gb[sym] = firstRow[sym] as number
+    }
+    return gb
+  }, [chartData, symbols, baseValues])
+
+  // Extends normalisedData with ghostN keys covering ALL dates where price data exists.
+  const normalisedWithGhost = useMemo((): ChartRow[] => {
+    const rows = chartData.map((rawRow, i) => {
+      const out: ChartRow = { ...normalisedData[i] }
+      const date = rawRow.date as string
+      for (const sym of symbols) {
+        const gk   = ghostKeys[sym]
+        const base = ghostBaseOf[sym]
+        const val  = rawRow[sym] as number | undefined
+        if (gk && base && val !== undefined) {
+          out[gk] = parseFloat(((val / base) * 100).toFixed(2))
+        }
+      }
+      return out
+    })
+    // Debug: log state for each symbol so we can identify failures in the browser console
+    for (const sym of symbols) {
+      const gk   = ghostKeys[sym]
+      const base = ghostBaseOf[sym]
+      const firstBuy = firstBuyOf[sym]
+      const gapRow = chartData.find(r => {
+        const d = r.date as string
+        return d > '2025-11-30' && d < '2026-06-01'
+      })
+      console.log(`[ghost:${sym}] gk=${gk} base=${base} firstBuy=${firstBuy}`, {
+        gapDate: gapRow?.date,
+        gapRawVal: gapRow ? gapRow[sym] : 'NO_GAP_ROW_IN_DATE_RANGE',
+        ghostInGap: gapRow ? rows.find(r => r.date === gapRow.date)?.[gk ?? ''] : 'N/A',
+        totalRows: rows.length,
+        rowsWithGhost: rows.filter(r => r[gk ?? ''] !== undefined).length,
+      })
+    }
+    return rows
+  }, [chartData, normalisedData, ghostBaseOf, symbols, firstBuyOf, ghostKeys])
+
+  const displayData = cumulative ? cumulativeData : normalisedWithGhost
 
   // Smart tick reducer: max 8 labels regardless of data density
   const xTicks = useMemo(() => {
@@ -387,7 +450,7 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
 
         {/* Price rows */}
         <div className="space-y-1.5 mb-2">
-          {payload.map((p: any) => (
+          {payload.filter((p: any) => !String(p.dataKey).startsWith('ghost')).map((p: any) => (
             <div key={p.dataKey} className="flex items-center justify-between gap-4" style={{ color: p.stroke }}>
               <span className="flex items-center gap-1.5">
                 <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: p.stroke }} />
@@ -547,8 +610,8 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
                 <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.35}/>
                 <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
               </linearGradient>
-              {symbols.map(sym => (
-                <linearGradient key={sym} id={`color_${sym}`} x1="0" y1="0" x2="0" y2="1">
+              {symbols.map((sym, i) => (
+                <linearGradient key={sym} id={gradientId(i)} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={colorOf[sym]} stopOpacity={0.25}/>
                   <stop offset="95%" stopColor={colorOf[sym]} stopOpacity={0}/>
                 </linearGradient>
@@ -605,6 +668,7 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
                   stroke="hsl(var(--primary))"
                   fill="url(#colorTotal)"
                   strokeWidth={2.5}
+                  connectNulls={false}
                   dot={(props: any) => {
                     const date = props.payload?.date as string
                     const isBuy  = allBuyDatesSet.has(date)
@@ -639,15 +703,16 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
             ) : (
               <>
                 <ReferenceLine y={100} stroke="rgba(255,255,255,0.12)" strokeDasharray="5 4" />
-                {symbols.filter(sym => !hiddenSymbols.has(sym)).map(sym => (
+                {symbols.filter(sym => !hiddenSymbols.has(sym)).flatMap(sym => [
                   <Area
                     key={sym}
                     type="monotone"
                     dataKey={sym}
                     name={sym}
                     stroke={colorOf[sym]}
-                    fill={`url(#color_${sym})`}
+                    fill={`url(#${gradientId(symbols.indexOf(sym))})`}
                     strokeWidth={2}
+                    connectNulls={false}
                     dot={(props: any) => {
                       const date = props.payload?.date as string
                       const isBuy  = buyDatesOf[sym]?.has(date)
@@ -677,8 +742,24 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
                       )
                     }}
                     activeDot={{ r: 4, fill: colorOf[sym], stroke: 'hsl(var(--background))', strokeWidth: 2 }}
-                  />
-                ))}
+                  />,
+                  <Area
+                    key={`ghost-${sym}`}
+                    type="monotone"
+                    dataKey={ghostKeys[sym]}
+                    stroke={colorOf[sym]}
+                    strokeOpacity={0.45}
+                    strokeDasharray="6 4"
+                    strokeWidth={1.5}
+                    fill={colorOf[sym]}
+                    fillOpacity={0}
+                    dot={false}
+                    activeDot={{ r: 0, strokeWidth: 0 }}
+                    connectNulls={true}
+                    legendType="none"
+                    isAnimationActive={false}
+                  />,
+                ])}
               </>
             )}
           </AreaChart>

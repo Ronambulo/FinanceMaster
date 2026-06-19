@@ -14,11 +14,15 @@ import { Goals } from '@/pages/Goals'
 import { Monthly } from '@/pages/Monthly'
 import { Settings } from '@/pages/Settings'
 import { FireCalculator } from '@/pages/FireCalculator'
+import { BabySteps } from '@/pages/BabySteps'
+import { AchievementsPage } from '@/pages/Achievements'
 import { CommandPalette } from '@/components/CommandPalette'
 import { OnboardingWizard } from '@/components/OnboardingWizard'
 import { AiChat } from '@/components/AiChat'
 import { useEffect, useState, useRef } from 'react'
 import { applyTheme, THEME_KEY, ACCENT_KEY, getCompact } from '@/lib/theme'
+import { useFeaturesStore } from '@/store/features'
+import type { FeatureId } from '@/lib/features'
 import { WifiOff, Loader2 } from 'lucide-react'
 import { trApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
@@ -106,7 +110,7 @@ function TwoFAModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   )
 }
 
-const queryClient = new QueryClient({
+export const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 })
 
@@ -150,6 +154,12 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   )
 }
 
+function FeatureRoute({ feature, children }: { feature: FeatureId; children: React.ReactNode }) {
+  const features = useFeaturesStore(s => s.features)
+  if (!features[feature]) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 export default function App() {
   useEffect(() => {
     const themeId  = localStorage.getItem(THEME_KEY)  || 'trade-republic'
@@ -172,11 +182,13 @@ export default function App() {
               <Route index element={<Dashboard />} />
               <Route path="transacciones" element={<Transactions />} />
               <Route path="portfolio" element={<Portfolio />} />
-              <Route path="recurrentes" element={<Recurring />} />
-              <Route path="deudas" element={<Debts />} />
-              <Route path="objetivos" element={<Goals />} />
+              <Route path="recurrentes" element={<FeatureRoute feature="recurring"><Recurring /></FeatureRoute>} />
+              <Route path="deudas" element={<FeatureRoute feature="debts"><Debts /></FeatureRoute>} />
+              <Route path="objetivos" element={<FeatureRoute feature="goals"><Goals /></FeatureRoute>} />
               <Route path="monthly" element={<Monthly />} />
-              <Route path="fire" element={<FireCalculator />} />
+              <Route path="fire" element={<FeatureRoute feature="fire"><FireCalculator /></FeatureRoute>} />
+              <Route path="baby-steps" element={<FeatureRoute feature="babySteps"><BabySteps /></FeatureRoute>} />
+              <Route path="logros" element={<FeatureRoute feature="achievements"><AchievementsPage /></FeatureRoute>} />
               <Route path="ajustes" element={<Settings />} />
             </Route>
           </Routes>

@@ -1,4 +1,7 @@
+import json
+import re
 import time
+from pathlib import Path
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 from .. import models
@@ -53,12 +56,16 @@ NAME_TO_YAHOO: Dict[str, Optional[tuple]] = {
     "core msci world usd (acc)":     ("IWDA.AS", "EUR"),
     "core msci world":               ("IWDA.AS", "EUR"),
     "ishares core msci world":       ("IWDA.AS", "EUR"),
+    "ishares msci world":            ("IWDA.AS", "EUR"),
     "apple":                         ("AAPL",    "USD"),
     "apple inc":                     ("AAPL",    "USD"),
     "amazon.com":                    ("AMZN",    "USD"),
+    "amazon.com inc":                ("AMZN",    "USD"),
     "amazon":                        ("AMZN",    "USD"),
     "microsoft":                     ("MSFT",    "USD"),
+    "microsoft corp":                ("MSFT",    "USD"),
     "monster beverage":              ("MNST",    "USD"),
+    "spacex":                        ("SPCE",    "USD"),
 }
 
 
@@ -73,6 +80,152 @@ def _ticker_for_name(name: str) -> Optional[tuple]:
         if key.startswith(k) or k.startswith(key):
             return v
     return None
+
+
+# ── Persistent ticker cache ────────────────────────────────────────────────────
+_TICKER_CACHE_FILE = Path(__file__).parent.parent / "data" / "ticker_cache.json"
+_persistent_ticker_cache: Dict[str, Optional[list]] = {}
+
+
+def _load_ticker_cache() -> None:
+    global _persistent_ticker_cache
+    try:
+        if _TICKER_CACHE_FILE.exists():
+            with open(_TICKER_CACHE_FILE, encoding="utf-8") as f:
+                _persistent_ticker_cache = json.load(f)
+    except Exception:
+        _persistent_ticker_cache = {}
+
+
+def _save_ticker_cache() -> None:
+    try:
+        _TICKER_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(_TICKER_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(_persistent_ticker_cache, f, indent=2)
+    except Exception:
+        pass
+
+
+_load_ticker_cache()
+
+
+def _is_isin(s: Optional[str]) -> bool:
+    """True if s is a 12-char ISIN (2 alpha country code + 10 alphanum)."""
+    return bool(s) and len(s) == 12 and s[:2].isalpha() and s.isalnum()
+
+
+def _yf_search_by_isin(isin: str) -> Optional[tuple]:
+    """yfinance Search by ISIN; returns first valid (ticker, currency) result."""
+    try:
+        import yfinance as yf
+        quotes = getattr(yf.Search(isin, max_results=5), "quotes", None) or []
+        for q in quotes:
+            sym = q.get("symbol", "")
+            currency = (q.get("currency") or "USD").upper()
+            if sym and len(sym) <= 10:
+                return (sym, currency)
+    except Exception:
+        pass
+    return None
+
+
+def _yf_search_by_name(name: str) -> Optional[tuple]:
+    """yfinance Search by name; prefers EUR-denominated results (European ETFs)."""
+    clean = re.sub(r"\s*\(Acc\)|\s*\(Dist\)", "", name, flags=re.IGNORECASE).strip()
+    try:
+        import yfinance as yf
+        quotes = getattr(yf.Search(clean, max_results=5), "quotes", None) or []
+        for q in quotes:
+            sym = q.get("symbol", "")
+            currency = (q.get("currency") or "USD").upper()
+            if sym and len(sym) <= 10 and currency == "EUR":
+                return (sym, "EUR")
+        for q in quotes:
+            sym = q.get("symbol", "")
+            currency = (q.get("currency") or "USD").upper()
+            if sym and len(sym) <= 10:
+                return (sym, currency)
+    except Exception:
+        pass
+    return None
+
+
+def resolve_to_ticker(isin: Optional[str], name: Optional[str]) -> Optional[tuple]:
+    """
+    Resolve a TR asset to a (yahoo_ticker, currency) tuple.
+    Order: static ISIN dict → static name dict → persistent cache → yf ISIN search → yf name search.
+    Caches results persistently so each asset is only looked up once.
+    """
+    isin_key = f"isin:{isin.upper()}" if isin else None
+    name_key = f"name:{name.strip().lower()}" if name else None
+
+    # 1. Static ISIN dict
+    if isin:
+        isin_upper = isin.upper()
+        if isin_upper in ISIN_TO_YAHOO:
+            entry = ISIN_TO_YAHOO[isin_upper]
+            return tuple(entry) if entry else None
+
+    # 2. Static name dict
+    if name:
+        entry = _ticker_for_name(name)
+        if entry is not None:
+            return entry
+
+    # 3. Persistent cache
+    if isin_key and isin_key in _persistent_ticker_cache:
+        raw = _persistent_ticker_cache[isin_key]
+        return tuple(raw) if raw else None
+    if name_key and name_key in _persistent_ticker_cache:
+        raw = _persistent_ticker_cache[name_key]
+        return tuple(raw) if raw else None
+
+    # 4. yfinance ISIN search
+    if isin:
+        entry = _yf_search_by_isin(isin)
+        _persistent_ticker_cache[isin_key] = list(entry) if entry else None
+        _save_ticker_cache()
+        if entry:
+            return entry
+
+    # 5. yfinance name search
+    if name:
+        entry = _yf_search_by_name(name)
+        if name_key:
+            _persistent_ticker_cache[name_key] = list(entry) if entry else None
+            _save_ticker_cache()
+        if entry:
+            return entry
+
+    return None
+
+
+def resolve_all_symbols(db: Session, user_id: int) -> dict:
+    """
+    Update symbol field for all BUY/SELL transactions that have symbol=None or an ISIN.
+    Resolves each to the correct Yahoo Finance ticker using resolve_to_ticker().
+    """
+    txs = db.query(models.Transaction).filter(
+        models.Transaction.user_id == user_id,
+        models.Transaction.type.in_(["BUY", "SELL"]),
+    ).all()
+
+    unresolved = [tx for tx in txs if tx.symbol is None or _is_isin(tx.symbol)]
+
+    resolved = skipped = 0
+    for tx in unresolved:
+        isin = tx.symbol if _is_isin(tx.symbol) else None
+        entry = resolve_to_ticker(isin=isin, name=tx.name)
+        if entry:
+            ticker, _ = entry
+            if ticker:
+                tx.symbol = ticker
+                resolved += 1
+                continue
+        skipped += 1
+
+    db.commit()
+    return {"resolved": resolved, "skipped": skipped, "total": len(unresolved)}
 
 
 def get_historical_price_eur(ticker: str, currency: str, date_str: str) -> Optional[float]:
@@ -118,11 +271,14 @@ def estimate_shares_from_amount(db: Session, user_id: int) -> dict:
     estimated = 0
     skipped = 0
     for tx in txs:
-        # Try ISIN lookup first
+        # Try ISIN lookup first (hardcoded map)
         entry = ISIN_TO_YAHOO.get(tx.symbol or "") if tx.symbol else None
         # Fall back to name lookup
         if entry is None and tx.name:
             entry = _ticker_for_name(tx.name)
+        # Fall back to dynamic yfinance search for the ISIN
+        if entry is None and tx.symbol:
+            entry = _lookup_isin_via_search(tx.symbol)
         if entry is None:
             skipped += 1
             continue
@@ -199,7 +355,10 @@ def _get_yahoo_price_in_eur(isin: str) -> Optional[float]:
         return None
     if entry is None:
         entry = _lookup_isin_via_search(isin)
-    # Last fallback: use ISIN string directly as ticker
+    # Name-based fallback: symbol may be an asset display name, not an ISIN
+    if entry is None:
+        entry = _ticker_for_name(isin)
+    # Last fallback: use string directly as ticker
     if entry is None:
         entry = isin
 

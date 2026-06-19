@@ -110,6 +110,7 @@ class Transaction(Base):
     is_ai_categorized = Column(Boolean, default=False)
     is_internal_transfer = Column(Boolean, default=False)
     exclude_from_stats = Column(Boolean, default=False)
+    is_pending = Column(Boolean, nullable=True, default=False)
     recurring_group_id = Column(Integer, ForeignKey("recurring_groups.id"), nullable=True)
     created_at = Column(DateTime, default=_dt.utcnow)
 

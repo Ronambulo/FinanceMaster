@@ -158,6 +158,70 @@ async def estimate_shares(
     return result
 
 
+@router.post("/fix-tickers")
+async def fix_tickers(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Resolve unknown ISINs via yfinance Search, fix transaction names, and
+    estimate any still-missing share counts. Returns full stats.
+    """
+    from ..services.portfolio_calculator import _lookup_isin_via_search, estimate_shares_from_amount
+    import yfinance as yf
+
+    txs = db.query(models.Transaction).filter(
+        models.Transaction.user_id == current_user.id,
+        models.Transaction.account_category.in_(["TRADING", "SECURITIES"]),
+        models.Transaction.symbol.isnot(None),
+    ).all()
+
+    seen_isins: set = set()
+    isins_found = 0
+    isins_not_found = 0
+    names_fixed = 0
+
+    for tx in txs:
+        isin = tx.symbol
+        if not isin or isin in seen_isins:
+            continue
+        seen_isins.add(isin)
+
+        entry = _lookup_isin_via_search(isin)
+        if entry:
+            isins_found += 1
+            ticker_sym = entry[0]
+            # Fix names that are still raw ISINs or clearly wrong
+            name_txs = db.query(models.Transaction).filter(
+                models.Transaction.user_id == current_user.id,
+                models.Transaction.symbol == isin,
+            ).all()
+            isin_like_names = [t for t in name_txs if not t.name or t.name == isin or len((t.name or "").split()) == 1]
+            if isin_like_names:
+                try:
+                    info = yf.Ticker(ticker_sym).info
+                    new_name = info.get("shortName") or info.get("longName")
+                    if new_name:
+                        for t in isin_like_names:
+                            t.name = new_name
+                            names_fixed += 1
+                except Exception:
+                    pass
+        else:
+            isins_not_found += 1
+
+    est = estimate_shares_from_amount(db, current_user.id)
+    db.commit()
+
+    return {
+        "isins_found": isins_found,
+        "isins_not_found": isins_not_found,
+        "names_fixed": names_fixed,
+        "shares_estimated": est["estimated"],
+        "shares_skipped": est["skipped"],
+    }
+
+
 @router.get("/search", response_model=List[schemas.StockSearchResult])
 def search_stocks(
     q: str = Query(..., min_length=1),
@@ -359,34 +423,36 @@ def price_history(
     except ImportError:
         raise HTTPException(500, "yfinance not installed")
 
-    from ..services.portfolio_calculator import ISIN_TO_YAHOO, _lookup_isin_via_search
+    from ..services.portfolio_calculator import ISIN_TO_YAHOO, _is_isin, resolve_to_ticker
 
     valid_periods = {"1mo", "3mo", "6mo", "1y", "2y", "5y"}
     if period not in valid_periods:
         period = "1y"
 
-    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
-    if not symbol_list:
+    # Preserve original casing for key matching
+    raw_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    if not raw_list:
         raise HTTPException(400, "No symbols provided")
 
     result: List[schemas.PriceHistory] = []
-    for isin in symbol_list[:10]:
-        entry = ISIN_TO_YAHOO.get(isin)
+    for sym_orig in raw_list[:10]:
+        sym_upper = sym_orig.upper()
 
-        # Explicit None = known unlisted/expired instrument
-        if isin in ISIN_TO_YAHOO and entry is None:
-            result.append(schemas.PriceHistory(symbol=isin, points=[]))
-            continue
+        # If it's already a Yahoo ticker (not an ISIN, not a long name), use directly
+        if not _is_isin(sym_orig) and len(sym_orig) <= 10 and " " not in sym_orig:
+            yahoo_ticker = sym_orig
+        else:
+            # Check for known expired instruments
+            if sym_upper in ISIN_TO_YAHOO and ISIN_TO_YAHOO[sym_upper] is None:
+                result.append(schemas.PriceHistory(symbol=sym_orig, points=[]))
+                continue
+            # Full resolution: ISIN → name → cache → yfinance
+            isin_arg = sym_orig if _is_isin(sym_orig) else None
+            name_arg = sym_orig if not _is_isin(sym_orig) else None
+            entry = resolve_to_ticker(isin=isin_arg, name=name_arg)
+            yahoo_ticker = entry[0] if entry else sym_orig
 
-        # Auto-discover unknown ISINs via yfinance Search
-        if entry is None:
-            entry = _lookup_isin_via_search(isin)
-
-        # Last fallback: use ISIN string directly as ticker
-        if entry is None:
-            entry = isin
-
-        yahoo_ticker = entry if isinstance(entry, str) else entry[0]
+        isin = sym_orig  # keep original as the key returned to frontend
 
         try:
             ticker = yf.Ticker(yahoo_ticker)

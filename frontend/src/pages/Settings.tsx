@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { catApi, authApi } from '@/lib/api'
+import { queryClient } from '@/App'
 import type { Category } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,13 +13,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Plus, Trash2, Settings as SettingsIcon, Lock, Palette, Loader2, Check, Pencil, Trophy, Webhook, Plug, Copy, Trash } from 'lucide-react'
+import { Plus, Trash2, Settings as SettingsIcon, Lock, Palette, Loader2, Check, Pencil, Plug, Copy, Trash, LayoutGrid, AlertTriangle } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { Achievements } from '@/components/Achievements'
 import { THEMES, ACCENT_COLORS, THEME_KEY, ACCENT_KEY, applyTheme, getChartColors, saveChartColors, resetChartColors, getCompact, setCompact } from '@/lib/theme'
 import type { ChartColors } from '@/lib/theme'
 import { webhookApi, trApi, portfolioApi, getApiToken } from '@/lib/api'
 import type { Webhook as WebhookType } from '@/lib/api'
+import { useFeaturesStore } from '@/store/features'
+import { FEATURES } from '@/lib/features'
+import type { FeatureId } from '@/lib/features'
 
 const CATEGORY_TYPES = [
   { value: 'expense', label: 'Gasto' },
@@ -80,11 +83,157 @@ function CategoryForm({ initial, isSystem, onSave, onCancel }: { initial?: Parti
   )
 }
 
+// ── Features tab ─────────────────────────────────────────────────────────────
+function FeaturesTab() {
+  const { features, toggle } = useFeaturesStore()
+
+  const featureList = Object.entries(FEATURES) as [FeatureId, typeof FEATURES[FeatureId]][]
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">Activa o desactiva los módulos de la aplicación. Los cambios se aplican al instante.</p>
+      {featureList.map(([id, meta]) => (
+        <Card key={id}>
+          <CardContent className="p-4 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{meta.label}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{meta.desc}</p>
+            </div>
+            <button
+              role="switch"
+              aria-checked={features[id]}
+              onClick={() => toggle(id, !features[id])}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${features[id] ? 'bg-primary' : 'bg-muted'}`}
+            >
+              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition-transform ${features[id] ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
 // ── Integrations tab ─────────────────────────────────────────────────────────
 const WEBHOOK_EVENTS = [
   'transaction.created', 'transaction.imported', 'recurring.detected',
   'goal.completed', 'achievement.unlocked',
 ]
+
+function DiagnosticsTab() {
+  const { toast } = useToast()
+  const { data: trStatus } = useQuery({ queryKey: ['tr-status'], queryFn: trApi.status, retry: false })
+
+  if (!trStatus?.connected) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          Conecta Trade Republic en la pestaña Integraciones para usar las herramientas de diagnóstico.
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Reparación de datos</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">Herramientas para corregir inconsistencias entre Trade Republic y la base de datos local.</p>
+          <div className="flex gap-2 flex-wrap">
+            <Button size="sm" variant="outline" onClick={() =>
+              trApi.fixUnknown().then(r =>
+                toast(r.deleted > 0 ? `${r.deleted} sin categoría eliminadas — vuelve a sincronizar` : 'Sin transacciones para reparar', 'success')
+              )
+            }>Reparar categorías</Button>
+            <Button size="sm" variant="outline" onClick={() =>
+              trApi.fixSecurities().then(r => toast(r.fixed > 0 ? `${r.fixed} operaciones movidas al portfolio` : 'Portfolio ya en orden', 'success'))
+            }>Reparar portfolio</Button>
+            <Button size="sm" variant="outline" onClick={() =>
+              portfolioApi.fixTickers()
+                .then(r => toast(
+                  `Tickers: ${r.isins_found} encontrados, ${r.isins_not_found} sin resolver · Nombres: ${r.names_fixed} corregidos · Acciones estimadas: ${r.shares_estimated}`,
+                  'success'
+                ))
+                .catch(e => toast(e.message || 'Error al estimar posiciones', 'error'))
+            }>Estimar posiciones</Button>
+            <Button size="sm" variant="outline" onClick={() =>
+              trApi.fixTickers()
+                .then(r => toast(
+                  r.resolved > 0
+                    ? `${r.resolved} de ${r.total} posiciones resueltas a tickers Yahoo`
+                    : r.total === 0 ? 'Todas las posiciones ya tienen ticker' : `${r.skipped} posiciones sin resolver`,
+                  r.resolved > 0 ? 'success' : 'info'
+                ))
+                .catch(e => toast(e.message || 'Error al resolver tickers', 'error'))
+            }>Resolver tickers</Button>
+            <Button size="sm" variant="outline" onClick={() =>
+              trApi.fixCancelled()
+                .then(r => toast(r.deleted > 0 ? `${r.deleted} canceladas eliminadas` : 'Sin canceladas', r.deleted > 0 ? 'success' : 'info'))
+                .catch(e => toast(e.message || 'Error', 'error'))
+            }>Limpiar canceladas</Button>
+            <Button size="sm" variant="outline" onClick={() =>
+              trApi.dedupe().then(r => toast(r.deleted > 0 ? `${r.deleted} duplicados eliminados` : 'Sin duplicados', 'success'))
+            }>Limpiar duplicados</Button>
+            <Button size="sm" variant="outline" onClick={() =>
+              trApi.importMissing()
+                .then(r => {
+                  console.table(r.details)
+                  toast(
+                    r.imported > 0
+                      ? `${r.imported} transacciones importadas`
+                      : 'Sin transacciones pendientes',
+                    r.imported > 0 ? 'success' : 'info'
+                  )
+                })
+                .catch(e => toast(e.message || 'Error', 'error'))
+            }>Importar pendientes</Button>
+            <Button size="sm" variant="outline" onClick={() => {
+              if (!confirm('Elimina transacciones cuyo external_id no existe en TR. ¿Continuar?')) return
+              trApi.fixOrphans()
+                .then(r => {
+                  console.table(r.deleted_orphan)
+                  toast(
+                    r.total_deleted > 0 ? `${r.total_deleted} eliminadas` : 'Sin huérfanas',
+                    r.total_deleted > 0 ? 'success' : 'info'
+                  )
+                })
+                .catch(e => toast(e.message || 'Error', 'error'))
+            }}>Limpiar huérfanas</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Diagnóstico</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">Muestra información en la consola del navegador (F12) para detectar discrepancias de balance.</p>
+          <div className="flex gap-2 flex-wrap">
+            <Button size="sm" variant="outline" onClick={() =>
+              trApi.debugBalance().then(r => {
+                const msg = `BD: €${r.db_sum} | TR: €${r.tr_timeline_sum} | Diff: €${r.db_vs_tr_diff} | Huérfanas: ${r.orphan_db_rows.length} | Faltan: ${r.missing_from_db.length} | Desajustes: ${r.amount_mismatches.length}`
+                console.log('=== FALTAN EN BD ==='); console.table(r.missing_from_db)
+                console.log('=== HUÉRFANAS BD ==='); console.table(r.orphan_db_rows)
+                console.log('=== IMPORTES DISTINTOS ==='); console.table(r.amount_mismatches)
+                console.log('=== SIN MAPEAR ==='); console.table(r.tr_unmapped_nonzero)
+                toast(msg, r.db_vs_tr_diff === 0 ? 'success' : 'info')
+              }).catch(e => toast(e.message || 'Error', 'error'))
+            }>Diagnóstico balance</Button>
+            <Button size="sm" variant="outline" onClick={() =>
+              trApi.debugSkipped().then(r => {
+                const msg = `TR total: ${r.total_events_from_tr} | En BD: ${r.already_in_db} | Canceladas omitidas: ${r.skipped_cancelled.length} | Otros: ${r.skipped_other.length} | Impacto: €${r.total_skipped_cash_impact}`
+                console.log('=== CANCELADAS OMITIDAS ==='); console.table(r.skipped_cancelled)
+                console.log('=== OTROS OMITIDOS ==='); console.table(r.skipped_other)
+                toast(msg, 'info')
+              }).catch(e => toast(e.message || 'Error', 'error'))
+            }>Diagnóstico omitidos</Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 
 function IntegrationsTab() {
   const { toast } = useToast()
@@ -158,27 +307,6 @@ function IntegrationsTab() {
                     toast(`Sync: ${parts.join(', ')}`, 'success')
                   })
                 }>Sincronizar</Button>
-                <Button size="sm" variant="outline" onClick={() =>
-                  trApi.fixUnknown().then(r =>
-                    toast(r.deleted > 0 ? `${r.deleted} sin categoría eliminadas — vuelve a sincronizar` : 'Sin transacciones para reparar', 'success')
-                  )
-                }>Reparar categorías</Button>
-                <Button size="sm" variant="outline" onClick={() =>
-                  trApi.fixSecurities().then(r => toast(r.fixed > 0 ? `${r.fixed} operaciones movidas al portfolio` : 'Portfolio ya en orden', 'success'))
-                }>Reparar portfolio</Button>
-                <Button size="sm" variant="outline" onClick={() =>
-                  trApi.fixShares()
-                    .then(r => toast(r.fixed > 0 ? `${r.fixed}/${r.total} acciones reparadas` : 'No hay operaciones sin acciones', 'success'))
-                    .catch(e => toast(e.message || 'Error al reparar acciones', 'error'))
-                }>Reparar acciones</Button>
-                <Button size="sm" variant="outline" onClick={() =>
-                  portfolioApi.estimateShares()
-                    .then(r => toast(r.estimated > 0 ? `${r.estimated} acciones estimadas (${r.skipped} sin ticker)` : 'Sin operaciones pendientes', 'success'))
-                    .catch(e => toast(e.message || 'Error', 'error'))
-                }>Estimar acciones</Button>
-                <Button size="sm" variant="outline" onClick={() =>
-                  trApi.dedupe().then(r => toast(r.deleted > 0 ? `${r.deleted} duplicados eliminados` : 'Sin duplicados', 'success'))
-                }>Limpiar duplicados</Button>
                 <Button size="sm" variant="destructive" onClick={() => { trApi.disconnect(); qc.invalidateQueries({ queryKey: ['tr-status'] }) }}>Desconectar</Button>
               </div>
             </div>
@@ -291,6 +419,12 @@ export function Settings() {
   // Password change state
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
 
+  // Delete account state
+  const logout = useAuthStore(s => s.logout)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const { data: rules } = useQuery({ queryKey: ['rules'], queryFn: catApi.listRules })
 
@@ -379,11 +513,14 @@ export function Settings() {
           <TabsTrigger value="security">
             <Lock className="h-3.5 w-3.5 mr-1.5" />Seguridad
           </TabsTrigger>
-          <TabsTrigger value="achievements">
-            <Trophy className="h-3.5 w-3.5 mr-1.5" />Logros
+          <TabsTrigger value="features">
+            <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />Funciones
           </TabsTrigger>
           <TabsTrigger value="integrations">
             <Plug className="h-3.5 w-3.5 mr-1.5" />Integraciones
+          </TabsTrigger>
+          <TabsTrigger value="diagnostics">
+            Diagnóstico
           </TabsTrigger>
         </TabsList>
 
@@ -573,6 +710,12 @@ export function Settings() {
                   <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition-transform ${compact ? 'translate-x-5' : 'translate-x-0'}`} />
                 </button>
               </div>
+              <div className="flex items-center justify-between pt-3 border-t border-border/50 mt-3">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Módulos de la aplicación</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Gestiona las funciones activadas en la pestaña <strong className="text-foreground">Funciones</strong>.</p>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -622,18 +765,29 @@ export function Settings() {
               </Button>
             </CardContent>
           </Card>
-        </TabsContent>
 
-        <TabsContent value="achievements" className="mt-4">
-          <Card>
-            <CardContent className="p-5">
-              <Achievements />
+          <Card className="border-destructive/30 mt-6">
+            <CardContent className="p-5 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Eliminar tu cuenta borrará permanentemente todos tus datos: transacciones, categorías, objetivos, portfolio y conexiones. Esta acción no se puede deshacer.
+              </p>
+              <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
+                Eliminar mi cuenta
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
+        <TabsContent value="features" className="mt-4">
+          <FeaturesTab />
+        </TabsContent>
+
         <TabsContent value="integrations" className="mt-4 space-y-4">
           <IntegrationsTab />
+        </TabsContent>
+
+        <TabsContent value="diagnostics" className="mt-4">
+          <DiagnosticsTab />
         </TabsContent>
       </Tabs>
 
@@ -693,6 +847,57 @@ export function Settings() {
               <Button variant="outline" onClick={() => setNewRuleOpen(false)}>Cancelar</Button>
               <Button onClick={() => ruleForm.keyword && ruleForm.category_id && createRuleMutation.mutate({ ...ruleForm, category_id: Number(ruleForm.category_id), priority: Number(ruleForm.priority) })}>
                 Guardar regla
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete account confirmation dialog */}
+      <Dialog open={deleteOpen} onOpenChange={v => { if (!v) { setDeleteOpen(false); setDeleteConfirm('') } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" /> Eliminar cuenta
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-1">
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Esta acción es <strong className="text-foreground">irreversible</strong>. Se eliminarán todos tus datos permanentemente.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">
+                Escribe tu email <strong className="text-foreground">{user?.email}</strong> para confirmar
+              </Label>
+              <Input
+                placeholder={user?.email}
+                value={deleteConfirm}
+                onChange={e => setDeleteConfirm(e.target.value)}
+                className="border-destructive/40 focus:border-destructive"
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setDeleteOpen(false); setDeleteConfirm('') }}>
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={deleteConfirm !== user?.email || deleteLoading}
+                onClick={async () => {
+                  setDeleteLoading(true)
+                  try {
+                    await authApi.deleteAccount()
+                    localStorage.clear()
+                    queryClient.clear()
+                    logout()
+                  } catch (e: any) {
+                    toast(e.message || 'Error al eliminar la cuenta', 'error')
+                    setDeleteLoading(false)
+                  }
+                }}
+              >
+                {deleteLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                Eliminar cuenta definitivamente
               </Button>
             </DialogFooter>
           </div>

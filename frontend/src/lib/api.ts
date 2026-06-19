@@ -38,6 +38,8 @@ export const authApi = {
     request<{ ok: boolean }>('/auth/password', { method: 'PUT', body: JSON.stringify(data) }),
   deleteAllData: () =>
     request<{ ok: boolean }>('/auth/data', { method: 'DELETE' }),
+  deleteAccount: () =>
+    request<void>('/auth/account', { method: 'DELETE' }),
 }
 
 // Transactions
@@ -157,13 +159,14 @@ export const portfolioApi = {
   performance: () => request<PortfolioPerformance>('/portfolio/performance'),
   livePerformance: () => request<PortfolioPerformance>('/portfolio/live'),
   estimateShares: () => request<{ estimated: number; skipped: number }>('/portfolio/estimate-shares', { method: 'POST' }),
+  fixTickers: () => request<{ isins_found: number; isins_not_found: number; names_fixed: number; shares_estimated: number; shares_skipped: number }>('/portfolio/fix-tickers', { method: 'POST' }),
   history: (params?: Record<string, string | number>) => {
     const q = new URLSearchParams()
     Object.entries(params || {}).forEach(([k, v]) => q.set(k, String(v)))
     return request<TransactionListResponse>(`/portfolio/history?${q}`)
   },
   priceHistory: (symbols: string[], period = '1y') =>
-    request<PriceHistory[]>(`/portfolio/price-history?symbols=${symbols.join(',')}&period=${period}`),
+    request<PriceHistory[]>(`/portfolio/price-history?symbols=${encodeURIComponent(symbols.join(','))}&period=${period}`),
   searchStocks: (q: string) =>
     request<StockSearchResult[]>(`/portfolio/search?q=${encodeURIComponent(q)}`),
   manualPositions: () => request<ManualPosition[]>('/portfolio/manual-positions'),
@@ -203,7 +206,7 @@ export interface Transaction {
   amount: number; fee: number | null; tax: number | null; currency: string
   description: string | null; counterparty_name: string | null; mcc_code: string | null
   category_id: number | null; category: Category | null
-  is_auto_categorized: boolean; is_ai_categorized: boolean; is_internal_transfer: boolean; exclude_from_stats: boolean; recurring_group_id: number | null
+  is_auto_categorized: boolean; is_ai_categorized: boolean; is_internal_transfer: boolean; exclude_from_stats: boolean; is_pending: boolean; recurring_group_id: number | null
 }
 export interface TransactionListResponse { items: Transaction[]; total: number; page: number; page_size: number; income_sum: number; expense_sum: number }
 export interface ImportResult { imported: number; skipped_duplicates: number; errors: number }
@@ -269,6 +272,41 @@ export const trApi = {
   fixUnknown: () => request<{ deleted: number }>('/tr/fix-unknown', { method: 'POST' }),
   fixSecurities: () => request<{ fixed: number }>('/tr/fix-securities', { method: 'POST' }),
   fixShares: () => request<{ fixed: number; total: number }>('/tr/fix-shares', { method: 'POST' }),
+  fixTickers: () => request<{ resolved: number; skipped: number; total: number }>('/tr/fix-tickers', { method: 'POST' }),
+  fixCancelled: () => request<{ deleted: number }>('/tr/fix-cancelled', { method: 'POST' }),
+  debugSkipped: () => request<{
+    total_events_from_tr: number
+    already_in_db: number
+    would_import: number
+    skipped_cancelled: Array<{ id: string; date: string; title: string; subtitle: string; amount: number; eventType: string }>
+    skipped_other: Array<{ id: string; date: string; title: string; subtitle: string; amount: number; eventType: string }>
+    total_skipped_cash_impact: number
+  }>('/tr/debug-skipped'),
+  debugBalance: () => request<{
+    tr_timeline_sum: number
+    db_sum: number
+    db_vs_tr_diff: number
+    tr_total_events: number
+    tr_mapped_events: number
+    tr_skipped_cancelled: number
+    tr_skipped_zero_amount: number
+    tr_unmapped_nonzero: Array<{ id: string; amount: number; eventType: string; subtitle: string }>
+    orphan_db_rows: Array<{ external_id: string; date: string; name: string; amount: number; type: string }>
+    orphan_sum: number
+    missing_from_db: Array<{ id: string; amount: number }>
+    amount_mismatches: Array<{ external_id: string; tr_amount: number; db_amount: number; diff: number; name: string; date: string }>
+    mismatch_sum: number
+  }>('/tr/debug-balance'),
+  fixOrphans: () => request<{
+    deleted_cancelled: Array<{ id: number; name: string; amount: number; external_id: string }>
+    deleted_orphan: Array<{ id: number; name: string; amount: number; date: string; external_id: string }>
+    total_deleted: number
+  }>('/tr/fix-orphans', { method: 'POST' }),
+  importMissing: () => request<{
+    imported: number
+    skipped_integrity: number
+    details: Array<{ external_id: string; name: string; date: string; amount: number; type: string }>
+  }>('/tr/import-missing', { method: 'POST' }),
   livePositions: () => request<{ portfolio: TRPortfolioRaw; compact: unknown }>('/tr/live-positions'),
   disconnect: () => request<{ ok: boolean }>('/tr/disconnect', { method: 'POST' }),
 }

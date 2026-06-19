@@ -6,10 +6,18 @@ import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 import { useChatStore } from '@/store/chat'
 
+interface MessageMeta {
+  model: string
+  elapsed_ms: number
+  input_tokens?: number
+  output_tokens?: number
+}
+
 interface Message {
   role: 'user' | 'assistant'
   content: string
   isStreaming?: boolean
+  meta?: MessageMeta
 }
 
 const ALL_SUGGESTIONS = [
@@ -204,6 +212,12 @@ export function AiChat() {
                   i === prev.length - 1 ? { ...m, content: fullText } : m
                 )
               )
+            } else if (event.type === 'meta') {
+              setMessages(prev =>
+                prev.map((m, i) =>
+                  i === prev.length - 1 ? { ...m, meta: { model: event.model, elapsed_ms: event.elapsed_ms, input_tokens: event.input_tokens, output_tokens: event.output_tokens } } : m
+                )
+              )
             } else if (event.type === 'done') {
               setMessages(prev =>
                 prev.map((m, i) =>
@@ -364,6 +378,19 @@ export function AiChat() {
                     )
                   )}
                 </div>
+                {msg.role === 'assistant' && !msg.isStreaming && msg.meta && (
+                  <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-muted-foreground/40 px-1">
+                    <span>{msg.meta.model}</span>
+                    <span>·</span>
+                    <span>{(msg.meta.elapsed_ms / 1000).toFixed(1)}s</span>
+                    {msg.meta.input_tokens != null && (
+                      <>
+                        <span>·</span>
+                        <span>{msg.meta.input_tokens}↑ {msg.meta.output_tokens}↓ tok</span>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             ))
           )}

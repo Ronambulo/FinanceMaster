@@ -708,6 +708,12 @@ export function Transactions() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex flex-col min-w-0">
                           <p className="font-semibold text-[14px] leading-tight text-foreground truncate">{tx.name || tx.description || tx.type}</p>
+                          {tx.is_pending && (
+                            <span className="text-[11px] text-amber-400/80 mt-0.5 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400/60"></span>
+                              Pendiente — no computa en saldo
+                            </span>
+                          )}
                           {tx.is_internal_transfer && (
                             <span className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-orange-500/50"></span>
@@ -835,6 +841,9 @@ export function Transactions() {
                               <div className="flex gap-1 mt-0.5">
                                 {!tx.category_id && (
                                   <Badge variant="muted" className="text-xs py-0">Sin cat.</Badge>
+                                )}
+                                {tx.is_pending && (
+                                  <Badge className="text-xs py-0 bg-amber-500/15 text-amber-400 border-amber-500/20">Pendiente</Badge>
                                 )}
                                 {tx.is_internal_transfer && (
                                   <button

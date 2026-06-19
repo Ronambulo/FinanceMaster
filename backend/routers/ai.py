@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import time
 from datetime import date, datetime, timedelta
 from typing import List, Optional, AsyncGenerator
 
@@ -755,6 +756,7 @@ async def chat(
     captured_user_id = current_user.id
 
     async def event_generator() -> AsyncGenerator[str, None]:
+        start_time = time.time()
         messages = [{"role": "system", "content": system_prompt}]
         for m in body.history:
             messages.append({"role": m.role, "content": m.content})
@@ -832,6 +834,17 @@ async def chat(
             for i in range(0, len(final_text), chunk_size):
                 yield f"data: {json.dumps({'type': 'delta', 'text': final_text[i:i + chunk_size]}, ensure_ascii=False)}\n\n"
                 await asyncio.sleep(0)
+
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            usage = getattr(response, "usage", None)
+            meta = {
+                "type": "meta",
+                "model": provider_name,
+                "elapsed_ms": elapsed_ms,
+                "input_tokens": getattr(usage, "prompt_tokens", None),
+                "output_tokens": getattr(usage, "completion_tokens", None),
+            }
+            yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 

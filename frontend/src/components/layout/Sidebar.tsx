@@ -1,34 +1,39 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowLeftRight, TrendingUp,
-  CreditCard, Target, Settings, LogOut, CalendarDays, Flame, Search, Sparkles,
+  CreditCard, Target, Settings, LogOut, CalendarDays,
+  Flame, Search, Sparkles, Baby, Trophy, RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
+import { useFeaturesStore } from '@/store/features'
 import { useInsightsUnreadCount } from '@/components/InsightsWidget'
 import { useChatStore } from '@/store/chat'
 
-const nav = [
-  { to: '/',              icon: LayoutDashboard, label: 'Dashboard',      badge: 'insights' as const },
-  { to: '/transacciones', icon: ArrowLeftRight,  label: 'Transacciones',  badge: null },
-  { to: '/monthly',       icon: CalendarDays,    label: 'Mensual',        badge: null },
-  { to: '/portfolio',     icon: TrendingUp,      label: 'Portfolio',      badge: null },
-  { to: '/deudas',        icon: CreditCard,      label: 'Deudas',         badge: null },
-  { to: '/objetivos',     icon: Target,          label: 'Objetivos',      badge: null },
-  { to: '/fire',          icon: Flame,           label: 'FIRE',           badge: null },
-]
-
 export function Sidebar({ onClose }: { onClose?: () => void }) {
-  const logout = useAuthStore(s => s.logout)
-  const user   = useAuthStore(s => s.user)
+  const logout   = useAuthStore(s => s.logout)
+  const user     = useAuthStore(s => s.user)
+  const features = useFeaturesStore(s => s.features)
   const unreadInsights = useInsightsUnreadCount()
   const { toggle: toggleChat, isOpen: chatOpen } = useChatStore()
+
+  const nav = [
+    { to: '/',              icon: LayoutDashboard, label: 'Dashboard',    badge: 'insights' as const, show: true },
+    { to: '/transacciones', icon: ArrowLeftRight,  label: 'Transacciones',badge: null,               show: true },
+    { to: '/monthly',       icon: CalendarDays,    label: 'Mensual',      badge: null,               show: true },
+    { to: '/portfolio',     icon: TrendingUp,      label: 'Portfolio',    badge: null,               show: true },
+    { to: '/recurrentes',   icon: RefreshCw,       label: 'Recurrentes',  badge: null,               show: features.recurring },
+    { to: '/deudas',        icon: CreditCard,      label: 'Deudas',       badge: null,               show: features.debts },
+    { to: '/objetivos',     icon: Target,          label: 'Objetivos',    badge: null,               show: features.goals },
+    { to: '/fire',          icon: Flame,           label: 'FIRE',         badge: null,               show: features.fire },
+    { to: '/logros',        icon: Trophy,          label: 'Logros',       badge: null,               show: features.achievements },
+    { to: '/baby-steps',    icon: Baby,            label: '7 Baby Steps', badge: null,               show: features.babySteps },
+  ].filter(n => n.show)
 
   return (
     <div className="flex h-full flex-col bg-background border-r border-border">
       {/* ── Logo ── */}
       <div className="flex items-center gap-3 px-5 py-6">
-        {/* App icon */}
         <img
           src="https://raw.githubusercontent.com/Ronambulo/FinanceMaster/refs/heads/main/frontend/icon.png"
           alt="FinanceMaster"
@@ -55,7 +60,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       </div>
 
       {/* ── Nav ── */}
-      <nav className="flex-1 px-3 py-2 space-y-0.5">
+      <nav className="flex-1 px-3 py-2 space-y-0.5 overflow-y-auto">
         {nav.map(({ to, icon: Icon, label, badge }) => {
           const badgeCount = badge === 'insights' ? unreadInsights : 0
           return (
@@ -74,19 +79,15 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             >
               {({ isActive }) => (
                 <>
-                  <span
-                    className={cn(
-                      'absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full transition-all duration-200',
-                      isActive ? 'h-5 bg-primary' : 'h-0 bg-transparent',
-                    )}
-                  />
+                  <span className={cn(
+                    'absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full transition-all duration-200',
+                    isActive ? 'h-5 bg-primary' : 'h-0 bg-transparent',
+                  )} />
                   <span className="relative shrink-0">
-                    <Icon
-                      className={cn(
-                        'h-4 w-4 transition-colors duration-150',
-                        isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
-                      )}
-                    />
+                    <Icon className={cn(
+                      'h-4 w-4 transition-colors duration-150',
+                      isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
+                    )} />
                     {badgeCount > 0 && (
                       <span className="absolute -top-1.5 -right-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-sky-500 px-0.5 text-[9px] font-bold text-white leading-none">
                         {badgeCount}
@@ -103,13 +104,10 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
       {/* ── Bottom ── */}
       <div className="px-3 pb-4 pt-2 border-t border-white/[0.06] space-y-0.5">
-
-        {/* AI Chat button */}
         <button
           onClick={toggleChat}
           className={cn(
-            'group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium',
-            'transition-all duration-150',
+            'group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150',
             chatOpen
               ? 'text-primary bg-primary/[0.08]'
               : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]',
@@ -124,28 +122,22 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           to="/ajustes"
           onClick={onClose}
           className={({ isActive }) => cn(
-            'group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium',
-            'transition-all duration-150',
-            isActive
-              ? 'text-primary bg-primary/[0.08]'
-              : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]',
+            'group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150',
+            isActive ? 'text-primary bg-primary/[0.08]' : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]',
           )}
         >
           {({ isActive }) => (
             <>
-              <span
-                className={cn(
-                  'absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full transition-all duration-200',
-                  isActive ? 'h-5 bg-primary' : 'h-0',
-                )}
-              />
+              <span className={cn(
+                'absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full transition-all duration-200',
+                isActive ? 'h-5 bg-primary' : 'h-0',
+              )} />
               <Settings className="h-4 w-4 shrink-0" />
               <span>Ajustes</span>
             </>
           )}
         </NavLink>
 
-        {/* User info */}
         <div className="flex items-center gap-2.5 px-3 py-2 mt-1 rounded-lg">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">
             <span className="text-[10px] font-semibold text-primary">
