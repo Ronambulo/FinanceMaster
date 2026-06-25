@@ -210,7 +210,8 @@ export interface Transaction {
 }
 export interface TransactionListResponse { items: Transaction[]; total: number; page: number; page_size: number; income_sum: number; expense_sum: number }
 export interface ImportResult { imported: number; skipped_duplicates: number; errors: number }
-export interface RecurringGroup { id: number; normalized_name: string; display_name: string; avg_amount: number | null; period_days: number | null; category_id: number | null; category: Category | null; next_expected_date: string | null; is_active: boolean; transaction_count: number }
+export interface AmountOption { amount: number; count: number; last_date: string }
+export interface RecurringGroup { id: number; normalized_name: string; display_name: string; avg_amount: number | null; amount_is_manual: boolean; period_days: number | null; category_id: number | null; category: Category | null; next_expected_date: string | null; is_active: boolean; transaction_count: number; amount_options: AmountOption[] }
 export interface Debt { id: number; name: string; description: string | null; total_amount: number; direction: 'I_OWE' | 'OWED_TO_ME'; due_date: string | null; is_settled: boolean; paid_amount: number; remaining_amount: number; payments: DebtPayment[] }
 export interface DebtPayment { id: number; amount: number; payment_date: string; transaction_id: number | null; note: string | null }
 export interface Goal { id: number; name: string; type: 'PERCENT' | 'EURO_TARGET'; target_amount: number | null; target_percent: number | null; category: string | null; deadline: string | null; current_amount: number; is_active: boolean; progress_pct: number }
@@ -327,6 +328,41 @@ export interface AiCategorizeResult {
   category_icon?: string
   category_color?: string
   error?: string
+}
+
+// MyInvestor
+export interface MIStatus { connected: boolean; last_sync: string | null }
+export interface MICheckingAccount {
+  id: number
+  iban?: string
+  alias?: string
+  saldoDisponible?: number
+  saldoContable?: number
+  [key: string]: unknown
+}
+export interface MISavingsAccount {
+  id: number
+  alias?: string
+  isin?: string
+  nombreFondo?: string
+  valorLiquidativo?: number
+  participaciones?: number
+  valorTotal?: number
+  rentabilidadTotal?: number
+  rentabilidadTotalPorcentaje?: number
+  [key: string]: unknown
+}
+
+export const miApi = {
+  status: () => request<MIStatus>('/mi/status'),
+  autoConnect: () => request<{ status: string; request_id?: string; message?: string }>('/mi/auto-connect', { method: 'POST' }),
+  connect: (username: string, password: string) =>
+    request<{ status: string; request_id?: string }>('/mi/connect', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  verify: (request_id: string, code: string) =>
+    request<{ status: string }>('/mi/verify', { method: 'POST', body: JSON.stringify({ request_id, code }) }),
+  accounts: () => request<{ checking: MICheckingAccount[]; savings: MISavingsAccount[] }>('/mi/accounts'),
+  portfolioHistory: (period = 'DESDE_INICIO') => request<unknown[]>(`/mi/portfolio-history?period=${period}`),
+  disconnect: () => request<{ ok: boolean }>('/mi/disconnect', { method: 'POST' }),
 }
 
 // API token

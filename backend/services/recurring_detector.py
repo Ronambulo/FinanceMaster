@@ -76,7 +76,8 @@ def detect_recurring(db: Session, user_id: int):
         ).first()
 
         if existing:
-            existing.avg_amount = avg_amount
+            if not existing.amount_is_manual:
+                existing.avg_amount = avg_amount
             existing.period_days = period
             existing.next_expected_date = next_date
             existing.display_name = display_name

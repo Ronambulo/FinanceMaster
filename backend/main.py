@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from .database import engine
 from . import models
-from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic
+from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic, myinvestor
 from .services.categorizer import seed_system_categories
 from .database import SessionLocal
 from sqlalchemy import text
@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI):
     with engine.connect() as conn:
         for stmt in [
             "ALTER TABLE transactions ADD COLUMN exclude_from_stats BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE recurring_groups ADD COLUMN amount_is_manual BOOLEAN DEFAULT FALSE",
         ]:
             try:
                 conn.execute(text(stmt))
@@ -92,6 +93,7 @@ app.include_router(budgets.router)
 app.include_router(ai.router)
 app.include_router(webhooks.router)
 app.include_router(trade_republic.router)
+app.include_router(myinvestor.router)
 
 
 # Serve React frontend

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { catApi, authApi } from '@/lib/api'
@@ -400,10 +400,10 @@ export function Settings() {
   const [activeTab, setActiveTab] = useState(() => searchParams.get('tab') || 'categories')
   const [newCatOpen, setNewCatOpen] = useState(false)
 
-  useEffect(() => {
-    const tab = searchParams.get('tab')
-    if (tab) { setActiveTab(tab); setSearchParams({}, { replace: true }) }
-  }, [])
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    setSearchParams({ tab }, { replace: true })
+  }
   const [editingCat, setEditingCat] = useState<Category | null>(null)
   const [newRuleOpen, setNewRuleOpen] = useState(false)
   const [ruleForm, setRuleForm] = useState({ keyword: '', category_id: '', field: 'name', priority: '0' })
@@ -502,7 +502,7 @@ export function Settings() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="categories">Mis categorías ({userCats.length})</TabsTrigger>
           <TabsTrigger value="rules">Reglas ({rules?.length || 0})</TabsTrigger>

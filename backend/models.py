@@ -133,6 +133,7 @@ class RecurringGroup(Base):
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     next_expected_date = Column(Date, nullable=True)
     is_active = Column(Boolean, default=True)
+    amount_is_manual = Column(Boolean, default=False)
     created_at = Column(DateTime, default=_dt.utcnow)
 
     user = relationship("User", back_populates="recurring_groups")

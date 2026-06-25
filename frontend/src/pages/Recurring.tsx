@@ -1,11 +1,15 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { recurringApi } from '@/lib/api'
+import type { RecurringGroup } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { RefreshCw, Trash2, Calendar, Loader2 } from 'lucide-react'
+import { RefreshCw, Trash2, Calendar, Loader2, AlertTriangle, Pencil } from 'lucide-react'
 
 export function Recurring() {
   const qc = useQueryClient()
@@ -35,6 +39,14 @@ export function Recurring() {
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['recurring'] }),
   })
+
+  const pickAmountMutation = useMutation({
+    mutationFn: ({ id, avg_amount }: { id: number; avg_amount: number }) => recurringApi.update(id, { avg_amount }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['recurring'] }); toast('Importe actualizado', 'success'); setAmountPickerFor(null) },
+  })
+
+  const [amountPickerFor, setAmountPickerFor] = useState<RecurringGroup | null>(null)
+  const [selectedAmount, setSelectedAmount] = useState<string>('')
 
   const totalMonthly = groups?.filter(g => g.is_active && g.period_days === 30)
     .reduce((sum, g) => sum + (g.avg_amount || 0), 0) || 0
@@ -114,6 +126,18 @@ export function Recurring() {
                           </Badge>
                         )}
                         <span>{g.transaction_count} pagos detectados</span>
+                        {(g.amount_options?.length ?? 0) > 0 && (
+                          <button
+                            onClick={() => { setAmountPickerFor(g); setSelectedAmount(String(g.avg_amount ?? g.amount_options[0]?.amount ?? '')) }}
+                            className={`flex items-center gap-1 transition-colors ${g.amount_options.length > 1 ? 'text-amber-400 hover:text-amber-300' : 'text-muted-foreground hover:text-foreground'}`}
+                          >
+                            {g.amount_options.length > 1 ? (
+                              <><AlertTriangle className="h-3 w-3" /> {g.amount_options.length} importes distintos</>
+                            ) : (
+                              <><Pencil className="h-3 w-3" /> Cambiar importe</>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-auto shrink-0">
@@ -141,6 +165,38 @@ export function Recurring() {
           )}
         </div>
       )}
+
+      <Dialog open={amountPickerFor !== null} onOpenChange={(open) => !open && setAmountPickerFor(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">Elegir importe</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-1">
+            Importes detectados para "{amountPickerFor?.display_name}". Elige cuál quieres usar.
+          </p>
+          <Select value={selectedAmount} onValueChange={setSelectedAmount}>
+            <SelectTrigger className="mt-2">
+              <SelectValue placeholder="Selecciona un importe" />
+            </SelectTrigger>
+            <SelectContent>
+              {amountPickerFor?.amount_options?.map(opt => (
+                <SelectItem key={opt.amount} value={String(opt.amount)}>
+                  {formatCurrency(opt.amount)} · {opt.count} {opt.count === 1 ? 'vez' : 'veces'} · última: {formatDate(opt.last_date)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter className="mt-2">
+            <Button
+              onClick={() => amountPickerFor && selectedAmount && pickAmountMutation.mutate({ id: amountPickerFor.id, avg_amount: Number(selectedAmount) })}
+              disabled={!selectedAmount || pickAmountMutation.isPending}
+            >
+              {pickAmountMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

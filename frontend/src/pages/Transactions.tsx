@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { TransactionIcon } from '@/components/TransactionIcon'
+import { TwoFAModal } from '@/App'
 
 import { cn } from '@/lib/utils'
 
@@ -320,6 +321,8 @@ export function Transactions() {
   const [bulkCatOpen, setBulkCatOpen] = useState(false)
   const [bulkCatId, setBulkCatId] = useState<string>('')
   const [syncing, setSyncing] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
+  const [show2FA, setShow2FA] = useState(false)
   const [aiCategorizingIds, setAiCategorizingIds] = useState<Set<number>>(new Set())
   const [bulkAiPending, setBulkAiPending] = useState(false)
 
@@ -350,8 +353,30 @@ export function Transactions() {
       qc.invalidateQueries({ queryKey: ['transactions'] })
     } catch (e: unknown) {
       toast(e instanceof Error ? e.message : 'Error al sincronizar', 'error')
+      qc.invalidateQueries({ queryKey: ['tr-status'] })
     } finally {
       setSyncing(false)
+    }
+  }
+
+  const handleReconnect = async () => {
+    setReconnecting(true)
+    try {
+      const r = await trApi.autoConnect()
+      if (r.status === 'connected') {
+        toast('Trade Republic reconectado', 'success')
+        qc.invalidateQueries({ queryKey: ['tr-status'] })
+      } else if (r.status === 'needs_2fa') {
+        setShow2FA(true)
+      } else if (r.status === 'no_credentials') {
+        navigate('/ajustes?tab=integrations')
+      } else {
+        toast(r.message ? `Trade Republic: ${r.message}` : 'Error al reconectar', 'error')
+      }
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Error al reconectar', 'error')
+    } finally {
+      setReconnecting(false)
     }
   }
 
@@ -571,8 +596,9 @@ export function Transactions() {
               Sincronizar bancos
             </Button>
           ) : (
-            <Button variant="outline" onClick={() => navigate('/ajustes')}>
-              <Settings className="h-4 w-4 mr-2" /> Conectar banco
+            <Button variant="outline" onClick={handleReconnect} disabled={reconnecting}>
+              {reconnecting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Settings className="h-4 w-4 mr-2" />}
+              Reconectar banco
             </Button>
           )}
           <Button variant="outline" onClick={() => setImportOpen(true)}>
@@ -1017,6 +1043,7 @@ export function Transactions() {
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <AddTransactionDialog open={addOpen} onClose={() => setAddOpen(false)} categories={categories || []} />
       <DeleteAllDialog open={deleteAllOpen} onClose={() => setDeleteAllOpen(false)} />
+      <TwoFAModal open={show2FA} onClose={() => { setShow2FA(false); qc.invalidateQueries({ queryKey: ['tr-status'] }) }} />
 
       <Dialog open={confirmDelete !== null} onOpenChange={(open) => !open && setConfirmDelete(null)}>
         <DialogContent className="max-w-[320px]">

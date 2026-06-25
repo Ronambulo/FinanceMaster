@@ -385,6 +385,7 @@ class TradeRepublicAPI:
         except TRConnectionError:
             raise
         except Exception as e:
+            self._connected = False
             raise TRConnectionError(f"Error al obtener timeline: {e}")
 
     async def get_portfolio_positions(self) -> dict:
@@ -408,6 +409,7 @@ class TradeRepublicAPI:
         except TRConnectionError:
             raise
         except Exception as e:
+            self._connected = False
             raise TRConnectionError(f"Error al obtener posiciones: {e}")
 
     async def get_compact_portfolio(self) -> dict:
@@ -428,6 +430,7 @@ class TradeRepublicAPI:
         except TRConnectionError:
             raise
         except Exception as e:
+            self._connected = False
             raise TRConnectionError(f"Error al obtener portfolio compacto: {e}")
 
     def is_connected(self) -> bool:

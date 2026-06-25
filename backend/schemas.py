@@ -130,17 +130,24 @@ class TransactionListResponse(BaseModel):
 
 
 # ── Recurring ────────────────────────────────────────────────────────────────
+class AmountOption(BaseModel):
+    amount: float
+    count: int
+    last_date: date
+
 class RecurringGroupOut(BaseModel):
     id: int
     normalized_name: str
     display_name: str
     avg_amount: Optional[float]
+    amount_is_manual: bool = False
     period_days: Optional[int]
     category_id: Optional[int]
     category: Optional[CategoryOut]
     next_expected_date: Optional[date]
     is_active: bool
     transaction_count: int = 0
+    amount_options: List[AmountOption] = []
     model_config = {"from_attributes": True}
 
 class RecurringGroupUpdate(BaseModel):
@@ -148,6 +155,7 @@ class RecurringGroupUpdate(BaseModel):
     category_id: Optional[int] = None
     is_active: Optional[bool] = None
     next_expected_date: Optional[date] = None
+    avg_amount: Optional[float] = None
 
 
 # ── Debts ────────────────────────────────────────────────────────────────────

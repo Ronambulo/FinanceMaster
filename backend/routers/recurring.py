@@ -23,11 +23,20 @@ def list_recurring(
     )
     result = []
     for g in groups:
-        count = db.query(models.Transaction).filter(
+        group_txs = db.query(models.Transaction).filter(
             models.Transaction.recurring_group_id == g.id
-        ).count()
+        ).all()
+        amount_counts: dict[float, dict] = {}
+        for t in group_txs:
+            amt = round(abs(t.amount), 2)
+            entry = amount_counts.setdefault(amt, {"amount": amt, "count": 0, "last_date": t.date})
+            entry["count"] += 1
+            if t.date > entry["last_date"]:
+                entry["last_date"] = t.date
+
         out = schemas.RecurringGroupOut.model_validate(g)
-        out.transaction_count = count
+        out.transaction_count = len(group_txs)
+        out.amount_options = sorted(amount_counts.values(), key=lambda a: a["last_date"], reverse=True)
         result.append(out)
     return result
 
@@ -88,11 +97,29 @@ def update_recurring(
     ).first()
     if not g:
         raise HTTPException(404, "Grupo recurrente no encontrado")
-    for k, v in data.model_dump(exclude_none=True).items():
+    updates = data.model_dump(exclude_none=True)
+    if "avg_amount" in updates:
+        g.amount_is_manual = True
+    for k, v in updates.items():
         setattr(g, k, v)
     db.commit()
     db.refresh(g)
-    return g
+
+    group_txs = db.query(models.Transaction).filter(
+        models.Transaction.recurring_group_id == g.id
+    ).all()
+    amount_counts: dict[float, dict] = {}
+    for t in group_txs:
+        amt = round(abs(t.amount), 2)
+        entry = amount_counts.setdefault(amt, {"amount": amt, "count": 0, "last_date": t.date})
+        entry["count"] += 1
+        if t.date > entry["last_date"]:
+            entry["last_date"] = t.date
+
+    out = schemas.RecurringGroupOut.model_validate(g)
+    out.transaction_count = len(group_txs)
+    out.amount_options = sorted(amount_counts.values(), key=lambda a: a["last_date"], reverse=True)
+    return out
 
 
 @router.delete("/{group_id}")

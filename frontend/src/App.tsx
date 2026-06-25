@@ -49,7 +49,7 @@ function OfflineBanner() {
 }
 
 /* ── 2FA modal — shown when auto-connect finds a pending SMS code ── */
-function TwoFAModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function TwoFAModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { toast } = useToast()
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
