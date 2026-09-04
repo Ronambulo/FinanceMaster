@@ -36,6 +36,7 @@ function txTypeLabel(type: string): string {
     case 'TRANSFER_INBOUND':   return 'Transferencia recibida'
     case 'CUSTOMER_INPAYMENT': return 'Ingreso'
     case 'INTEREST_PAYMENT':   return 'Interés'
+    case 'BENEFITS_SAVEBACK':  return 'Saveback'
     default: return type.replace(/_/g, ' ').toLowerCase()
   }
 }

@@ -252,7 +252,11 @@ _TR_EVENT_TYPE_MAP: dict[str, str | None] = {
     # ── Perks / saveback ────────────────────────────────────────────
     "STOCK_PERK_REFUNDED": "STOCKPERK",
     "ACQUISITION_TRADE_PERK": "STOCKPERK",
-    "benefits_saveback_execution": "BUY",
+    # Saveback has two legs: the reward credited to cash (+) and the
+    # auto-investment it funds (−). Resolve by sign so neither is lost.
+    "benefits_saveback_execution": "__SAVEBACK__",
+    "benefits_saveback_payout": "__SAVEBACK__",
+    "BENEFITS_SAVEBACK": "__SAVEBACK__",
     # ── Legacy / CSV pass-through types ─────────────────────────────
     "BUY": "BUY",
     "SELL": "SELL",
@@ -315,7 +319,39 @@ _SUBTITLE_TYPE_MAP: dict[str, str] = {
     "Completada": "CUSTOMER_INPAYMENT",
     "Depósito": "CUSTOMER_INPAYMENT",
     "Retirada": "TRANSFER_OUTBOUND",
+
+    # Saveback / spare change — the subtitle TR puts on both legs
+    "Saveback": "__SAVEBACK__",
+    "Saveback ejecutado": "__SAVEBACK__",
+    "Saveback ausgeführt": "__SAVEBACK__",
+    "Redondeo": "BUY",
+    "Spare Change": "BUY",
 }
+# Lower-cased view so subtitle matching is case-insensitive, like the eventType map
+_SUBTITLE_TYPE_MAP_LC: dict[str, str] = {k.lower(): v for k, v in _SUBTITLE_TYPE_MAP.items()}
+
+
+def _expand_sentinel(mapped: str, amount: float) -> str:
+    """Resolve sign-dependent placeholders to a concrete transaction type."""
+    if mapped == "__TRADE__":
+        return "SELL" if amount > 0 else "BUY"
+    if mapped == "__SAVEBACK__":
+        # Positive → the reward credited to cash; negative → the buy it funds
+        return "BENEFITS_SAVEBACK" if amount > 0 else "BUY"
+    return mapped
+
+
+def _looks_like_instrument(event: dict) -> bool:
+    """True if the event carries a security, so it can only be a trade."""
+    shares = event.get("shares") or event.get("numberOfShares") or event.get("quantity")
+    try:
+        if shares is not None and float(shares) != 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    isin = event.get("isin") or event.get("symbol")
+    asset_class = event.get("assetClass") or event.get("asset_class")
+    return bool(isin and asset_class)
 
 
 
@@ -348,22 +384,26 @@ def _resolve_tr_type(event: dict, amount: float) -> str | None:
             break
 
     if mapped is not None:
-        if mapped == "__TRADE__":
-            return "SELL" if amount > 0 else "BUY"
-        return mapped
+        return _expand_sentinel(mapped, amount)
 
     if explicitly_skipped:
         return None  # explicitly skipped
 
     # Fallback: subtitle
     subtitle = str(event.get("subtitle") or "")
-    if subtitle in _SUBTITLE_TYPE_MAP:
-        return _SUBTITLE_TYPE_MAP[subtitle]
+    sub_mapped = _SUBTITLE_TYPE_MAP_LC.get(subtitle.strip().lower())
+    if sub_mapped is not None:
+        return _expand_sentinel(sub_mapped, amount)
 
-    # Last resort: amount sign heuristic
+    # Last resort: amount sign heuristic. An event carrying an instrument
+    # (shares / ISIN / asset class) is a trade, never a card payment —
+    # misfiling one as CARD_TRANSACTION both inflates expenses and drops
+    # the position from the portfolio, which only reads TRADING/SECURITIES.
     if raw:
         import logging
         logging.getLogger(__name__).debug("TR unknown eventType %r subtitle %r", raw, subtitle)
+    if _looks_like_instrument(event):
+        return "SELL" if amount > 0 else "BUY"
     return "CARD_TRANSACTION" if amount < 0 else "CUSTOMER_INPAYMENT"
 
 
