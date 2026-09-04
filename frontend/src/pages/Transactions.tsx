@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Upload, Search, ChevronDown, Loader2, Tag, X, Plus, Trash2, AlertTriangle, Filter, Sparkles, Bot, RefreshCw, Settings, Link2, Unlink, Check } from 'lucide-react'
+import { Upload, Search, ChevronDown, Loader2, Tag, X, Plus, Trash2, Eraser, AlertTriangle, Filter, Sparkles, Bot, RefreshCw, Settings, Link2, Unlink, Check } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
@@ -36,6 +36,7 @@ function txTypeLabel(type: string): string {
     case 'TRANSFER_INBOUND':   return 'Transferencia recibida'
     case 'CUSTOMER_INPAYMENT': return 'Ingreso'
     case 'INTEREST_PAYMENT':   return 'Interés'
+    case 'BENEFITS_SAVEBACK':  return 'Saveback'
     default: return type.replace(/_/g, ' ').toLowerCase()
   }
 }
@@ -321,6 +322,65 @@ function DeleteAllDialog({ open, onClose }: { open: boolean; onClose: () => void
   )
 }
 
+/* ── Borrado acotado: deja intacta la configuración (deudas, metas, presupuestos,
+      categorías y reglas) para poder reimportar sin volver a montarlo todo ── */
+function DeleteTxDataDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [confirm, setConfirm] = useState('')
+
+  const deleteMutation = useMutation({
+    mutationFn: authApi.deleteTransactionData,
+    onSuccess: res => {
+      qc.invalidateQueries()
+      toast(`${res.transactions} transaccion${res.transactions === 1 ? '' : 'es'} eliminada${res.transactions === 1 ? '' : 's'}`, 'success')
+      onClose()
+      setConfirm('')
+    },
+    onError: (e: any) => toast(e.message, 'error'),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={() => { onClose(); setConfirm('') }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-negative">
+            <AlertTriangle className="h-5 w-5" /> Borrar movimientos y portfolio
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Se eliminarán <strong className="text-foreground">permanentemente</strong> tus transacciones, los grupos recurrentes y el portfolio (incluidas las posiciones manuales).
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Se conservan tus <strong className="text-foreground">deudas, metas, presupuestos, categorías y reglas</strong>, así que puedes volver a importar sin reconfigurar nada. <strong className="text-negative">No se puede deshacer.</strong>
+          </p>
+          <div className="space-y-1.5">
+            <Label>Escribe <strong>BORRAR</strong> para confirmar</Label>
+            <Input
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
+              placeholder="BORRAR"
+              className="border-negative/30"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { onClose(); setConfirm('') }}>Cancelar</Button>
+          <Button
+            variant="destructive"
+            disabled={confirm !== 'BORRAR' || deleteMutation.isPending}
+            onClick={() => deleteMutation.mutate()}
+          >
+            {deleteMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            Borrar movimientos
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /* ── Category select rendered as a pill/badge — opens the glanceable grid picker below ── */
 function RowCategorySelect({ tx, size, onOpen }: {
   tx: Transaction
@@ -470,6 +530,7 @@ export function Transactions() {
   }, [])
   const [addOpen, setAddOpen]         = useState(false)
   const [deleteAllOpen, setDeleteAllOpen] = useState(false)
+  const [deleteTxDataOpen, setDeleteTxDataOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [lastClickedIdx, setLastClickedIdx] = useState<number | null>(null)
@@ -642,7 +703,10 @@ export function Transactions() {
     queryFn: ({ pageParam }) => txApi.list({
       page: pageParam,
       page_size: PAGE_SIZE,
-      account_category: 'CASH',
+      // TRADING además de CASH: las compras/ventas salen del efectivo, así que
+      // son movimientos de la cuenta y el usuario espera verlas en la lista.
+      // (SECURITIES queda fuera: son posiciones manuales, no movimientos.)
+      account_category: 'CASH,TRADING',
       ...(search     ? { search }                : {}),
       ...(catFilter  ? { category_id: catFilter } : {}),
       ...(dateFrom   ? { date_from: dateFrom }    : {}),
@@ -876,6 +940,15 @@ export function Transactions() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-negative border-negative/25 hover:bg-negative/10"
+            title="Borra transacciones, grupos recurrentes y portfolio; conserva deudas, metas, presupuestos y categorías"
+            onClick={() => setDeleteTxDataOpen(true)}
+          >
+            <Eraser className="h-4 w-4 sm:mr-1.5" /> <span className="hidden sm:inline">Borrar movimientos</span>
+          </Button>
           <Button variant="outline" size="sm" className="text-negative border-negative/25 hover:bg-negative/10" onClick={() => setDeleteAllOpen(true)}>
             <Trash2 className="h-4 w-4 sm:mr-1.5" /> <span className="hidden sm:inline">Borrar todo</span>
           </Button>
@@ -1474,6 +1547,7 @@ export function Transactions() {
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <AddTransactionDialog open={addOpen} onClose={() => setAddOpen(false)} categories={categories || []} />
+      <DeleteTxDataDialog open={deleteTxDataOpen} onClose={() => setDeleteTxDataOpen(false)} />
       <DeleteAllDialog open={deleteAllOpen} onClose={() => setDeleteAllOpen(false)} />
       <TwoFAModal open={show2FA} onClose={() => { setShow2FA(false); qc.invalidateQueries({ queryKey: ['tr-status'] }) }} />
 

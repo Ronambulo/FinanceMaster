@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from .. import models, schemas, auth
@@ -105,3 +106,41 @@ def delete_all_data(
     ).delete()
     db.commit()
     return {"ok": True}
+
+
+@router.delete("/data/transactions")
+def delete_transaction_data(
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Borra solo transacciones, grupos recurrentes y el portfolio.
+
+    Es el borrado para reimportar desde cero: deudas, metas, presupuestos,
+    categorías personalizadas y reglas se conservan, así que no hay que
+    reconfigurar la app después.
+    """
+    uid = current_user.id
+
+    # Los pagos de deuda apuntan a transacciones, pero las deudas se quedan:
+    # hay que soltar la referencia antes de borrar o queda colgando.
+    tx_ids = select(models.Transaction.id).where(models.Transaction.user_id == uid)
+    db.query(models.DebtPayment).filter(
+        models.DebtPayment.transaction_id.in_(tx_ids)
+    ).update({models.DebtPayment.transaction_id: None}, synchronize_session=False)
+
+    deleted = {
+        "transactions": db.query(models.Transaction).filter(
+            models.Transaction.user_id == uid).delete(synchronize_session=False),
+        "recurring_groups": db.query(models.RecurringGroup).filter(
+            models.RecurringGroup.user_id == uid).delete(synchronize_session=False),
+        "manual_positions": db.query(models.ManualPosition).filter(
+            models.ManualPosition.user_id == uid).delete(synchronize_session=False),
+    }
+    # Un grupo de enlace solo agrupa transacciones: sin ellas no significa nada.
+    # Se borra después, porque transactions.link_group_id lo referencia.
+    db.query(models.TransactionLink).filter(
+        models.TransactionLink.user_id == uid).delete(synchronize_session=False)
+
+    db.commit()
+    return {"ok": True, **deleted}

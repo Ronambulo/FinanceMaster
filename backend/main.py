@@ -53,6 +53,11 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         seed_system_categories(db)
+        # Repara filas escritas por bugs ya corregidos. La BD vive en un volumen
+        # que sobrevive al despliegue, así que el código nuevo por sí solo no
+        # las arregla. Es idempotente y sin red.
+        from .services.data_repair import run_data_repairs
+        run_data_repairs(db)
     finally:
         db.close()
 

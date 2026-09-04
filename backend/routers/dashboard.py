@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 INCOME_TYPES = {
     "CUSTOMER_INPAYMENT", "TRANSFER_INSTANT_INBOUND", "TRANSFER_INBOUND",
-    "INTEREST_PAYMENT", "DIVIDEND", "STOCKPERK",
+    "INTEREST_PAYMENT", "DIVIDEND", "STOCKPERK", "BENEFITS_SAVEBACK",
 }
 EXPENSE_TYPES = {
     "CARD_TRANSACTION", "CARD_TRANSACTION_INTERNATIONAL",
@@ -64,9 +64,18 @@ def overview(
     interest_month = _sum(cash_txs, INTEREST_TYPES, start, end)
     interest_total = _sum(cash_txs, INTEREST_TYPES)
 
-    balance_raw = db.query(func.sum(models.Transaction.amount)).filter(
-        models.Transaction.user_id == current_user.id
-    ).scalar()
+    # Fees and taxes are booked differently depending on the import path: the
+    # TR API already nets them into `amount`, while the CSV export keeps them
+    # in their own columns. Adding them here is correct for the CSV and a
+    # no-op for the API (where both columns are empty), so a single formula
+    # gives the real cash balance regardless of where the data came from.
+    balance_raw = db.query(
+        func.sum(
+            models.Transaction.amount
+            + func.coalesce(models.Transaction.fee, 0.0)
+            + func.coalesce(models.Transaction.tax, 0.0)
+        )
+    ).filter(models.Transaction.user_id == current_user.id).scalar()
     balance = round(balance_raw or 0.0, 2)
 
     return schemas.DashboardOverview(
@@ -306,17 +315,17 @@ def net_worth_history(
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
-    from ..services.portfolio_calculator import _get_yahoo_price_in_eur, ISIN_TO_YAHOO, _get_usd_eur_rate
+    from ..services.portfolio_calculator import _get_yahoo_price_in_eur, ISIN_TO_YAHOO, _to_eur
 
     today = date.today()
 
-    # All cash & trading transactions ordered by date
+    # Cash: every movement counts, not just the ones filed under CASH. A buy is
+    # money leaving the account, so filtering it out here left the invested
+    # amount sitting in cash *and* in the portfolio — counted twice in net
+    # worth. Fees and taxes are added for the same reason as in /overview.
     cash_txs = (
         db.query(models.Transaction)
-        .filter(
-            models.Transaction.user_id == current_user.id,
-            models.Transaction.account_category == "CASH",
-        )
+        .filter(models.Transaction.user_id == current_user.id)
         .order_by(models.Transaction.date)
         .all()
     )
@@ -353,24 +362,31 @@ def net_worth_history(
     if symbols_set:
         try:
             import yfinance as yf
-            usd_rate = _get_usd_eur_rate()
             for sym in symbols_set:
                 entry = ISIN_TO_YAHOO.get(sym, sym)
                 if entry is None:
                     continue
-                yahoo_sym, currency = (entry if isinstance(entry, tuple) else (entry, "EUR"))
+                yahoo_sym, currency = (entry if isinstance(entry, tuple) else (entry, None))
                 try:
                     tk = yf.Ticker(yahoo_sym)
                     hist = tk.history(period="5y", interval="1mo")
                     if hist.empty:
                         continue
+                    # `sym` is usually an already-resolved ticker, so the ISIN map
+                    # rarely knows its currency. Ask Yahoo instead of assuming EUR:
+                    # quoting a USD (or GBp) line as if it were euros inflated the
+                    # whole history. _to_eur also handles London's pence lines.
+                    if currency is None:
+                        try:
+                            currency = tk.fast_info.currency
+                        except Exception:
+                            currency = None
+                        if not currency:
+                            currency = (tk.history_metadata or {}).get("currency") or "EUR"
                     hist_prices[sym] = {}
                     for idx, row in hist.iterrows():
                         key = f"{idx.year}-{idx.month:02d}"
-                        price_raw = float(row["Close"])
-                        hist_prices[sym][key] = round(
-                            price_raw * usd_rate if currency == "USD" else price_raw, 4
-                        )
+                        hist_prices[sym][key] = round(_to_eur(float(row["Close"]), currency), 4)
                 except Exception:
                     pass
         except ImportError:
@@ -381,9 +397,15 @@ def net_worth_history(
         month_key = f"{y_num}-{m_num:02d}"
 
         # 1. Cumulative cash balance
-        cash_balance = sum(tx.amount for tx in cash_txs if tx.date <= end_m)
+        cash_balance = sum(
+            tx.amount + (tx.fee or 0.0) + (tx.tax or 0.0)
+            for tx in cash_txs if tx.date <= end_m
+        )
 
-        # 2. Portfolio value: simulate positions up to end of month
+        # 2. Portfolio value: simulate positions up to end of month.
+        # The running total is not clamped at zero: when a same-day sale is
+        # stored before the buy that opened the position, clamping swallowed
+        # the sale and left the whole position open forever.
         positions: dict = {}
         for tx in trading_txs:
             if tx.date > end_m:
@@ -392,7 +414,7 @@ def net_worth_history(
             if tx.type == "BUY":
                 positions[sym] = positions.get(sym, 0.0) + abs(tx.shares or 0.0)
             elif tx.type == "SELL":
-                positions[sym] = max(0.0, positions.get(sym, 0.0) - abs(tx.shares or 0.0))
+                positions[sym] = positions.get(sym, 0.0) - abs(tx.shares or 0.0)
 
         portfolio_val = 0.0
         for sym, shares in positions.items():

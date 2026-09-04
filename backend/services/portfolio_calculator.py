@@ -19,6 +19,7 @@ ISIN_TO_YAHOO: Dict[str, Optional[tuple]] = {
     "US5949181045": ("MSFT",    "USD"),   # Microsoft
     "US61174X1090": ("MNST",    "USD"),   # Monster Beverage
     "US84615Q1031": ("SPCE",    "USD"),   # SpaceX (IPO 2026 — update ticker if wrong)
+    "IE00B4ND3602": ("EGLN.L",  "EUR"),   # iShares Physical Gold ETC (LSE, EUR line)
     "DE000FD0F1S2": None,                 # Best Turbo Gold (expired derivative)
 }
 
@@ -66,6 +67,8 @@ NAME_TO_YAHOO: Dict[str, Optional[tuple]] = {
     "microsoft corp":                ("MSFT",    "USD"),
     "monster beverage":              ("MNST",    "USD"),
     "spacex":                        ("SPCE",    "USD"),
+    "physical gold usd (acc)":       ("EGLN.L",  "EUR"),
+    "ishares physical gold":         ("EGLN.L",  "EUR"),
 }
 
 
@@ -153,47 +156,56 @@ def _yf_search_by_name(name: str) -> Optional[tuple]:
 def resolve_to_ticker(isin: Optional[str], name: Optional[str]) -> Optional[tuple]:
     """
     Resolve a TR asset to a (yahoo_ticker, currency) tuple.
-    Order: static ISIN dict → static name dict → persistent cache → yf ISIN search → yf name search.
+
+    An ISIN identifies an instrument exactly; a display name is only a guess
+    (a search for "Physical Gold USD" matches half a dozen unrelated ETCs), so
+    every ISIN-based step is exhausted before any name-based one. Getting this
+    order wrong let one bad name lookup shadow a perfectly good ISIN.
+
+    Order: static ISIN dict → ISIN cache → yf ISIN search
+         → static name dict → name cache → yf name search.
     Caches results persistently so each asset is only looked up once.
     """
     isin_key = f"isin:{isin.upper()}" if isin else None
     name_key = f"name:{name.strip().lower()}" if name else None
 
-    # 1. Static ISIN dict
+    # ── ISIN-based resolution (exact) ──────────────────────────────────────
     if isin:
         isin_upper = isin.upper()
+        # 1. Static ISIN dict
         if isin_upper in ISIN_TO_YAHOO:
             entry = ISIN_TO_YAHOO[isin_upper]
             return tuple(entry) if entry else None
 
-    # 2. Static name dict
+        # 2. Persistent ISIN cache
+        if isin_key in _persistent_ticker_cache:
+            raw = _persistent_ticker_cache[isin_key]
+            if raw:
+                return tuple(raw)
+        else:
+            # 3. yfinance ISIN search
+            entry = _yf_search_by_isin(isin)
+            _persistent_ticker_cache[isin_key] = list(entry) if entry else None
+            _save_ticker_cache()
+            if entry:
+                return entry
+
+    # ── Name-based resolution (fuzzy) ─────────────────────────────────────
     if name:
+        # 4. Static name dict
         entry = _ticker_for_name(name)
         if entry is not None:
             return entry
 
-    # 3. Persistent cache
-    if isin_key and isin_key in _persistent_ticker_cache:
-        raw = _persistent_ticker_cache[isin_key]
-        return tuple(raw) if raw else None
-    if name_key and name_key in _persistent_ticker_cache:
-        raw = _persistent_ticker_cache[name_key]
-        return tuple(raw) if raw else None
+        # 5. Persistent name cache
+        if name_key in _persistent_ticker_cache:
+            raw = _persistent_ticker_cache[name_key]
+            return tuple(raw) if raw else None
 
-    # 4. yfinance ISIN search
-    if isin:
-        entry = _yf_search_by_isin(isin)
-        _persistent_ticker_cache[isin_key] = list(entry) if entry else None
-        _save_ticker_cache()
-        if entry:
-            return entry
-
-    # 5. yfinance name search
-    if name:
+        # 6. yfinance name search
         entry = _yf_search_by_name(name)
-        if name_key:
-            _persistent_ticker_cache[name_key] = list(entry) if entry else None
-            _save_ticker_cache()
+        _persistent_ticker_cache[name_key] = list(entry) if entry else None
+        _save_ticker_cache()
         if entry:
             return entry
 
@@ -419,14 +431,49 @@ def _get_yahoo_price_in_eur(isin: str) -> Optional[float]:
         return None
 
 
+def _get_fx_to_eur(currency: str) -> Optional[float]:
+    """Fetch <currency>→EUR from Yahoo Finance, with caching. None if unavailable."""
+    code = currency.upper()
+    if code == "EUR":
+        return 1.0
+    now = time.time()
+    if code in _fx_cache:
+        rate, ts = _fx_cache[code]
+        if now - ts < _CACHE_TTL:
+            return rate
+    try:
+        import yfinance as yf
+        tk = yf.Ticker(f"{code}EUR=X")
+        rate = None
+        try:
+            rate = tk.fast_info.last_price
+        except Exception:
+            pass
+        if not rate:
+            rate = tk.info.get("regularMarketPrice") or tk.info.get("previousClose")
+        if rate and float(rate) > 0:
+            rate = round(float(rate), 6)
+            _fx_cache[code] = (rate, now)
+            return rate
+    except Exception:
+        pass
+    return None
+
+
 def _to_eur(price: float, currency: str) -> float:
     """Convert price to EUR if it's in another currency."""
-    if currency == "EUR":
+    raw = (currency or "EUR").strip()
+    # Yahoo quotes several London lines in pence ("GBp"), not pounds — the only
+    # thing separating the two is the lowercase p, so normalise before upper().
+    if raw == "GBp":
+        price, raw = price / 100.0, "GBP"
+    code = raw.upper()
+    if code == "EUR":
         return price
-    if currency == "USD":
+    if code == "USD":
         return round(price * _get_usd_eur_rate(), 4)
-    # Add more currencies here if needed (GBp, CHF, etc.)
-    return price
+    rate = _get_fx_to_eur(code)
+    return round(price * rate, 4) if rate else price
 
 
 def _amount_to_eur(amount: float, tx_currency: Optional[str]) -> float:
