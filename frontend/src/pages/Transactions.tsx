@@ -1,17 +1,20 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { txApi, catApi, authApi, trApi, aiApi } from '@/lib/api'
-import type { Transaction, Category } from '@/lib/api'
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import type { InfiniteData } from '@tanstack/react-query'
+import { format } from 'date-fns'
+import { es } from 'date-fns/locale'
+import { txApi, catApi, authApi, trApi, aiApi, dashApi } from '@/lib/api'
+import type { Transaction, Category, TransactionListResponse } from '@/lib/api'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Upload, Search, ChevronLeft, ChevronRight, ChevronDown, Loader2, Tag, X, Plus, Trash2, AlertTriangle, Filter, Sparkles, Bot, RefreshCw, Settings } from 'lucide-react'
+import { Upload, Search, ChevronDown, Loader2, Tag, X, Plus, Trash2, AlertTriangle, Filter, Sparkles, Bot, RefreshCw, Settings, Link2, Unlink, Check } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
@@ -25,9 +28,37 @@ function monthLastDay(year: number, month: number) {
   return new Date(year, month, 0).getDate()
 }
 
+// Friendly label for a transaction's raw `type` — used as secondary/meta text in the list.
+function txTypeLabel(type: string): string {
+  switch (type) {
+    case 'CARD_TRANSACTION':   return 'Tarjeta'
+    case 'TRANSFER_OUTBOUND':  return 'Transferencia enviada'
+    case 'TRANSFER_INBOUND':   return 'Transferencia recibida'
+    case 'CUSTOMER_INPAYMENT': return 'Ingreso'
+    case 'INTEREST_PAYMENT':   return 'Interés'
+    default: return type.replace(/_/g, ' ').toLowerCase()
+  }
+}
+
+// "Hoy" / "Ayer" / full date — used as the sticky-ish group header above each day's transactions.
+function dateGroupLabel(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const diffDays = Math.round((today.getTime() - d.getTime()) / 86_400_000)
+  if (diffDays === 0) return 'Hoy'
+  if (diffDays === 1) return 'Ayer'
+  return format(d, "d 'de' MMMM yyyy", { locale: es })
+}
+
+// Display amount for a row — the netted value when merged, the raw amount otherwise.
+function netAmount(tx: Transaction): number {
+  return tx.effective_amount ?? tx.amount
+}
+
 const TYPE_GROUPS = [
-  { value: 'income',  label: '↑ Ingresos' },
-  { value: 'expense', label: '↓ Gastos' },
+  { value: 'income',  label: 'Ingresos' },
+  { value: 'expense', label: 'Gastos' },
 ]
 
 function CategoryPicker({ categories, value, onChange }: { categories: Category[]; value: number | null; onChange: (id: number) => void }) {
@@ -102,7 +133,7 @@ function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void })
             </select>
           </div>
           <div
-            className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary transition-colors"
+            className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary transition-colors"
             onClick={() => fileRef.current?.click()}
           >
             <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
@@ -116,7 +147,7 @@ function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void })
             </div>
           )}
           {result && (
-            <div className="rounded-lg bg-muted p-4 space-y-1 text-sm">
+            <div className="rounded-xl bg-muted p-4 space-y-1 text-sm">
               {detectedBank && <p className="text-xs text-muted-foreground mb-1">Banco detectado: <span className="font-medium text-foreground">{detectedBank}</span></p>}
               <p className="text-primary">✓ {result.imported} transacciones importadas</p>
               {result.skipped_duplicates > 0 && <p className="text-muted-foreground">↷ {result.skipped_duplicates} duplicadas omitidas</p>}
@@ -177,7 +208,7 @@ function AddTransactionDialog({ open, onClose, categories }: { open: boolean; on
       <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle>Nueva transacción manual</DialogTitle></DialogHeader>
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Fecha</Label>
               <Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
@@ -190,7 +221,7 @@ function AddTransactionDialog({ open, onClose, categories }: { open: boolean; on
                 placeholder="0.00"
                 value={form.amount}
                 onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
-                className={isIncome ? 'border-primary/40 focus:border-[#c2ff72]' : 'border-[hsl(var(--negative))]/30 focus:border-[hsl(var(--negative))]/50'}
+                className={isIncome ? 'border-primary/40 focus:border-primary' : 'border-negative/30 focus:border-negative/50'}
               />
             </div>
           </div>
@@ -270,7 +301,7 @@ function DeleteAllDialog({ open, onClose }: { open: boolean; onClose: () => void
               value={confirm}
               onChange={e => setConfirm(e.target.value)}
               placeholder="BORRAR"
-              className="border-[hsl(var(--negative))]/30"
+              className="border-negative/30"
             />
           </div>
         </div>
@@ -290,12 +321,136 @@ function DeleteAllDialog({ open, onClose }: { open: boolean; onClose: () => void
   )
 }
 
+/* ── Category select rendered as a pill/badge — opens the glanceable grid picker below ── */
+function RowCategorySelect({ tx, size, onOpen }: {
+  tx: Transaction
+  size: 'sm' | 'xs'
+  onOpen: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        'flex w-auto min-w-[92px] max-w-[150px] items-center gap-1 rounded-full border font-medium shadow-none transition-colors active:scale-95',
+        size === 'sm' ? 'h-7 px-2.5 text-xs' : 'h-6 px-2 text-[11px]',
+      )}
+      style={tx.category ? {
+        borderColor: `${tx.category.color}4d`,
+        color: tx.category.color,
+        backgroundColor: `${tx.category.color}14`,
+      } : undefined}
+    >
+      {tx.category ? (
+        <span className="flex items-center gap-1 truncate">{tx.category.icon} <span className="truncate">{tx.category.name}</span></span>
+      ) : (
+        <span className="flex items-center gap-1 truncate text-muted-foreground"><Tag className="h-3 w-3" /> Categorizar</span>
+      )}
+    </button>
+  )
+}
+
+/* ── Glanceable category picker: searchable grid of color-coded chips instead of a text list ── */
+function CategoryPickerDialog({ open, onClose, categories, value, onSelect, title = 'Elegir categoría' }: {
+  open: boolean
+  onClose: () => void
+  categories: Category[]
+  value?: number | null
+  onSelect: (categoryId: number) => void
+  title?: string
+}) {
+  const [query, setQuery] = useState('')
+  useEffect(() => { if (open) setQuery('') }, [open])
+  const filtered = categories.filter(c => c.name.toLowerCase().includes(query.toLowerCase()))
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              autoFocus
+              placeholder="Buscar categoría..."
+              className="rounded-xl pl-9"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-2 max-h-[50vh] overflow-y-auto pr-0.5 xs:grid-cols-4">
+            {filtered.map(c => {
+              const selected = value === c.id
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => { onSelect(c.id); onClose() }}
+                  className={cn(
+                    'flex flex-col items-center gap-1.5 rounded-2xl border p-3 text-center transition-all active:scale-95',
+                    selected ? 'border-primary ring-2 ring-primary/30' : 'border-border hover:border-primary/40',
+                  )}
+                  style={{ backgroundColor: `${c.color}14` }}
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full text-lg" style={{ backgroundColor: `${c.color}25` }}>
+                    {c.icon}
+                  </span>
+                  <span className="line-clamp-2 text-[11px] font-medium leading-tight" style={{ color: c.color }}>
+                    {c.name}
+                  </span>
+                </button>
+              )
+            })}
+            {filtered.length === 0 && (
+              <p className="col-span-3 py-6 text-center text-sm text-muted-foreground xs:col-span-4">Sin resultados</p>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/* ── Skeleton rows shown instantly while the first batch of transactions loads ── */
+function TxRowSkeleton() {
+  return (
+    <>
+      {/* Mobile skeleton row */}
+      <div className="flex gap-3 px-4 py-3.5 sm:hidden">
+        <div className="h-10 w-10 shrink-0 rounded-full bg-muted animate-pulse" />
+        <div className="flex flex-1 flex-col gap-2 py-0.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="h-3.5 w-32 rounded bg-muted animate-pulse" />
+            <div className="h-3.5 w-14 rounded bg-muted animate-pulse" />
+          </div>
+          <div className="h-2.5 w-20 rounded bg-muted/70 animate-pulse" />
+          <div className="h-5 w-24 rounded-full bg-muted/70 animate-pulse" />
+        </div>
+      </div>
+      {/* Desktop skeleton row */}
+      <div className="hidden items-center gap-3 border-b border-border/70 py-3 pl-[17px] pr-5 last:border-b-0 sm:flex">
+        <div className="h-10 w-10 shrink-0 rounded-full bg-muted animate-pulse" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="h-3.5 w-40 rounded bg-muted animate-pulse" />
+          <div className="h-2.5 w-24 rounded bg-muted/70 animate-pulse" />
+        </div>
+        <div className="hidden w-[180px] shrink-0 md:block">
+          <div className="h-6 w-28 rounded-full bg-muted animate-pulse" />
+        </div>
+        <div className="w-28 shrink-0 flex justify-end">
+          <div className="h-3.5 w-16 rounded bg-muted animate-pulse" />
+        </div>
+        <div className="w-4 shrink-0" />
+      </div>
+    </>
+  )
+}
+
 export function Transactions() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [page, setPage]           = useState(1)
   const [search, setSearch]       = useState('')
   const [catFilter, setCatFilter] = useState<string>('')
   // cycleFilter: '' = all, 'idx:N' = payroll cycle index N, 'month:YYYY-MM' = calendar fallback
@@ -319,12 +474,22 @@ export function Transactions() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [lastClickedIdx, setLastClickedIdx] = useState<number | null>(null)
   const [bulkCatOpen, setBulkCatOpen] = useState(false)
-  const [bulkCatId, setBulkCatId] = useState<string>('')
+  const [catPickerTxId, setCatPickerTxId] = useState<number | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
   const [show2FA, setShow2FA] = useState(false)
   const [aiCategorizingIds, setAiCategorizingIds] = useState<Set<number>>(new Set())
   const [bulkAiPending, setBulkAiPending] = useState(false)
+  const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set())
+
+  const toggleExpandGroup = useCallback((linkGroupId: number) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(linkGroupId)) next.delete(linkGroupId)
+      else next.add(linkGroupId)
+      return next
+    })
+  }, [])
 
   // Auto-refresh when AI chat categorizes a transaction
   useEffect(() => {
@@ -462,11 +627,21 @@ export function Transactions() {
   const dateTo   = selectedCycleOption?.dateTo
 
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
-  const { data, isLoading } = useQuery({
-    queryKey: ['transactions', page, search, catFilter, cycleFilter, typeGroup],
-    queryFn: () => txApi.list({
-      page,
-      page_size: 25,
+
+  const PAGE_SIZE = 20
+  const txListKey = ['transactions', search, catFilter, cycleFilter, typeGroup]
+
+  const {
+    data: txPages,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
+    queryKey: txListKey,
+    queryFn: ({ pageParam }) => txApi.list({
+      page: pageParam,
+      page_size: PAGE_SIZE,
       account_category: 'CASH',
       ...(search     ? { search }                : {}),
       ...(catFilter  ? { category_id: catFilter } : {}),
@@ -474,22 +649,66 @@ export function Transactions() {
       ...(dateTo     ? { date_to: dateTo }        : {}),
       ...(typeGroup  ? { type_group: typeGroup }  : {}),
     }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((s, p) => s + p.items.length, 0)
+      return loaded < lastPage.total ? allPages.length + 1 : undefined
+    },
     placeholderData: prev => prev,
   })
+
+  // As soon as the first (small, fast) batch resolves, immediately kick off the next one so
+  // more transactions keep streaming in without waiting for the user to scroll.
+  useEffect(() => {
+    if (txPages && txPages.pages.length === 1 && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage()
+    }
+  }, [txPages, hasNextPage, isFetchingNextPage, fetchNextPage])
+
+  const items = useMemo(() => txPages?.pages.flatMap(p => p.items) ?? [], [txPages])
+  const total = txPages?.pages[0]?.total ?? 0
+
+  // Scroll-triggered loading of further batches once the sentinel below the list scrolls into view.
+  const loadMoreRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = loadMoreRef.current
+    if (!el || !hasNextPage) return
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && !isFetchingNextPage) fetchNextPage()
+    }, { rootMargin: '200px' })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, items.length])
+
+  // Category breakdown for the "Top categorías" summary widget — scoped to the same period/type filters.
+  const { data: catBreakdown } = useQuery({
+    queryKey: ['by-cat', dateFrom, dateTo, typeGroup],
+    queryFn: () => dashApi.byCategory({
+      ...(dateFrom  ? { date_from: dateFrom } : {}),
+      ...(dateTo    ? { date_to: dateTo }     : {}),
+      ...(typeGroup ? { tx_type: typeGroup }  : {}),
+    }),
+  })
+
+  // Applies `updater` to the flattened items of every loaded page in the infinite-query cache.
+  const updateTxCache = (updater: (items: Transaction[]) => Transaction[]) => {
+    const prev = qc.getQueryData<InfiniteData<TransactionListResponse>>(txListKey)
+    qc.setQueryData<InfiniteData<TransactionListResponse>>(txListKey, old => {
+      if (!old) return old
+      return { ...old, pages: old.pages.map(p => ({ ...p, items: updater(p.items) })) }
+    })
+    return prev
+  }
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<Transaction> }) => txApi.update(id, data),
     onMutate: async ({ id, data }) => {
       await qc.cancelQueries({ queryKey: ['transactions'] })
-      const prev = qc.getQueryData<{ items: Transaction[] }>(['transactions', page, search, catFilter, cycleFilter, typeGroup])
-      qc.setQueryData(['transactions', page, search, catFilter, cycleFilter, typeGroup], (old: any) => {
-        if (!old) return old
-        return { ...old, items: old.items.map((tx: Transaction) => tx.id === id ? { ...tx, ...data } : tx) }
-      })
+      const prev = updateTxCache(items => items.map(tx => tx.id === id ? { ...tx, ...data } : tx))
       return { prev }
     },
     onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) qc.setQueryData(['transactions', page, search, catFilter, cycleFilter, typeGroup], ctx.prev)
+      if (ctx?.prev) qc.setQueryData(txListKey, ctx.prev)
       toast('Error al actualizar', 'error')
     },
     onSuccess: (_data, vars) => {
@@ -503,47 +722,102 @@ export function Transactions() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => txApi.delete(id),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: ['transactions'] })
+      const prev = updateTxCache(items => items.filter(tx => tx.id !== id))
+      setConfirmDelete(null)
+      return { prev }
+    },
+    onError: (e: any, _id, ctx) => {
+      if (ctx?.prev) qc.setQueryData(txListKey, ctx.prev)
+      toast(e.message || 'Error al eliminar', 'error')
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['overview'] })
       qc.invalidateQueries({ queryKey: ['by-cat'] })
-      setConfirmDelete(null)
       toast('Transacción eliminada', 'success')
     },
-    onError: (e: any) => toast(e.message, 'error'),
   })
 
   const bulkDeleteMutation = useMutation({
     mutationFn: (ids: number[]) => Promise.all(ids.map(id => txApi.delete(id))),
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: ['transactions'] })
+      const idSet = new Set(ids)
+      const prev = updateTxCache(items => items.filter(tx => !idSet.has(tx.id)))
+      setSelectedIds(new Set())
+      return { prev }
+    },
+    onError: (e: any, _ids, ctx) => {
+      if (ctx?.prev) qc.setQueryData(txListKey, ctx.prev)
+      toast(e.message || 'Error al eliminar', 'error')
+    },
     onSuccess: (_, ids) => {
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['overview'] })
-      setSelectedIds(new Set())
       toast(`${ids.length} transacciones eliminadas`, 'success')
     },
-    onError: (e: any) => toast(e.message, 'error'),
+  })
+
+  const linkMutation = useMutation({
+    mutationFn: (ids: number[]) => txApi.link(ids),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+      qc.invalidateQueries({ queryKey: ['by-cat'] })
+      qc.invalidateQueries({ queryKey: ['monthly-trend'] })
+      setSelectedIds(new Set())
+      toast('Transacciones unidas', 'success')
+    },
+    onError: (e: any) => toast(e.message || 'Error al unir transacciones', 'error'),
+  })
+
+  const unlinkMutation = useMutation({
+    mutationFn: (linkGroupId: number) => txApi.unlink(linkGroupId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+      qc.invalidateQueries({ queryKey: ['by-cat'] })
+      qc.invalidateQueries({ queryKey: ['monthly-trend'] })
+      toast('Transacciones separadas', 'success')
+    },
+    onError: (e: any) => toast(e.message || 'Error al separar', 'error'),
   })
 
   const bulkCategoryMutation = useMutation({
     mutationFn: ({ ids, category_id }: { ids: number[]; category_id: number }) =>
       Promise.all(ids.map(id => txApi.update(id, { category_id }))),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] })
+    onMutate: async ({ ids, category_id }) => {
+      await qc.cancelQueries({ queryKey: ['transactions'] })
+      const idSet = new Set(ids)
+      const category = categories?.find(c => c.id === category_id)
+      const prev = updateTxCache(items => items.map(tx =>
+        idSet.has(tx.id)
+          ? { ...tx, category_id, category: category ?? tx.category, is_auto_categorized: false, is_ai_categorized: false }
+          : tx,
+      ))
       setSelectedIds(new Set())
       setBulkCatOpen(false)
-      setBulkCatId('')
+      return { prev }
+    },
+    onError: (e: any, _vars, ctx) => {
+      if (ctx?.prev) qc.setQueryData(txListKey, ctx.prev)
+      toast(e.message || 'Error al actualizar', 'error')
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
       toast('Categoría actualizada', 'success')
     },
-    onError: (e: any) => toast(e.message, 'error'),
   })
 
   const toggleSelect = useCallback((id: number, idx: number, shiftKey: boolean) => {
     setSelectedIds(prev => {
       const next = new Set(prev)
-      if (shiftKey && lastClickedIdx !== null && data?.items) {
+      if (shiftKey && lastClickedIdx !== null) {
         const lo = Math.min(idx, lastClickedIdx)
         const hi = Math.max(idx, lastClickedIdx)
-        data.items.slice(lo, hi + 1).forEach(tx => next.add(tx.id))
+        items.slice(lo, hi + 1).forEach(tx => next.add(tx.id))
       } else {
         if (next.has(id)) next.delete(id)
         else next.add(id)
@@ -551,15 +825,13 @@ export function Transactions() {
       return next
     })
     setLastClickedIdx(idx)
-  }, [lastClickedIdx, data?.items])
+  }, [lastClickedIdx, items])
 
   const toggleSelectAll = useCallback(() => {
-    if (!data?.items) return
-    if (selectedIds.size === data.items.length) setSelectedIds(new Set())
-    else setSelectedIds(new Set(data.items.map(tx => tx.id)))
-  }, [data?.items, selectedIds.size])
-
-  const totalPages = data ? Math.ceil(data.total / 25) : 1
+    if (items.length === 0) return
+    if (selectedIds.size === items.length) setSelectedIds(new Set())
+    else setSelectedIds(new Set(items.map(tx => tx.id)))
+  }, [items, selectedIds.size])
 
   const hasActiveFilters = !!(cycleFilter || typeGroup || catFilter || search)
   const selectedCatName   = catFilter && categories ? categories.find(c => c.id.toString() === catFilter)?.name : null
@@ -567,67 +839,110 @@ export function Transactions() {
   const selectedTypeLabel  = typeGroup ? TYPE_GROUPS.find(g => g.value === typeGroup)?.label : null
   const isPayrollMode = payrollCycles.length > 0
 
+  // Group the loaded transactions by day, keeping their original (flat) index for shift-click
+  // range selection, which is why grouping happens client-side over the flattened `items`.
+  const groupedItems = useMemo(() => {
+    const groups: { label: string; items: { tx: Transaction; idx: number }[] }[] = []
+    items.forEach((tx, idx) => {
+      const label = dateGroupLabel(tx.date)
+      const last = groups[groups.length - 1]
+      if (last && last.label === label) last.items.push({ tx, idx })
+      else groups.push({ label, items: [{ tx, idx }] })
+    })
+    return groups
+  }, [items])
+
+  const incomeSum  = txPages?.pages[0]?.income_sum ?? 0
+  const expenseSum = txPages?.pages[0]?.expense_sum ?? 0
+  const netSum     = incomeSum - expenseSum
+
+  const topCategories = useMemo(() => {
+    const sorted = [...(catBreakdown ?? [])].sort((a, b) => b.total - a.total).slice(0, 5)
+    const max = sorted[0]?.total || 1
+    return sorted.map(c => ({ ...c, pct: Math.min(100, Math.round((c.total / max) * 100)) }))
+  }, [catBreakdown])
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-baseline gap-3 flex-wrap">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
           <h1 className="text-xl font-semibold tracking-tight">Transacciones</h1>
-          <div className="flex items-center gap-2 text-sm">
-            {(data?.income_sum ?? 0) > 0 && (
-              <span className="text-positive font-medium">+{formatCurrency(data!.income_sum)}</span>
-            )}
-            {(data?.income_sum ?? 0) > 0 && (data?.expense_sum ?? 0) > 0 && (
-              <span className="text-muted-foreground/40">·</span>
-            )}
-            {(data?.expense_sum ?? 0) > 0 && (
-              <span className="text-negative font-medium">-{formatCurrency(data!.expense_sum)}</span>
-            )}
-          </div>
-          <span className="text-xs text-muted-foreground">{data?.total ?? 0} resultados</span>
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <span>{total} movimiento{total === 1 ? '' : 's'}{selectedCycleLabel ? ` · ${selectedCycleLabel}` : ''}</span>
+            {incomeSum > 0 && <span className="text-positive font-medium tabular-nums">+{formatCurrency(incomeSum)}</span>}
+            {incomeSum > 0 && expenseSum > 0 && <span className="text-muted-foreground/40">·</span>}
+            {expenseSum > 0 && <span className="text-negative font-medium tabular-nums">-{formatCurrency(expenseSum)}</span>}
+          </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" className="text-negative border-negative/20 hover:bg-negative/10" onClick={() => setDeleteAllOpen(true)}>
-            <Trash2 className="h-4 w-4 mr-2" /> Borrar todo
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" className="text-negative border-negative/25 hover:bg-negative/10" onClick={() => setDeleteAllOpen(true)}>
+            <Trash2 className="h-4 w-4 sm:mr-1.5" /> <span className="hidden sm:inline">Borrar todo</span>
           </Button>
           {trStatus?.connected ? (
-            <Button variant="outline" onClick={handleBankSync} disabled={syncing}>
-              {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-              Sincronizar bancos
+            <Button variant="outline" size="sm" onClick={handleBankSync} disabled={syncing}>
+              {syncing ? <Loader2 className="h-4 w-4 sm:mr-1.5 animate-spin" /> : <RefreshCw className="h-4 w-4 sm:mr-1.5" />}
+              <span className="hidden sm:inline">Sincronizar</span>
             </Button>
           ) : (
-            <Button variant="outline" onClick={handleReconnect} disabled={reconnecting}>
-              {reconnecting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Settings className="h-4 w-4 mr-2" />}
-              Reconectar banco
+            <Button variant="outline" size="sm" onClick={handleReconnect} disabled={reconnecting}>
+              {reconnecting ? <Loader2 className="h-4 w-4 sm:mr-1.5 animate-spin" /> : <Settings className="h-4 w-4 sm:mr-1.5" />}
+              <span className="hidden sm:inline">Reconectar</span>
             </Button>
           )}
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="h-4 w-4 mr-2" /> Importar CSV
+          <Button
+            size="lg"
+            onClick={() => setImportOpen(true)}
+            className="h-11 rounded-xl bg-primary/10 px-4 font-semibold text-primary ring-1 ring-primary/25 hover:bg-primary/20"
+          >
+            <Upload className="h-5 w-5 sm:mr-2" /> <span className="hidden sm:inline">Importar CSV</span>
           </Button>
-          <Button onClick={() => setAddOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" /> Añadir
+          <Button size="sm" onClick={() => setAddOpen(true)}>
+            <Plus className="h-4 w-4 sm:mr-1.5" /> <span className="hidden sm:inline">Añadir</span>
           </Button>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="relative overflow-hidden flex flex-col gap-3 bg-white/[0.02] border border-white/[0.05] p-3 rounded-2xl shadow-[0_4px_24px_rgba(0,0,0,0.5)] animate-fade-in">
-        <div className="pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full bg-primary/[0.04] blur-3xl" />
-        <div className="relative z-10 flex flex-col gap-3">
-          <div className="flex flex-col sm:flex-row gap-2">
+      <Card className="card-hover flex flex-col gap-3 p-3.5">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
           {/* Search */}
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Buscar por nombre o descripción..."
-              className="pl-9"
+              className="rounded-xl pl-9"
               value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1) }}
+              onChange={e => { setSearch(e.target.value) }}
             />
           </div>
+          {/* Income / expense chips */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => { setTypeGroup('') }}
+              className={cn(
+                'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                typeGroup === '' ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:text-foreground',
+              )}
+            >
+              Todas
+            </button>
+            {TYPE_GROUPS.map(g => (
+              <button
+                key={g.value}
+                onClick={() => { setTypeGroup(g.value) }}
+                className={cn(
+                  'shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                  typeGroup === g.value ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {g.label}
+              </button>
+            ))}
+          </div>
           {/* Cycle / Month filter */}
-          <Select value={cycleFilter || 'all'} onValueChange={v => { setCycleFilter(v === 'all' ? '' : v); setPage(1) }}>
-            <SelectTrigger className="sm:w-52">
+          <Select value={cycleFilter || 'all'} onValueChange={v => { setCycleFilter(v === 'all' ? '' : v) }}>
+            <SelectTrigger className="rounded-xl sm:w-48">
               <SelectValue placeholder={isPayrollMode ? 'Todos los tramos' : 'Todos los meses'} />
             </SelectTrigger>
             <SelectContent>
@@ -637,21 +952,9 @@ export function Transactions() {
               ))}
             </SelectContent>
           </Select>
-          {/* Type group */}
-          <Select value={typeGroup || 'all'} onValueChange={v => { setTypeGroup(v === 'all' ? '' : v); setPage(1) }}>
-            <SelectTrigger className="sm:w-36">
-              <SelectValue placeholder="Todos los tipos" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los tipos</SelectItem>
-              {TYPE_GROUPS.map(g => (
-                <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           {/* Category */}
-          <Select value={catFilter || 'all'} onValueChange={v => { setCatFilter(v === 'all' ? '' : v); setPage(1) }}>
-            <SelectTrigger className="sm:w-44">
+          <Select value={catFilter || 'all'} onValueChange={v => { setCatFilter(v === 'all' ? '' : v) }}>
+            <SelectTrigger className="rounded-xl sm:w-44">
               <SelectValue placeholder="Todas las categorías" />
             </SelectTrigger>
             <SelectContent>
@@ -669,7 +972,7 @@ export function Transactions() {
             <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             {selectedCycleLabel && (
               <button
-                onClick={() => { setCycleFilter(''); setPage(1) }}
+                onClick={() => { setCycleFilter('') }}
                 className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
               >
                 {isPayrollMode ? '💳' : '📅'} {selectedCycleLabel}
@@ -678,7 +981,7 @@ export function Transactions() {
             )}
             {selectedTypeLabel && (
               <button
-                onClick={() => { setTypeGroup(''); setPage(1) }}
+                onClick={() => { setTypeGroup('') }}
                 className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
               >
                 {selectedTypeLabel}
@@ -687,7 +990,7 @@ export function Transactions() {
             )}
             {selectedCatName && (
               <button
-                onClick={() => { setCatFilter(''); setPage(1) }}
+                onClick={() => { setCatFilter('') }}
                 className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
               >
                 {categories?.find(c => c.id.toString() === catFilter)?.icon} {selectedCatName}
@@ -696,7 +999,7 @@ export function Transactions() {
             )}
             {search && (
               <button
-                onClick={() => { setSearch(''); setPage(1) }}
+                onClick={() => { setSearch('') }}
                 className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
               >
                 🔍 &ldquo;{search}&rdquo;
@@ -704,79 +1007,241 @@ export function Transactions() {
               </button>
             )}
             <button
-              onClick={() => { setSearch(''); setCatFilter(''); setCycleFilter(''); setTypeGroup(''); setPage(1) }}
+              onClick={() => { setSearch(''); setCatFilter(''); setCycleFilter(''); setTypeGroup('') }}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors ml-1"
             >
               Limpiar todo
             </button>
           </div>
         )}
-        </div>
-      </div>
+      </Card>
 
-      {/* Table / Card list */}
-      <div className="relative rounded-2xl border border-white/[0.07] bg-card/40 backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,0.5)] overflow-hidden animate-fade-up">
-        <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.03] blur-3xl" />
-        <div className="relative z-10">
+      {/* List + summary panel */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        {/* Transaction list */}
+        <Card className="card-hover min-w-0 flex-1 overflow-hidden p-0">
           {isLoading ? (
-            <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            <div className="flex flex-col">
+              {Array.from({ length: 8 }).map((_, i) => <TxRowSkeleton key={i} />)}
+            </div>
           ) : (
             <>
               {/* Mobile card list */}
-              <div className="sm:hidden flex flex-col">
-                {data?.items.map(tx => (
-                  <div key={tx.id} className="flex gap-3 px-4 py-3.5 border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors last:border-0">
-                    <div className="flex h-10 w-10 mt-0.5 shrink-0 items-center justify-center rounded-full bg-white/[0.04] border border-white/[0.05] text-lg shadow-sm overflow-hidden">
-                      <TransactionIcon name={tx.name || tx.description || tx.type} category={tx.category} />
+              <div className="flex flex-col sm:hidden">
+                {groupedItems.map(group => (
+                  <div key={group.label}>
+                    <div className="px-4 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                      {group.label}
                     </div>
-                    
-                    <div className="flex flex-col flex-1 min-w-0 gap-1.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex flex-col min-w-0">
-                          <p className="font-semibold text-[14px] leading-tight text-foreground truncate">{tx.name || tx.description || tx.type}</p>
-                          {tx.is_pending && (
-                            <span className="text-[11px] text-amber-400/80 mt-0.5 flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400/60"></span>
-                              Pendiente — no computa en saldo
-                            </span>
-                          )}
-                          {tx.is_internal_transfer && (
-                            <span className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-orange-500/50"></span>
-                              Transferencia Interna
-                            </span>
-                          )}
-                        </div>
-                        <span className={cn(
-                          "text-[15px] font-bold tabular-nums tracking-tight shrink-0",
-                          tx.amount > 0 ? "text-emerald-400" : "text-foreground",
-                          tx.amount === 0 && "text-muted-foreground"
-                        )}>
-                          {tx.amount > 0 ? '+' : ''}{formatCurrency(tx.amount)}
-                        </span>
-                      </div>
+                    {group.items.map(({ tx, idx }) => (
+                      <div key={tx.id} className={cn('border-b border-border/70 last:border-0', selectedIds.has(tx.id) && 'bg-primary/5')}>
+                      <div className="flex gap-3 px-4 py-3.5">
+                        <button
+                          type="button"
+                          title={selectedIds.has(tx.id) ? 'Deseleccionar' : 'Seleccionar'}
+                          onClick={() => toggleSelect(tx.id, idx, false)}
+                          className="relative mt-0.5 h-10 w-10 shrink-0"
+                        >
+                          <div className={cn(
+                            'flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border text-lg shadow-sm transition-colors',
+                            selectedIds.has(tx.id) ? 'border-primary bg-primary' : 'border-border bg-secondary',
+                          )}>
+                            {selectedIds.has(tx.id)
+                              ? <Check className="h-[18px] w-[18px] text-primary-foreground" strokeWidth={2.5} />
+                              : <TransactionIcon name={tx.name || tx.description || tx.type} category={tx.category} />}
+                          </div>
+                        </button>
 
-                      <div className="flex items-center justify-between gap-2 mt-0.5">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <Select 
-                            value={tx.category_id?.toString() || ''} 
-                            onValueChange={id => updateMutation.mutate({ id: tx.id, data: { category_id: Number(id) } })}
-                          >
-                            <SelectTrigger className="flex items-center justify-between gap-1 text-[11px] px-2 py-0.5 h-6 w-fit min-w-[90px] max-w-[150px] rounded-full bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06] transition-all font-medium shadow-sm [&>svg]:opacity-50 [&>svg]:h-3 [&>svg]:w-3">
-                              {tx.category ? (
-                                <span style={{ color: tx.category.color }} className="flex items-center gap-1 truncate">{tx.category.icon} <span className="truncate">{tx.category.name}</span></span>
-                              ) : (
-                                <span className="text-muted-foreground flex items-center gap-1 truncate"><Tag className="h-2.5 w-2.5" /> Asignar cat.</span>
+                        <div className="flex flex-col flex-1 min-w-0 gap-1.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex flex-col min-w-0">
+                              <p className="font-medium text-[14px] leading-tight text-foreground truncate">{tx.name || tx.description || tx.type}</p>
+                              <span className="text-[11.5px] text-muted-foreground mt-0.5">{txTypeLabel(tx.type)}</span>
+                              {tx.is_pending && (
+                                <span className="text-[11px] text-warning mt-0.5 flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-warning/70"></span>
+                                  Pendiente — no computa en saldo
+                                </span>
                               )}
-                            </SelectTrigger>
-                            <SelectContent>
-                              {categories?.map(c => (
-                                <SelectItem key={c.id} value={c.id.toString()}>
-                                  {c.icon} {c.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                              {tx.is_internal_transfer && (
+                                <span className="text-[11px] text-muted-foreground mt-0.5 flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-chart-4/60"></span>
+                                  Transferencia Interna
+                                </span>
+                              )}
+                              {tx.link_group_id && tx.linked_transactions && tx.linked_transactions.length > 0 && (
+                                <button
+                                  onClick={() => toggleExpandGroup(tx.link_group_id!)}
+                                  className="inline-flex items-center gap-1 self-start mt-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
+                                >
+                                  <Link2 className="h-2.5 w-2.5" />
+                                  {tx.linked_transactions.length + 1} unidas
+                                  <ChevronDown className={cn('h-2.5 w-2.5 transition-transform', expandedGroups.has(tx.link_group_id) && 'rotate-180')} />
+                                </button>
+                              )}
+                            </div>
+                            <span className={cn(
+                              'text-[15px] font-semibold tabular-nums tracking-tight shrink-0',
+                              netAmount(tx) > 0 ? 'text-positive' : 'text-foreground',
+                              netAmount(tx) === 0 && 'text-muted-foreground',
+                            )}>
+                              {netAmount(tx) > 0 ? '+' : ''}{formatCurrency(netAmount(tx))}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 mt-0.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <RowCategorySelect
+                                tx={tx}
+                                size="xs"
+                                onOpen={() => setCatPickerTxId(tx.id)}
+                              />
+                              {tx.is_auto_categorized && !tx.is_internal_transfer && (
+                                <button
+                                  title="Categoría asignada automáticamente. Haz clic para confirmar y quitar este aviso."
+                                  onClick={() => updateMutation.mutate({ id: tx.id, data: { is_auto_categorized: false } })}
+                                  className="text-primary/60 hover:text-primary transition-colors shrink-0"
+                                >
+                                  <Sparkles className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              {tx.is_ai_categorized && (
+                                <button
+                                  title="Categoría asignada por la IA. Haz clic para confirmar y quitar el indicador."
+                                  onClick={() => updateMutation.mutate({ id: tx.id, data: { is_ai_categorized: false } })}
+                                  className="text-chart-4/80 hover:text-chart-4 transition-colors shrink-0"
+                                >
+                                  <Bot className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2.5 shrink-0">
+                              <span className="text-[11px] font-medium text-muted-foreground/60">{formatDate(tx.date)}</span>
+                              <button
+                                title="Categorizar con IA"
+                                disabled={aiCategorizingIds.has(tx.id)}
+                                onClick={() => handleAiCategorize([tx.id])}
+                                className="text-muted-foreground/40 hover:text-chart-4 transition-colors flex items-center justify-center disabled:opacity-40"
+                              >
+                                {aiCategorizingIds.has(tx.id)
+                                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  : <Sparkles className="h-3.5 w-3.5" />}
+                              </button>
+                              <button onClick={() => setConfirmDelete(tx.id)}
+                                  className="text-muted-foreground/30 hover:text-negative transition-colors flex items-center justify-center">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      {tx.link_group_id && tx.linked_transactions && tx.linked_transactions.length > 0 && expandedGroups.has(tx.link_group_id) && (
+                        <div className="bg-secondary/30 px-4 pb-3 pt-0.5 space-y-1.5">
+                          {[tx, ...tx.linked_transactions].map(leg => (
+                            <div key={leg.id} className="flex items-center justify-between gap-2 text-xs pl-[52px]">
+                              <span className="truncate text-muted-foreground">{leg.name || leg.description || leg.type}</span>
+                              <span className={cn('shrink-0 tabular-nums font-medium', leg.amount > 0 ? 'text-positive' : 'text-foreground')}>
+                                {leg.amount > 0 ? '+' : ''}{formatCurrency(leg.amount)}
+                              </span>
+                            </div>
+                          ))}
+                          <div className="flex justify-end">
+                            <button
+                              onClick={() => unlinkMutation.mutate(tx.link_group_id!)}
+                              disabled={unlinkMutation.isPending}
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-negative transition-colors disabled:opacity-50"
+                            >
+                              {unlinkMutation.isPending
+                                ? <Loader2 className="h-3 w-3 animate-spin" />
+                                : <Unlink className="h-3 w-3" />}
+                              Desvincular
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                {items.length === 0 && (
+                  <p className="text-center py-8 text-muted-foreground text-sm">No se encontraron transacciones</p>
+                )}
+              </div>
+
+              {/* Desktop list */}
+              <div className="hidden sm:block">
+                <div className="flex items-center gap-3 border-b border-border bg-secondary/40 px-5 py-2.5 text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={items.length > 0 && selectedIds.size === items.length}
+                    ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < items.length }}
+                    onChange={toggleSelectAll}
+                    className="h-3.5 w-3.5 shrink-0 rounded accent-primary cursor-pointer"
+                  />
+                  <span className="flex-1 text-xs font-medium uppercase tracking-wider">Descripción</span>
+                  <span className="hidden w-[180px] shrink-0 text-xs font-medium uppercase tracking-wider md:block">Categoría</span>
+                  <span className="w-28 shrink-0 text-right text-xs font-medium uppercase tracking-wider">Importe</span>
+                  <span className="w-4 shrink-0" />
+                </div>
+
+                {groupedItems.map(group => (
+                  <div key={group.label}>
+                    <div className="px-5 pt-3.5 pb-1 text-[11.5px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                      {group.label}
+                    </div>
+                    {group.items.map(({ tx, idx }) => (
+                      <div key={tx.id}>
+                      <div
+                        className={cn(
+                          'group flex items-center gap-3 border-b border-l-[3px] border-border/70 py-3 pl-[17px] pr-5 transition-colors last:border-b-0',
+                          selectedIds.has(tx.id) ? 'border-l-primary bg-primary/5' : 'border-l-transparent hover:bg-accent/50',
+                        )}
+                      >
+                        <button
+                          type="button"
+                          title={selectedIds.has(tx.id) ? 'Deseleccionar' : 'Seleccionar'}
+                          onClick={e => toggleSelect(tx.id, idx, e.shiftKey)}
+                          className="relative h-10 w-10 shrink-0"
+                        >
+                          <div className={cn(
+                            'flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border text-lg shadow-sm transition-colors',
+                            selectedIds.has(tx.id) ? 'border-primary bg-primary' : 'border-border bg-secondary',
+                          )}>
+                            {selectedIds.has(tx.id)
+                              ? <Check className="h-[18px] w-[18px] text-primary-foreground" strokeWidth={2.5} />
+                              : <TransactionIcon name={tx.name || tx.description || tx.type} category={tx.category} />}
+                          </div>
+                          {tx.link_group_id && tx.linked_transactions && tx.linked_transactions.length > 0 && !selectedIds.has(tx.id) && (
+                            <div className="absolute -bottom-0.5 -right-0.5 flex h-[22px] w-[22px] items-center justify-center rounded-full border-2 border-card bg-muted">
+                              <Link2 className="h-2.5 w-2.5 text-muted-foreground" />
+                            </div>
+                          )}
+                        </button>
+
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-foreground">{tx.name || tx.description || tx.type}</p>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs text-muted-foreground">{txTypeLabel(tx.type)}</span>
+                            {!tx.category_id && <Badge variant="muted" className="py-0 text-[10px]">Sin cat.</Badge>}
+                            {tx.is_pending && <Badge className="py-0 text-[10px] bg-warning/15 text-warning border-transparent">Pendiente</Badge>}
+                            {tx.is_internal_transfer && (
+                              <button
+                                title="Transferencia interna (excluida de totales). Haz clic para marcar como ingreso/gasto real."
+                                onClick={() => updateMutation.mutate({ id: tx.id, data: { is_internal_transfer: false } })}
+                              >
+                                <Badge variant="muted" className="py-0 text-[10px] hover:bg-chart-4/20 hover:text-chart-4 transition-colors">🔄 Interna</Badge>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="hidden w-[180px] shrink-0 items-center gap-1.5 md:flex">
+                          <RowCategorySelect
+                            tx={tx}
+                            size="sm"
+                            onOpen={() => setCatPickerTxId(tx.id)}
+                          />
                           {tx.is_auto_categorized && !tx.is_internal_transfer && (
                             <button
                               title="Categoría asignada automáticamente. Haz clic para confirmar y quitar este aviso."
@@ -790,255 +1255,222 @@ export function Transactions() {
                             <button
                               title="Categoría asignada por la IA. Haz clic para confirmar y quitar el indicador."
                               onClick={() => updateMutation.mutate({ id: tx.id, data: { is_ai_categorized: false } })}
-                              className="text-violet-400/80 hover:text-violet-400 transition-colors shrink-0"
+                              className="text-chart-4/80 hover:text-chart-4 transition-colors shrink-0"
                             >
                               <Bot className="h-3.5 w-3.5" />
                             </button>
                           )}
-                        </div>
-
-                        <div className="flex items-center gap-2.5 shrink-0">
-                          <span className="text-[11px] font-medium text-muted-foreground/50">{formatDate(tx.date)}</span>
                           <button
                             title="Categorizar con IA"
                             disabled={aiCategorizingIds.has(tx.id)}
                             onClick={() => handleAiCategorize([tx.id])}
-                            className="text-muted-foreground/40 hover:text-violet-400 transition-colors flex items-center justify-center disabled:opacity-40"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-chart-4 disabled:opacity-50 shrink-0"
                           >
                             {aiCategorizingIds.has(tx.id)
                               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                               : <Sparkles className="h-3.5 w-3.5" />}
                           </button>
-                          <button onClick={() => setConfirmDelete(tx.id)}
-                              className="text-muted-foreground/30 hover:text-negative transition-colors flex items-center justify-center">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
                         </div>
+
+                        <div className="flex w-28 shrink-0 flex-col items-end gap-0.5">
+                          <span className={cn(
+                            'text-right text-[15px] font-semibold tabular-nums tracking-tight',
+                            netAmount(tx) > 0 ? 'text-positive' : 'text-foreground',
+                            netAmount(tx) === 0 && 'text-muted-foreground',
+                          )}>
+                            {netAmount(tx) > 0 ? '+' : ''}{formatCurrency(netAmount(tx))}
+                          </span>
+                          {tx.link_group_id && tx.linked_transactions && tx.linked_transactions.length > 0 && (
+                            <button
+                              onClick={() => toggleExpandGroup(tx.link_group_id!)}
+                              className={cn(
+                                'flex items-center gap-1 text-[11px] font-medium transition-colors',
+                                expandedGroups.has(tx.link_group_id) ? 'text-primary' : 'text-muted-foreground hover:text-primary',
+                              )}
+                            >
+                              {tx.linked_transactions.length + 1} movimientos
+                              <ChevronDown className={cn('h-2.5 w-2.5 transition-transform', expandedGroups.has(tx.link_group_id) && 'rotate-180')} />
+                            </button>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={() => setConfirmDelete(tx.id)}
+                          className="w-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-negative"
+                          title="Eliminar transacción"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
-                    </div>
+                      {tx.link_group_id && tx.linked_transactions && tx.linked_transactions.length > 0 && expandedGroups.has(tx.link_group_id) && (
+                        <div className="relative border-b border-border/70 bg-secondary/30 py-2.5 pl-[84px] pr-5 last:border-b-0">
+                          <div className="absolute bottom-[26px] left-[39px] top-0 w-px bg-border" />
+                          <div className="flex flex-col gap-2 pt-1">
+                            {[tx, ...tx.linked_transactions].map(leg => (
+                              <div key={leg.id} className="relative flex items-center justify-between gap-2 text-xs">
+                                <span className="absolute -left-[45px] h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+                                <span className="truncate text-muted-foreground">{leg.name || leg.description || leg.type}</span>
+                                <span className={cn('shrink-0 tabular-nums font-medium', leg.amount > 0 ? 'text-positive' : 'text-foreground')}>
+                                  {leg.amount > 0 ? '+' : ''}{formatCurrency(leg.amount)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex justify-end pt-2.5">
+                            <button
+                              onClick={() => unlinkMutation.mutate(tx.link_group_id!)}
+                              disabled={unlinkMutation.isPending}
+                              className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-negative transition-colors disabled:opacity-50"
+                            >
+                              {unlinkMutation.isPending
+                                ? <Loader2 className="h-3 w-3 animate-spin" />
+                                : <Unlink className="h-3 w-3" />}
+                              Desvincular
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      </div>
+                    ))}
                   </div>
                 ))}
-                {data?.items.length === 0 && (
+                {items.length === 0 && (
                   <p className="text-center py-8 text-muted-foreground text-sm">No se encontraron transacciones</p>
                 )}
               </div>
 
-              {/* Desktop table */}
-              <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-white/[0.02] border-b border-white/[0.05]">
-                    <tr className="text-muted-foreground">
-                      <th className="pl-4 pr-2 py-3.5 w-8">
-                        <input
-                          type="checkbox"
-                          checked={(data?.items?.length ?? 0) > 0 && selectedIds.size === (data?.items?.length ?? 0)}
-                          ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < (data?.items?.length ?? 0) }}
-                          onChange={toggleSelectAll}
-                          className="h-3.5 w-3.5 rounded accent-primary cursor-pointer"
-                        />
-                      </th>
-                      <th className="text-left px-5 py-3.5 font-medium text-xs tracking-wider uppercase">Fecha</th>
-                      <th className="text-left px-5 py-3.5 font-medium text-xs tracking-wider uppercase">Descripción</th>
-                      <th className="text-left px-5 py-3.5 font-medium text-xs tracking-wider uppercase hidden md:table-cell min-w-[240px] w-[240px] max-w-[240px]">Categoría</th>
-                      <th className="text-right px-5 py-3.5 font-medium text-xs tracking-wider uppercase">Importe</th>
-                      <th className="px-5 py-3.5"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data?.items.map((tx, idx) => (
-                      <tr key={tx.id} className={cn("border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors group", selectedIds.has(tx.id) && "bg-primary/5")}>
-                        <td className="pl-4 pr-2 py-4 w-8">
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(tx.id)}
-                            onChange={e => toggleSelect(tx.id, idx, e.nativeEvent instanceof MouseEvent ? e.nativeEvent.shiftKey : false)}
-                            onClick={e => toggleSelect(tx.id, idx, e.shiftKey)}
-                            className="h-3.5 w-3.5 rounded accent-primary cursor-pointer"
-                          />
-                        </td>
-                        <td className="px-5 py-4 text-xs font-medium text-muted-foreground whitespace-nowrap">{formatDate(tx.date)}</td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/[0.04] border border-white/[0.05] text-lg shadow-sm overflow-hidden">
-                              <TransactionIcon name={tx.name || tx.description || tx.type} category={tx.category} />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="font-semibold text-sm text-foreground truncate max-w-[220px]">{tx.name || tx.description || tx.type}</p>
-                              <div className="flex gap-1 mt-0.5">
-                                {!tx.category_id && (
-                                  <Badge variant="muted" className="text-xs py-0">Sin cat.</Badge>
-                                )}
-                                {tx.is_pending && (
-                                  <Badge className="text-xs py-0 bg-amber-500/15 text-amber-400 border-amber-500/20">Pendiente</Badge>
-                                )}
-                                {tx.is_internal_transfer && (
-                                  <button
-                                    title="Transferencia interna (excluida de totales). Haz clic para marcar como ingreso/gasto real."
-                                    onClick={() => updateMutation.mutate({ id: tx.id, data: { is_internal_transfer: false } })}
-                                    className="cursor-pointer"
-                                  >
-                                    <Badge variant="muted" className="text-xs py-0 hover:bg-orange-500/20 hover:text-orange-300 transition-colors">🔄 Interna</Badge>
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-5 py-4 hidden md:table-cell min-w-[240px] w-[240px] max-w-[240px]">
-                          <div className="flex items-center gap-2">
-                            <Select 
-                              value={tx.category_id?.toString() || ''} 
-                              onValueChange={id => updateMutation.mutate({ id: tx.id, data: { category_id: Number(id) } })}
-                            >
-                              <SelectTrigger className="flex items-center justify-between w-full max-w-[160px] gap-1.5 text-xs px-2.5 py-1.5 h-7 rounded-md bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] hover:border-white/[0.1] transition-all font-medium group shadow-sm [&>svg]:opacity-50 hover:[&>svg]:opacity-100">
-                                {tx.category ? (
-                                  <span style={{ color: tx.category.color }} className="flex items-center gap-1.5 truncate">{tx.category.icon} <span className="truncate">{tx.category.name}</span></span>
-                                ) : (
-                                  <span className="text-muted-foreground flex items-center gap-1.5 truncate"><Tag className="h-3.5 w-3.5" /> Asignar categoría</span>
-                                )}
-                              </SelectTrigger>
-                              <SelectContent>
-                                {categories?.map(c => (
-                                  <SelectItem key={c.id} value={c.id.toString()}>
-                                    {c.icon} {c.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            {tx.is_auto_categorized && !tx.is_internal_transfer && (
-                              <button
-                                title="Categoría asignada automáticamente. Haz clic para confirmar y quitar este aviso."
-                                onClick={() => updateMutation.mutate({ id: tx.id, data: { is_auto_categorized: false } })}
-                                className="text-primary/60 hover:text-primary transition-colors shrink-0"
-                              >
-                                <Sparkles className="h-4 w-4" />
-                              </button>
-                            )}
-                            {tx.is_ai_categorized && (
-                              <button
-                                title="Categoría asignada por la IA. Haz clic para confirmar y quitar el indicador."
-                                onClick={() => updateMutation.mutate({ id: tx.id, data: { is_ai_categorized: false } })}
-                                className="text-violet-400/80 hover:text-violet-400 transition-colors shrink-0"
-                              >
-                                <Bot className="h-4 w-4" />
-                              </button>
-                            )}
-                            <button
-                              title="Categorizar con IA"
-                              disabled={aiCategorizingIds.has(tx.id)}
-                              onClick={() => handleAiCategorize([tx.id])}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-violet-400 disabled:opacity-50 shrink-0"
-                            >
-                              {aiCategorizingIds.has(tx.id)
-                                ? <Loader2 className="h-4 w-4 animate-spin" />
-                                : <Sparkles className="h-4 w-4" />}
-                            </button>
-                          </div>
-                        </td>
-                        <td className="px-5 py-4 text-right whitespace-nowrap">
-                          <span className={cn(
-                            "inline-flex px-2.5 py-1 rounded-md text-[15px] font-semibold tabular-nums tracking-tight",
-                            tx.amount > 0 ? "bg-emerald-500/10 text-emerald-400" : "text-foreground",
-                            tx.amount === 0 && "text-muted-foreground"
-                          )}>
-                            {tx.amount > 0 ? '+' : ''}{formatCurrency(tx.amount)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-4 text-right">
-                          <button
-                            onClick={() => setConfirmDelete(tx.id)}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-negative"
-                            title="Eliminar transacción"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {data?.items.length === 0 && (
-                  <p className="text-center py-8 text-muted-foreground text-sm">No se encontraron transacciones</p>
-                )}
+              {/* Infinite-scroll sentinel + "loading more" indicator, replaces numbered pagination */}
+              <div ref={loadMoreRef} className="flex items-center justify-center py-4">
+                {isFetchingNextPage && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
               </div>
             </>
           )}
+        </Card>
+
+        {/* Summary panel */}
+        <div className="flex w-full flex-col gap-4 lg:w-[280px] lg:shrink-0">
+          <Card className="card-hover p-5">
+            <p className="text-xs font-medium text-muted-foreground">Este periodo</p>
+            <div className="mt-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Ingresos</span>
+                <span className="text-sm font-semibold tabular-nums text-positive">+{formatCurrency(incomeSum)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Gastos</span>
+                <span className="text-sm font-semibold tabular-nums text-negative">-{formatCurrency(expenseSum)}</span>
+              </div>
+              <div className="h-px bg-border" />
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Neto</span>
+                <span className={cn('font-display text-base font-semibold tabular-nums', netSum >= 0 ? 'text-foreground' : 'text-negative')}>
+                  {netSum >= 0 ? '+' : ''}{formatCurrency(netSum)}
+                </span>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="card-hover p-5">
+            <p className="text-xs font-medium text-muted-foreground">Top categorías</p>
+            <div className="mt-3.5 flex flex-col gap-3.5">
+              {topCategories.length === 0 && (
+                <p className="text-xs text-muted-foreground">Sin datos en este periodo</p>
+              )}
+              {topCategories.map((c, i) => (
+                <div key={c.category_id ?? c.category_name}>
+                  <div className="mb-1.5 flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate text-muted-foreground">{c.category_icon} {c.category_name}</span>
+                    <span className="shrink-0 font-medium tabular-nums">{formatCurrency(c.total)}</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${c.pct}%`, backgroundColor: `hsl(var(--chart-${(i % 4) + 1}))` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
         </div>
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm">
-          <p className="text-muted-foreground">Página {page} de {totalPages}</p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+      {/* Floating bulk-action bar — stays reachable above the mobile bottom nav / desktop sidebar
+          instead of sitting inline at the end of a potentially long list. */}
+      {selectedIds.size > 0 && (
+        <div className="fixed inset-x-0 bottom-[78px] z-40 flex justify-center px-3 pb-[env(safe-area-inset-bottom)] md:bottom-0 md:pb-4 md:pl-60">
+          <div className="flex w-full max-w-xl items-center justify-between gap-3 rounded-2xl border border-border bg-popover/95 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+              <span className="text-sm text-foreground">
+                <strong className="font-semibold">{selectedIds.size}</strong>{' '}
+                <span className="hidden text-muted-foreground xs:inline">seleccionadas</span>
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button size="sm" variant="outline" className="h-9 rounded-full px-3 text-xs" onClick={() => setBulkCatOpen(true)}>
+                <Tag className="h-3.5 w-3.5 xs:mr-1.5" /> <span className="hidden xs:inline">Categorizar</span>
+              </Button>
+              {selectedIds.size >= 2 && (
+                <Button
+                  size="sm"
+                  className="h-9 rounded-full px-3 text-xs font-semibold"
+                  disabled={linkMutation.isPending}
+                  onClick={() => linkMutation.mutate(Array.from(selectedIds))}
+                >
+                  {linkMutation.isPending
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin xs:mr-1.5" />
+                    : <Link2 className="h-3.5 w-3.5 xs:mr-1.5" />}
+                  <span className="hidden xs:inline">Unir</span>
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-9 rounded-full px-3 text-xs border-chart-4/30 text-chart-4 hover:bg-chart-4/10"
+                disabled={bulkAiPending}
+                onClick={() => handleAiCategorize(Array.from(selectedIds))}
+              >
+                {bulkAiPending
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin xs:mr-1.5" />
+                  : <Sparkles className="h-3.5 w-3.5 xs:mr-1.5" />}
+                <span className="hidden xs:inline">IA</span>
+              </Button>
+              <button
+                disabled={bulkDeleteMutation.isPending}
+                onClick={() => bulkDeleteMutation.mutate(Array.from(selectedIds))}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-negative/10 hover:text-negative disabled:opacity-50"
+                title="Eliminar"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Bulk action floating bar */}
-      {selectedIds.size > 0 && (
-        <div className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 bg-card border border-border rounded-2xl shadow-2xl backdrop-blur-md animate-fade-up">
-          <span className="text-sm font-semibold text-foreground">{selectedIds.size}</span>
-          <span className="text-sm text-muted-foreground mr-1">seleccionadas</span>
-          <div className="w-px h-5 bg-border" />
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setBulkCatOpen(true)}>
-            <Tag className="h-3 w-3 mr-1.5" /> Categorizar
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
-            disabled={bulkAiPending}
-            onClick={() => handleAiCategorize(Array.from(selectedIds))}
-          >
-            {bulkAiPending
-              ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-              : <Sparkles className="h-3 w-3 mr-1.5" />}
-            IA
-          </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            className="h-7 text-xs"
-            disabled={bulkDeleteMutation.isPending}
-            onClick={() => bulkDeleteMutation.mutate(Array.from(selectedIds))}
-          >
-            <Trash2 className="h-3 w-3 mr-1.5" /> Eliminar
-          </Button>
-          <button onClick={() => setSelectedIds(new Set())} className="text-muted-foreground hover:text-foreground ml-1 transition-colors">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
+      {/* Bulk category dialog — glanceable color-coded grid instead of a text dropdown */}
+      <CategoryPickerDialog
+        open={bulkCatOpen}
+        onClose={() => setBulkCatOpen(false)}
+        categories={categories || []}
+        title={`Cambiar categoría (${selectedIds.size} transacciones)`}
+        onSelect={categoryId => bulkCategoryMutation.mutate({ ids: Array.from(selectedIds), category_id: categoryId })}
+      />
 
-      {/* Bulk category dialog */}
-      <Dialog open={bulkCatOpen} onOpenChange={v => { if (!v) { setBulkCatOpen(false); setBulkCatId('') } }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Cambiar categoría ({selectedIds.size} transacciones)</DialogTitle></DialogHeader>
-          <Select value={bulkCatId} onValueChange={setBulkCatId}>
-            <SelectTrigger><SelectValue placeholder="Selecciona una categoría..." /></SelectTrigger>
-            <SelectContent>
-              {categories?.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.icon} {c.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setBulkCatOpen(false); setBulkCatId('') }}>Cancelar</Button>
-            <Button
-              disabled={!bulkCatId || bulkCategoryMutation.isPending}
-              onClick={() => bulkCategoryMutation.mutate({ ids: Array.from(selectedIds), category_id: Number(bulkCatId) })}
-            >
-              {bulkCategoryMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />}
-              Aplicar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Row-level category picker, shared by the mobile card list and desktop rows */}
+      <CategoryPickerDialog
+        open={catPickerTxId !== null}
+        onClose={() => setCatPickerTxId(null)}
+        categories={categories || []}
+        value={items.find(tx => tx.id === catPickerTxId)?.category_id}
+        onSelect={categoryId => { if (catPickerTxId !== null) updateMutation.mutate({ id: catPickerTxId, data: { category_id: categoryId } }) }}
+      />
 
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <AddTransactionDialog open={addOpen} onClose={() => setAddOpen(false)} categories={categories || []} />
@@ -1057,8 +1489,8 @@ export function Transactions() {
           </p>
           <DialogFooter className="mt-4 sm:justify-end gap-2 sm:gap-2">
             <Button variant="outline" size="sm" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
-            <Button 
-              variant="destructive" 
+            <Button
+              variant="destructive"
               size="sm"
               onClick={() => { if (confirmDelete) deleteMutation.mutate(confirmDelete) }}
               disabled={deleteMutation.isPending}

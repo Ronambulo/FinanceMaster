@@ -32,9 +32,43 @@ export interface Achievement {
   progressMax?: number
   progressUnit?: string
   unlockedAt?: string
+  tier?: number
+  tierCount?: number
 }
 
 const CATEGORY_ORDER = ['Inicio', 'Ahorro', 'Patrimonio', 'Inversiones', 'Objetivos', 'Control', 'Especial']
+
+/* ── Tiered achievements ──────────────────────────────────────────────
+ * Each "family" (e.g. transaction count) used to be N separate near-duplicate
+ * achievements, one per threshold. That inflated the total count and made it
+ * feel arbitrary. Now each family is ONE achievement that levels up through
+ * named tiers — same underlying thresholds, one meaningful card. */
+interface Tier { threshold: number; name: string; emoji: string; color: string }
+
+function tieredAchievement(
+  id: string, category: string, familyName: string, unit: string,
+  tiers: Tier[], value: number,
+): Achievement {
+  let idx = -1
+  for (let i = 0; i < tiers.length; i++) if (value >= tiers[i].threshold) idx = i
+  const unlocked = idx >= 0
+  const current  = tiers[Math.max(idx, 0)]
+  const next     = tiers[idx + 1]
+  const progressMax = next ? next.threshold : tiers[tiers.length - 1].threshold
+  const progress     = Math.min(value, progressMax)
+  const fmt = (n: number) => unit === '%' ? `${n}%` : unit === '€' ? `${n.toLocaleString('es-ES')}€` : `${n.toLocaleString('es-ES')} ${unit}`
+  const desc = unlocked
+    ? (next
+        ? `${current.name} · nivel ${idx + 1}/${tiers.length} — próximo: ${next.name} (${fmt(next.threshold)})`
+        : `${current.name} · nivel máximo (${tiers.length}/${tiers.length})`)
+    : `${tiers[0].name} · objetivo: ${fmt(tiers[0].threshold)}`
+  return {
+    id, category, emoji: current.emoji, name: familyName, desc,
+    unlocked, color: current.color,
+    progress, progressMax, progressUnit: unit,
+    tier: idx + 1, tierCount: tiers.length,
+  }
+}
 
 /* ── Compact sidebar/dashboard card ───────────────────────────────── */
 function AchievementsCompact({ achievements, unlocked, total }: {
@@ -162,11 +196,23 @@ function AchievementCard({ a }: { a: Achievement }) {
     >
       {/* Emoji + lock */}
       <div className="flex items-start justify-between">
-        <span
-          className={cn('text-3xl leading-none select-none transition-all duration-200', !a.unlocked && 'grayscale')}
-        >
-          {a.emoji}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span
+            className={cn('text-3xl leading-none select-none transition-all duration-200', !a.unlocked && 'grayscale')}
+          >
+            {a.emoji}
+          </span>
+          {a.tierCount !== undefined && a.tierCount > 1 && (
+            <span
+              className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full leading-none"
+              style={a.unlocked
+                ? { color: a.color, background: a.color + '18', border: `1px solid ${a.color}40` }
+                : { color: 'hsl(var(--muted-foreground)/0.5)', background: 'hsl(var(--muted)/0.2)', border: '1px solid hsl(var(--border))' }}
+            >
+              {a.tier}/{a.tierCount}
+            </span>
+          )}
+        </div>
         {!a.unlocked && (
           <Lock className="h-3.5 w-3.5 text-muted-foreground/30 mt-0.5" />
         )}
@@ -271,258 +317,91 @@ function useAchievementsData() {
 
     return [
       /* ── Inicio ────────────────────────────────────────────────── */
-      {
-        id: 'first-tx', emoji: '🌱', name: 'Primer paso',
-        desc: 'Primera transacción importada',
-        unlocked: txCount >= 1, color: '#22c55e', category: 'Inicio',
-        progress: Math.min(txCount, 1), progressMax: 1, progressUnit: 'tx',
-      },
-      {
-        id: 'importer-10', emoji: '📥', name: 'Primeros datos',
-        desc: 'Más de 10 transacciones registradas',
-        unlocked: txCount >= 10, color: '#6366f1', category: 'Inicio',
-        progress: Math.min(txCount, 10), progressMax: 10, progressUnit: 'tx',
-      },
-      {
-        id: 'importer-50', emoji: '📦', name: 'Importador',
-        desc: 'Más de 50 transacciones registradas',
-        unlocked: txCount >= 50, color: '#6366f1', category: 'Inicio',
-        progress: Math.min(txCount, 50), progressMax: 50, progressUnit: 'tx',
-      },
-      {
-        id: 'analyst', emoji: '🏭', name: 'Analista',
-        desc: 'Más de 200 transacciones registradas',
-        unlocked: txCount >= 200, color: '#8b5cf6', category: 'Inicio',
-        progress: Math.min(txCount, 200), progressMax: 200, progressUnit: 'tx',
-      },
-      {
-        id: 'historian', emoji: '📚', name: 'Historiador',
-        desc: 'Más de 500 transacciones registradas',
-        unlocked: txCount >= 500, color: '#a78bfa', category: 'Inicio',
-        progress: Math.min(txCount, 500), progressMax: 500, progressUnit: 'tx',
-      },
-      {
-        id: 'data-hoarder', emoji: '🗄️', name: 'Archivista',
-        desc: 'Más de 1.000 transacciones registradas',
-        unlocked: txCount >= 1000, color: '#7c3aed', category: 'Inicio',
-        progress: Math.min(txCount, 1000), progressMax: 1000, progressUnit: 'tx',
-      },
+      tieredAchievement('tx-history', 'Inicio', 'Historial de transacciones', 'tx', [
+        { threshold: 1,    name: 'Primer paso',    emoji: '🌱', color: '#22c55e' },
+        { threshold: 10,   name: 'Primeros datos', emoji: '📥', color: '#6366f1' },
+        { threshold: 50,   name: 'Importador',     emoji: '📦', color: '#6366f1' },
+        { threshold: 200,  name: 'Analista',       emoji: '🏭', color: '#8b5cf6' },
+        { threshold: 500,  name: 'Historiador',    emoji: '📚', color: '#a78bfa' },
+        { threshold: 1000, name: 'Archivista',     emoji: '🗄️', color: '#7c3aed' },
+      ], txCount),
       /* ── Ahorro ─────────────────────────────────────────────────── */
-      {
-        id: 'saver', emoji: '💰', name: 'Ahorrador',
-        desc: 'Al menos un mes con ahorro positivo (con ingresos reales)',
-        unlocked: positiveMonths >= 1, color: '#f59e0b', category: 'Ahorro',
-        progress: Math.min(positiveMonths, 1), progressMax: 1, progressUnit: 'mes',
-      },
-      {
-        id: 'savings-rate-10', emoji: '🐜', name: 'La Hormiga',
-        // Progress shows actual best rate (may exceed target, bar caps at 100%)
-        desc: `Tasa de ahorro ≥ 10% en algún mes (mejor: ${Math.round(bestSavingsRate * 100)}%)`,
-        unlocked: bestSavingsRate >= 0.10, color: '#10b981', category: 'Ahorro',
-        progress: Math.round(bestSavingsRate * 100), progressMax: 10, progressUnit: '%',
-      },
-      {
-        id: 'savings-rate-20', emoji: '🦫', name: 'El Castor',
-        desc: `Tasa de ahorro ≥ 20% en algún mes (mejor: ${Math.round(bestSavingsRate * 100)}%)`,
-        unlocked: bestSavingsRate >= 0.20, color: '#059669', category: 'Ahorro',
-        progress: Math.round(bestSavingsRate * 100), progressMax: 20, progressUnit: '%',
-      },
-      {
-        id: 'savings-rate-35', emoji: '🦉', name: 'El Búho Sabio',
-        desc: `Tasa de ahorro ≥ 35% en algún mes (mejor: ${Math.round(bestSavingsRate * 100)}%)`,
-        unlocked: bestSavingsRate >= 0.35, color: '#047857', category: 'Ahorro',
-        progress: Math.round(bestSavingsRate * 100), progressMax: 35, progressUnit: '%',
-      },
-      {
-        id: 'savings-rate-50', emoji: '🧙', name: 'Maestro del Ahorro',
-        desc: `Tasa de ahorro ≥ 50% en algún mes (mejor: ${Math.round(bestSavingsRate * 100)}%)`,
-        unlocked: bestSavingsRate >= 0.50, color: '#065f46', category: 'Ahorro',
-        progress: Math.round(bestSavingsRate * 100), progressMax: 50, progressUnit: '%',
-      },
-      {
-        id: 'streak-3', emoji: '🔥', name: 'En Racha',
-        desc: '3 meses consecutivos con ahorro positivo',
-        unlocked: consecutivePositive >= 3, color: '#ef4444', category: 'Ahorro',
-        progress: Math.min(consecutivePositive, 3), progressMax: 3, progressUnit: 'meses',
-      },
-      {
-        id: 'streak-6', emoji: '🌋', name: 'Racha de Fuego',
-        desc: '6 meses consecutivos con ahorro positivo',
-        unlocked: consecutivePositive >= 6, color: '#dc2626', category: 'Ahorro',
-        progress: Math.min(consecutivePositive, 6), progressMax: 6, progressUnit: 'meses',
-      },
-      {
-        id: 'streak-12', emoji: '🏅', name: 'Imbatible',
-        desc: '12 meses consecutivos con ahorro positivo',
-        unlocked: consecutivePositive >= 12, color: '#b91c1c', category: 'Ahorro',
-        progress: Math.min(consecutivePositive, 12), progressMax: 12, progressUnit: 'meses',
-      },
-      {
-        id: 'positive-months-6', emoji: '📆', name: 'Constante',
-        desc: '6 meses con ahorro positivo (no necesariamente seguidos)',
-        unlocked: positiveMonths >= 6, color: '#f97316', category: 'Ahorro',
-        progress: Math.min(positiveMonths, 6), progressMax: 6, progressUnit: 'meses',
-      },
+      tieredAchievement('positive-months', 'Ahorro', 'Meses en positivo', 'meses', [
+        { threshold: 1,  name: 'Ahorrador',    emoji: '💰', color: '#f59e0b' },
+        { threshold: 6,  name: 'Constante',    emoji: '📆', color: '#f97316' },
+        { threshold: 12, name: 'Disciplinado', emoji: '🗓️', color: '#ea580c' },
+      ], positiveMonths),
+      tieredAchievement('savings-rate', 'Ahorro', 'Tasa de ahorro', '%', [
+        { threshold: 10, name: 'La Hormiga',         emoji: '🐜', color: '#10b981' },
+        { threshold: 20, name: 'El Castor',          emoji: '🦫', color: '#059669' },
+        { threshold: 35, name: 'El Búho Sabio',      emoji: '🦉', color: '#047857' },
+        { threshold: 50, name: 'Maestro del Ahorro', emoji: '🧙', color: '#065f46' },
+      ], Math.round(bestSavingsRate * 100)),
+      tieredAchievement('savings-streak', 'Ahorro', 'Racha de ahorro', 'meses', [
+        { threshold: 3,  name: 'En Racha',        emoji: '🔥', color: '#ef4444' },
+        { threshold: 6,  name: 'Racha de Fuego',  emoji: '🌋', color: '#dc2626' },
+        { threshold: 12, name: 'Imbatible',       emoji: '🏅', color: '#b91c1c' },
+      ], consecutivePositive),
       /* ── Patrimonio ─────────────────────────────────────────────── */
-      {
-        id: 'balance-1k', emoji: '💵', name: 'Primer Millar',
-        desc: 'Balance superior a 1.000€',
-        unlocked: balance >= 1_000, color: '#14b8a6', category: 'Patrimonio',
-        progress: Math.round(Math.min(balance, 1_000)), progressMax: 1_000, progressUnit: '€',
-      },
-      {
-        id: 'balance-5k', emoji: '💳', name: 'Colchón',
-        desc: 'Balance superior a 5.000€',
-        unlocked: balance >= 5_000, color: '#0d9488', category: 'Patrimonio',
-        progress: Math.round(Math.min(balance, 5_000)), progressMax: 5_000, progressUnit: '€',
-      },
-      {
-        id: 'wealth-10k', emoji: '🏦', name: 'Patrimonio Sólido',
-        desc: 'Balance superior a 10.000€',
-        unlocked: balance >= 10_000, color: '#0f766e', category: 'Patrimonio',
-        progress: Math.round(Math.min(balance, 10_000)), progressMax: 10_000, progressUnit: '€',
-      },
-      {
-        id: 'wealth-50k', emoji: '🏰', name: 'Fortaleza',
-        desc: 'Balance superior a 50.000€',
-        unlocked: balance >= 50_000, color: '#134e4a', category: 'Patrimonio',
-        progress: Math.round(Math.min(balance, 50_000)), progressMax: 50_000, progressUnit: '€',
-      },
-      {
-        id: 'networth-25k', emoji: '🌟', name: 'Riqueza Neta',
-        desc: 'Patrimonio neto (balance + portfolio) superior a 25.000€',
-        unlocked: netWorth >= 25_000, color: '#0891b2', category: 'Patrimonio',
-        progress: Math.round(Math.min(netWorth, 25_000)), progressMax: 25_000, progressUnit: '€',
-      },
-      {
-        id: 'networth-100k', emoji: '👑', name: 'El Club del 100K',
-        desc: 'Patrimonio neto superior a 100.000€',
-        unlocked: netWorth >= 100_000, color: '#c2410c', category: 'Patrimonio',
-        progress: Math.round(Math.min(netWorth, 100_000)), progressMax: 100_000, progressUnit: '€',
-      },
-      {
-        id: 'interest-earner', emoji: '💹', name: 'Intereses',
-        desc: 'Primeros intereses cobrados',
-        unlocked: interestTotal > 0, color: '#06b6d4', category: 'Patrimonio',
-        progress: Math.min(Math.round(interestTotal), 1), progressMax: 1, progressUnit: '€',
-      },
+      tieredAchievement('balance', 'Patrimonio', 'Balance en cuenta', '€', [
+        { threshold: 1_000,  name: 'Primer Millar',       emoji: '💵', color: '#14b8a6' },
+        { threshold: 5_000,  name: 'Colchón',              emoji: '💳', color: '#0d9488' },
+        { threshold: 10_000, name: 'Patrimonio Sólido',    emoji: '🏦', color: '#0f766e' },
+        { threshold: 50_000, name: 'Fortaleza',            emoji: '🏰', color: '#134e4a' },
+      ], Math.round(balance)),
+      tieredAchievement('networth', 'Patrimonio', 'Patrimonio neto', '€', [
+        { threshold: 25_000,  name: 'Riqueza Neta',       emoji: '🌟', color: '#0891b2' },
+        { threshold: 100_000, name: 'El Club del 100K',   emoji: '👑', color: '#c2410c' },
+      ], Math.round(netWorth)),
+      tieredAchievement('interest', 'Patrimonio', 'Intereses cobrados', '€', [
+        { threshold: 1,   name: 'Primeros intereses', emoji: '💹', color: '#06b6d4' },
+        { threshold: 50,  name: 'Interés compuesto',  emoji: '🌊', color: '#0e7490' },
+        { threshold: 200, name: 'Rentista pasivo',    emoji: '🏔️', color: '#155e75' },
+      ], Math.round(interestTotal)),
       /* ── Inversiones ────────────────────────────────────────────── */
-      {
-        id: 'investor', emoji: '📈', name: 'Inversor',
-        desc: 'Primera posición abierta en el portfolio',
-        unlocked: openPositions >= 1, color: '#a78bfa', category: 'Inversiones',
-        progress: Math.min(openPositions, 1), progressMax: 1, progressUnit: 'posiciones',
-      },
-      {
-        id: 'diversified', emoji: '🌍', name: 'Diversificado',
-        desc: '3 o más posiciones abiertas simultáneamente',
-        unlocked: openPositions >= 3, color: '#8b5cf6', category: 'Inversiones',
-        progress: Math.min(openPositions, 3), progressMax: 3, progressUnit: 'posiciones',
-      },
-      {
-        id: 'portfolio-5k', emoji: '🪴', name: 'Cartera Creciente',
-        desc: 'Portfolio con valor de mercado superior a 5.000€',
-        unlocked: portfolioVal >= 5_000, color: '#7c3aed', category: 'Inversiones',
-        progress: Math.round(Math.min(portfolioVal, 5_000)), progressMax: 5_000, progressUnit: '€',
-      },
-      {
-        id: 'portfolio-10k', emoji: '🐉', name: 'Gran Inversor',
-        desc: 'Portfolio con valor superior a 10.000€',
-        unlocked: portfolioVal >= 10_000, color: '#f97316', category: 'Inversiones',
-        progress: Math.round(Math.min(portfolioVal, 10_000)), progressMax: 10_000, progressUnit: '€',
-      },
-      {
-        id: 'portfolio-50k', emoji: '🦅', name: 'Águila Bursátil',
-        desc: 'Portfolio con valor superior a 50.000€',
-        unlocked: portfolioVal >= 50_000, color: '#ea580c', category: 'Inversiones',
-        progress: Math.round(Math.min(portfolioVal, 50_000)), progressMax: 50_000, progressUnit: '€',
-      },
-      {
-        id: 'portfolio-100k', emoji: '🚀', name: 'Astronauta Financiero',
-        desc: 'Portfolio con valor superior a 100.000€',
-        unlocked: portfolioVal >= 100_000, color: '#c2410c', category: 'Inversiones',
-        progress: Math.round(Math.min(portfolioVal, 100_000)), progressMax: 100_000, progressUnit: '€',
-      },
+      tieredAchievement('positions', 'Inversiones', 'Posiciones abiertas', 'posiciones', [
+        { threshold: 1, name: 'Inversor',            emoji: '📈', color: '#a78bfa' },
+        { threshold: 3, name: 'Diversificado',       emoji: '🌍', color: '#8b5cf6' },
+        { threshold: 5, name: 'Gestor de Cartera',   emoji: '🧩', color: '#7c3aed' },
+      ], openPositions),
+      tieredAchievement('portfolio-value', 'Inversiones', 'Valor del portfolio', '€', [
+        { threshold: 5_000,   name: 'Cartera Creciente',      emoji: '🪴', color: '#7c3aed' },
+        { threshold: 10_000,  name: 'Gran Inversor',          emoji: '🐉', color: '#f97316' },
+        { threshold: 50_000,  name: 'Águila Bursátil',        emoji: '🦅', color: '#ea580c' },
+        { threshold: 100_000, name: 'Astronauta Financiero',  emoji: '🚀', color: '#c2410c' },
+      ], Math.round(portfolioVal)),
+      tieredAchievement('invested-capital', 'Inversiones', 'Capital invertido', '€', [
+        { threshold: 1_000,  name: 'Primeras aportaciones', emoji: '🌰', color: '#0ea5e9' },
+        { threshold: 10_000, name: 'Diamante',              emoji: '💎', color: '#38bdf8' },
+        { threshold: 50_000, name: 'Ballena',               emoji: '🐋', color: '#0284c7' },
+      ], Math.round(totalInvested)),
       {
         id: 'portfolio-profit', emoji: '🟢', name: 'En Verde',
         desc: 'Portfolio con ganancia no realizada positiva',
         unlocked: portfolioProfit > 0, color: '#22c55e', category: 'Inversiones',
         progress: portfolioProfit > 0 ? 1 : 0, progressMax: 1, progressUnit: '€',
       },
-      {
-        id: 'heavy-investor', emoji: '💎', name: 'Diamante',
-        desc: 'Más de 10.000€ invertidos en total',
-        unlocked: totalInvested >= 10_000, color: '#38bdf8', category: 'Inversiones',
-        progress: Math.round(Math.min(totalInvested, 10_000)), progressMax: 10_000, progressUnit: '€',
-      },
-      {
-        id: 'dividend-earner', emoji: '🍀', name: 'Dividendista',
-        desc: 'Primeros dividendos cobrados',
-        unlocked: dividends > 0, color: '#4ade80', category: 'Inversiones',
-        progress: Math.min(Math.round(dividends), 1), progressMax: 1, progressUnit: '€',
-      },
-      {
-        id: 'dividend-100', emoji: '🌳', name: 'Árbol de Dinero',
-        desc: 'Más de 100€ en dividendos cobrados',
-        unlocked: dividends >= 100, color: '#16a34a', category: 'Inversiones',
-        progress: Math.round(Math.min(dividends, 100)), progressMax: 100, progressUnit: '€',
-      },
-      {
-        id: 'dividend-1k', emoji: '🏡', name: 'Rentista',
-        desc: 'Más de 1.000€ en dividendos cobrados',
-        unlocked: dividends >= 1_000, color: '#15803d', category: 'Inversiones',
-        progress: Math.round(Math.min(dividends, 1_000)), progressMax: 1_000, progressUnit: '€',
-      },
+      tieredAchievement('dividends', 'Inversiones', 'Dividendos cobrados', '€', [
+        { threshold: 1,    name: 'Dividendista',      emoji: '🍀', color: '#4ade80' },
+        { threshold: 100,  name: 'Árbol de Dinero',   emoji: '🌳', color: '#16a34a' },
+        { threshold: 1000, name: 'Rentista',           emoji: '🏡', color: '#15803d' },
+      ], Math.round(dividends)),
       /* ── Objetivos ──────────────────────────────────────────────── */
-      {
-        id: 'first-goal', emoji: '🎯', name: 'Estratega',
-        desc: 'Primer objetivo financiero creado',
-        unlocked: activeGoals.length >= 1, color: '#0ea5e9', category: 'Objetivos',
-        progress: Math.min(activeGoals.length, 1), progressMax: 1, progressUnit: 'objetivos',
-      },
-      {
-        id: 'multi-goal', emoji: '🗺️', name: 'Planificador',
-        desc: '3 o más objetivos activos a la vez',
-        unlocked: activeGoals.length >= 3, color: '#0284c7', category: 'Objetivos',
-        progress: Math.min(activeGoals.length, 3), progressMax: 3, progressUnit: 'objetivos',
-      },
-      {
-        id: 'goal-done', emoji: '🏆', name: 'Conseguidor',
-        desc: 'Primer objetivo completado al 100%',
-        unlocked: completedGoals.length >= 1, color: '#fbbf24', category: 'Objetivos',
-        progress: Math.min(completedGoals.length, 1), progressMax: 1, progressUnit: 'completados',
-      },
-      {
-        id: 'goal-done-3', emoji: '🥇', name: 'Campeón',
-        desc: '3 objetivos completados',
-        unlocked: completedGoals.length >= 3, color: '#eab308', category: 'Objetivos',
-        progress: Math.min(completedGoals.length, 3), progressMax: 3, progressUnit: 'completados',
-      },
-      {
-        id: 'goal-done-10', emoji: '🎖️', name: 'Leyenda',
-        desc: '10 objetivos completados',
-        unlocked: completedGoals.length >= 10, color: '#d97706', category: 'Objetivos',
-        progress: Math.min(completedGoals.length, 10), progressMax: 10, progressUnit: 'completados',
-      },
+      tieredAchievement('active-goals', 'Objetivos', 'Objetivos activos', 'objetivos', [
+        { threshold: 1, name: 'Estratega',     emoji: '🎯', color: '#0ea5e9' },
+        { threshold: 3, name: 'Planificador',  emoji: '🗺️', color: '#0284c7' },
+      ], activeGoals.length),
+      tieredAchievement('completed-goals', 'Objetivos', 'Objetivos completados', 'completados', [
+        { threshold: 1,  name: 'Conseguidor', emoji: '🏆', color: '#fbbf24' },
+        { threshold: 3,  name: 'Campeón',      emoji: '🥇', color: '#eab308' },
+        { threshold: 10, name: 'Leyenda',      emoji: '🎖️', color: '#d97706' },
+      ], completedGoals.length),
       /* ── Control ────────────────────────────────────────────────── */
-      {
-        id: 'recurring-detected', emoji: '🔁', name: 'Radar de Gastos',
-        desc: 'Primer gasto recurrente detectado',
-        unlocked: activeRecurring >= 1, color: '#f472b6', category: 'Control',
-        progress: Math.min(activeRecurring, 1), progressMax: 1, progressUnit: 'recurrentes',
-      },
-      {
-        id: 'recurring-5', emoji: '📡', name: 'Controlador',
-        desc: '5 o más gastos recurrentes monitorizados',
-        unlocked: activeRecurring >= 5, color: '#ec4899', category: 'Control',
-        progress: Math.min(activeRecurring, 5), progressMax: 5, progressUnit: 'recurrentes',
-      },
-      {
-        id: 'recurring-10', emoji: '🛰️', name: 'Control Total',
-        desc: '10 o más gastos recurrentes monitorizados',
-        unlocked: activeRecurring >= 10, color: '#db2777', category: 'Control',
-        progress: Math.min(activeRecurring, 10), progressMax: 10, progressUnit: 'recurrentes',
-      },
+      tieredAchievement('recurring-control', 'Control', 'Gastos recurrentes controlados', 'recurrentes', [
+        { threshold: 1,  name: 'Radar de Gastos', emoji: '🔁', color: '#f472b6' },
+        { threshold: 5,  name: 'Controlador',      emoji: '📡', color: '#ec4899' },
+        { threshold: 10, name: 'Control Total',    emoji: '🛰️', color: '#db2777' },
+      ], activeRecurring),
       /* ── Especial ───────────────────────────────────────────────── */
       {
         id: 'all', emoji: '⭐', name: 'Maestro',

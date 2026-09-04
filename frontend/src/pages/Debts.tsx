@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { debtApi } from '@/lib/api'
 import type { Debt } from '@/lib/api'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,7 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Plus, Trash2, CreditCard, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { MetricCard } from '@/components/MetricCard'
+import { Plus, Trash2, Loader2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
 
 function DebtForm({ onSave, onCancel }: { onSave: (d: Partial<Debt>) => void; onCancel: () => void }) {
   const [form, setForm] = useState({ name: '', total_amount: '', direction: 'I_OWE' as const, due_date: '', description: '' })
@@ -23,7 +24,7 @@ function DebtForm({ onSave, onCancel }: { onSave: (d: Partial<Debt>) => void; on
         <Label>Nombre</Label>
         <Input placeholder="Ej: Préstamo coche" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label>Importe total (€)</Label>
           <Input type="number" step="0.01" value={form.total_amount} onChange={e => setForm(f => ({ ...f, total_amount: e.target.value }))} />
@@ -53,12 +54,15 @@ function DebtForm({ onSave, onCancel }: { onSave: (d: Partial<Debt>) => void; on
   )
 }
 
-function DebtCard({ debt, onAddPayment, onDelete }: { debt: Debt; onAddPayment: (d: Debt) => void; onDelete: (id: number) => void }) {
+function DebtCard({ debt, onAddPayment, onDelete, delay = 0 }: { debt: Debt; onAddPayment: (d: Debt) => void; onDelete: (id: number) => void; delay?: number }) {
   const [expanded, setExpanded] = useState(false)
   const pct = debt.total_amount > 0 ? Math.min(100, (debt.paid_amount / debt.total_amount) * 100) : 0
 
   return (
-    <Card className={cn("relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]", debt.is_settled ? 'opacity-60' : '')}>
+    <Card
+      className={cn("card-hover animate-fade-up relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]", debt.is_settled ? 'opacity-60' : '')}
+      style={{ animationDelay: `${delay}ms` }}
+    >
       <div className={cn("pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full blur-3xl", debt.direction === 'I_OWE' ? 'bg-negative/[0.03]' : 'bg-primary/[0.03]')} />
       <CardContent className="relative z-10 p-4">
         <div className="flex items-start justify-between gap-3">
@@ -137,7 +141,7 @@ export function Debts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-up">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Deudas</h1>
           <p className="text-sm text-muted-foreground">Control de lo que debes y te deben</p>
@@ -146,18 +150,14 @@ export function Debts() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
-          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-negative/[0.05] blur-2xl" />
-          <CardContent className="relative z-10 p-5">
-          <p className="text-xs text-muted-foreground mb-1">Yo debo (pendiente)</p>
-          <p className="text-xl font-semibold tracking-tight text-negative">-{formatCurrency(totalIOwe)}</p>
-        </CardContent></Card>
-        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
-          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-primary/[0.05] blur-2xl" />
-          <CardContent className="relative z-10 p-5">
-          <p className="text-xs text-muted-foreground mb-1">Me deben (pendiente)</p>
-          <p className="text-xl font-semibold tracking-tight text-primary">+{formatCurrency(totalOwedToMe)}</p>
-        </CardContent></Card>
+        <MetricCard
+          title="Yo debo (pendiente)" icon={ArrowDownCircle} accent="negative" delay={0}
+          value={`-${formatCurrency(totalIOwe)}`}
+        />
+        <MetricCard
+          title="Me deben (pendiente)" icon={ArrowUpCircle} accent="positive" delay={60}
+          value={`+${formatCurrency(totalOwedToMe)}`}
+        />
       </div>
 
       {isLoading ? (
@@ -169,11 +169,11 @@ export function Debts() {
             <TabsTrigger value="owed_to_me">Me deben ({owedToMe.length})</TabsTrigger>
           </TabsList>
           <TabsContent value="i_owe" className="space-y-3 mt-4">
-            {iOwe.map(d => <DebtCard key={d.id} debt={d} onAddPayment={setPaymentDebt} onDelete={id => deleteMutation.mutate(id)} />)}
+            {iOwe.map((d, i) => <DebtCard key={d.id} debt={d} onAddPayment={setPaymentDebt} onDelete={id => deleteMutation.mutate(id)} delay={Math.min(i, 8) * 40} />)}
             {iOwe.length === 0 && <p className="text-center py-8 text-muted-foreground text-sm">Sin deudas pendientes</p>}
           </TabsContent>
           <TabsContent value="owed_to_me" className="space-y-3 mt-4">
-            {owedToMe.map(d => <DebtCard key={d.id} debt={d} onAddPayment={setPaymentDebt} onDelete={id => deleteMutation.mutate(id)} />)}
+            {owedToMe.map((d, i) => <DebtCard key={d.id} debt={d} onAddPayment={setPaymentDebt} onDelete={id => deleteMutation.mutate(id)} delay={Math.min(i, 8) * 40} />)}
             {owedToMe.length === 0 && <p className="text-center py-8 text-muted-foreground text-sm">Nadie te debe dinero</p>}
           </TabsContent>
         </Tabs>

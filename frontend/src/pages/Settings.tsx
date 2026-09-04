@@ -57,7 +57,7 @@ function CategoryForm({ initial, isSystem, onSave, onCancel }: { initial?: Parti
           <Input value={form.icon} onChange={e => setForm(f => ({ ...f, icon: e.target.value }))} />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label>Tipo</Label>
           <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}>
@@ -327,7 +327,7 @@ function IntegrationsTab() {
           ) : (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground">API no oficial vía WebSocket. El primer inicio de sesión puede tardar ~30 segundos.</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
                 <Input placeholder="+34612345678" value={trPhone} onChange={e => setTrPhone(e.target.value)} />
                 <Input placeholder="PIN (4 dígitos)" type="password" value={trPin} onChange={e => setTrPin(e.target.value)} maxLength={4} />
               </div>
@@ -503,7 +503,8 @@ export function Settings() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="flex-wrap h-auto gap-1">
+        <div className="overflow-x-auto pb-0.5 -mx-4 px-4 sm:mx-0 sm:px-0">
+          <TabsList className="w-max sm:w-auto sm:flex-wrap h-auto gap-1">
           <TabsTrigger value="categories">Mis categorías ({userCats.length})</TabsTrigger>
           <TabsTrigger value="rules">Reglas ({rules?.length || 0})</TabsTrigger>
           <TabsTrigger value="system">Sistema</TabsTrigger>
@@ -522,7 +523,8 @@ export function Settings() {
           <TabsTrigger value="diagnostics">
             Diagnóstico
           </TabsTrigger>
-        </TabsList>
+          </TabsList>
+        </div>
 
         {/* Categories */}
         <TabsContent value="categories" className="space-y-4 mt-4">
@@ -750,7 +752,7 @@ export function Settings() {
                   placeholder="Repite la nueva contraseña"
                   value={pwForm.confirm}
                   onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))}
-                  className={pwForm.confirm && pwForm.next !== pwForm.confirm ? 'border-red-500' : ''}
+                  className={pwForm.confirm && pwForm.next !== pwForm.confirm ? 'border-destructive' : ''}
                 />
                 {pwForm.confirm && pwForm.next !== pwForm.confirm && (
                   <p className="text-xs text-negative">Las contraseñas no coinciden</p>

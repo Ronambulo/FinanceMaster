@@ -60,14 +60,14 @@ export function Register() {
         </div>
 
         {/* Form card */}
-        <div className="rounded-2xl border border-white/[0.07] bg-card p-6 shadow-[0_4px_24px_rgba(0,0,0,0.5)] backdrop-blur-sm">
+        <div className="rounded-2xl border border-border bg-card p-6 shadow-card backdrop-blur-sm">
           <h2 className="text-base font-semibold text-foreground mb-5">Crear cuenta</h2>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-1.5">
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">Usuario</Label>
               <Input
                 placeholder="tunombre"
-                className="bg-white/[0.04] border-white/[0.08] focus:border-primary/40 focus:ring-primary/20"
+                className="bg-input/40 border-border focus:border-primary/40 focus:ring-primary/20"
                 {...register('username')}
               />
               {errors.username && <p className="text-xs text-destructive">{errors.username.message}</p>}
@@ -77,7 +77,7 @@ export function Register() {
               <Input
                 type="email"
                 placeholder="tu@email.com"
-                className="bg-white/[0.04] border-white/[0.08] focus:border-primary/40 focus:ring-primary/20"
+                className="bg-input/40 border-border focus:border-primary/40 focus:ring-primary/20"
                 {...register('email')}
               />
               {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
@@ -87,7 +87,7 @@ export function Register() {
               <Input
                 type="password"
                 placeholder="••••••••"
-                className="bg-white/[0.04] border-white/[0.08] focus:border-primary/40 focus:ring-primary/20"
+                className="bg-input/40 border-border focus:border-primary/40 focus:ring-primary/20"
                 {...register('password')}
               />
               {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
