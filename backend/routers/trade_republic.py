@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import hashlib
+import logging
 import os
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
@@ -341,6 +342,11 @@ def _expand_sentinel(mapped: str, amount: float) -> str:
     return mapped
 
 
+# Types that move cash only. If the event also carries a security, the map got
+# it wrong: TR files the investing leg of a saveback under a card event type.
+_CASH_ONLY_TYPES = {"CARD_TRANSACTION"}
+
+
 def _looks_like_instrument(event: dict) -> bool:
     """True if the event carries a security, so it can only be a trade."""
     shares = event.get("shares") or event.get("numberOfShares") or event.get("quantity")
@@ -383,26 +389,41 @@ def _resolve_tr_type(event: dict, amount: float) -> str | None:
                 mapped = v
             break
 
+    # An event carrying an instrument is a trade whatever the event type says —
+    # a card payment never has shares. TR files the investing leg of a saveback
+    # under a card event type, so this has to outrank the map, not just the
+    # sign heuristic. Misfiling one both inflates expenses and drops the
+    # position from the portfolio, which only reads TRADING/SECURITIES.
+    instrument = _looks_like_instrument(event)
+
     if mapped is not None:
-        return _expand_sentinel(mapped, amount)
+        resolved = _expand_sentinel(mapped, amount)
+        if instrument and resolved in _CASH_ONLY_TYPES:
+            logging.getLogger(__name__).info(
+                "TR event %r carries an instrument but maps to %s — importing it as a trade",
+                raw, resolved,
+            )
+            return "SELL" if amount > 0 else "BUY"
+        return resolved
 
     if explicitly_skipped:
         return None  # explicitly skipped
 
-    # Fallback: subtitle
-    subtitle = str(event.get("subtitle") or "")
-    sub_mapped = _SUBTITLE_TYPE_MAP_LC.get(subtitle.strip().lower())
-    if sub_mapped is not None:
-        return _expand_sentinel(sub_mapped, amount)
+    # Fallback: the human-readable label. TR puts it in `subtitle` on some
+    # events and in `body` on others — "Saveback" arrives in body — and these
+    # are exact-match lookups, so checking both cannot produce a false hit.
+    for label in (event.get("subtitle"), event.get("body")):
+        sub_mapped = _SUBTITLE_TYPE_MAP_LC.get(str(label or "").strip().lower())
+        if sub_mapped is not None:
+            return _expand_sentinel(sub_mapped, amount)
 
-    # Last resort: amount sign heuristic. An event carrying an instrument
-    # (shares / ISIN / asset class) is a trade, never a card payment —
-    # misfiling one as CARD_TRANSACTION both inflates expenses and drops
-    # the position from the portfolio, which only reads TRADING/SECURITIES.
+    # Last resort: amount sign heuristic.
     if raw:
-        import logging
-        logging.getLogger(__name__).debug("TR unknown eventType %r subtitle %r", raw, subtitle)
-    if _looks_like_instrument(event):
+        logging.getLogger(__name__).info(
+            "TR unknown eventType %r subtitle %r body %r",
+            raw, event.get("subtitle"), str(event.get("body") or "")[:60],
+        )
+    if instrument:
         return "SELL" if amount > 0 else "BUY"
     return "CARD_TRANSACTION" if amount < 0 else "CUSTOMER_INPAYMENT"
 
@@ -809,6 +830,18 @@ async def tr_sync(
 
     db.commit()
 
+    # El timeline solo trae la compra del saveback, no el abono que la financia
+    # (ese únicamente sale en la exportación CSV), así que el saldo quedaría
+    # corto en ese importe. Se reconstruye aquí, sin esperar a un reinicio.
+    saveback_credits = 0
+    try:
+        from ..services.data_repair import ensure_saveback_credits
+        saveback_credits = ensure_saveback_credits(db, current_user.id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logging.getLogger(__name__).warning("No se pudieron reconstruir los abonos de saveback")
+
     try:
         detect_recurring(db, current_user.id)
     except Exception:
@@ -829,6 +862,7 @@ async def tr_sync(
         "errors": errors,
         "total_events": len(events),
         "tickers_resolved": resolve_result.get("resolved", 0),
+        "saveback_credits": saveback_credits,
     }
 
 
