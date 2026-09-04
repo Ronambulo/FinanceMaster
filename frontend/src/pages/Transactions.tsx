@@ -643,7 +643,10 @@ export function Transactions() {
     queryFn: ({ pageParam }) => txApi.list({
       page: pageParam,
       page_size: PAGE_SIZE,
-      account_category: 'CASH',
+      // TRADING además de CASH: las compras/ventas salen del efectivo, así que
+      // son movimientos de la cuenta y el usuario espera verlas en la lista.
+      // (SECURITIES queda fuera: son posiciones manuales, no movimientos.)
+      account_category: 'CASH,TRADING',
       ...(search     ? { search }                : {}),
       ...(catFilter  ? { category_id: catFilter } : {}),
       ...(dateFrom   ? { date_from: dateFrom }    : {}),

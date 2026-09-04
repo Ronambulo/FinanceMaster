@@ -20,6 +20,10 @@ EXPENSE_TYPES = {
     "CARD_TRANSACTION", "CARD_TRANSACTION_INTERNATIONAL",
     "TRANSFER_INSTANT_OUTBOUND", "TRANSFER_OUTBOUND",
 }
+# Mover dinero a una inversión no es un gasto (ni venderla un ingreso): el
+# dinero sigue siendo del usuario, solo cambia de sitio. Se listan, pero no
+# cuentan en los totales de ingresos/gastos.
+INVESTMENT_TYPES = {"BUY", "SELL"}
 
 
 def _build_query(db, user_id, search, category_id, tx_type, type_group, date_from, date_to, account_cat, with_joins=True):
@@ -49,7 +53,13 @@ def _build_query(db, user_id, search, category_id, tx_type, type_group, date_fro
     if date_to:
         q = q.filter(models.Transaction.date <= date_to)
     if account_cat:
-        q = q.filter(models.Transaction.account_category == account_cat)
+        # Admite varias separadas por comas ("CASH,TRADING"): la lista de
+        # movimientos enseña el efectivo y las operaciones que salen de él.
+        cats = [c.strip() for c in account_cat.split(",") if c.strip()]
+        if len(cats) == 1:
+            q = q.filter(models.Transaction.account_category == cats[0])
+        elif cats:
+            q = q.filter(models.Transaction.account_category.in_(cats))
     # Collapse linked/merged groups into their primary row only
     q = q.filter(or_(models.Transaction.link_group_id.is_(None), models.Transaction.is_link_primary == True))
     return q
@@ -72,6 +82,7 @@ def list_transactions(
     q = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=True)
     # Aggregate sums without joins (more efficient); netted for linked/merged groups
     aq = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=False)
+    aq = aq.filter(models.Transaction.type.notin_(INVESTMENT_TYPES))
     net_amount = func.coalesce(models.Transaction.effective_amount, models.Transaction.amount)
     income_sum = round(aq.filter(models.Transaction.amount > 0).with_entities(func.sum(net_amount)).scalar() or 0, 2)
     expense_sum = round(aq.filter(models.Transaction.amount < 0).with_entities(func.sum(func.abs(net_amount))).scalar() or 0, 2)
