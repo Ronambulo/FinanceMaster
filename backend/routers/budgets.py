@@ -127,10 +127,11 @@ def budget_status(
     )
 
     # Actual spending per category for the month (excluding excluded/internal txs)
+    net_amount = func.coalesce(models.Transaction.effective_amount, models.Transaction.amount)
     spending_rows = (
         db.query(
             models.Transaction.category_id,
-            func.sum(func.abs(models.Transaction.amount)).label("total"),
+            func.sum(func.abs(net_amount)).label("total"),
         )
         .filter(
             models.Transaction.user_id == current_user.id,

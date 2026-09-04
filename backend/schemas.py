@@ -113,7 +113,14 @@ class TransactionOut(BaseModel):
     exclude_from_stats: bool = False
     is_pending: bool = False
     recurring_group_id: Optional[int]
+    link_group_id: Optional[int] = None
+    is_link_primary: bool = False
+    effective_amount: Optional[float] = None
+    linked_transactions: Optional[List["TransactionOut"]] = None
     model_config = {"from_attributes": True}
+
+class LinkTransactionsRequest(BaseModel):
+    transaction_ids: List[int]
 
 class ImportResult(BaseModel):
     imported: int

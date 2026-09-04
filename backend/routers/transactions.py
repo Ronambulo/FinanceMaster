@@ -1,7 +1,7 @@
 from datetime import date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from .. import models, schemas, auth
@@ -50,6 +50,8 @@ def _build_query(db, user_id, search, category_id, tx_type, type_group, date_fro
         q = q.filter(models.Transaction.date <= date_to)
     if account_cat:
         q = q.filter(models.Transaction.account_category == account_cat)
+    # Collapse linked/merged groups into their primary row only
+    q = q.filter(or_(models.Transaction.link_group_id.is_(None), models.Transaction.is_link_primary == True))
     return q
 
 
@@ -68,13 +70,103 @@ def list_transactions(
     db: Session = Depends(get_db),
 ):
     q = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=True)
-    # Aggregate sums without joins (more efficient)
+    # Aggregate sums without joins (more efficient); netted for linked/merged groups
     aq = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=False)
-    income_sum = round(aq.filter(models.Transaction.amount > 0).with_entities(func.sum(models.Transaction.amount)).scalar() or 0, 2)
-    expense_sum = round(aq.filter(models.Transaction.amount < 0).with_entities(func.sum(func.abs(models.Transaction.amount))).scalar() or 0, 2)
+    net_amount = func.coalesce(models.Transaction.effective_amount, models.Transaction.amount)
+    income_sum = round(aq.filter(models.Transaction.amount > 0).with_entities(func.sum(net_amount)).scalar() or 0, 2)
+    expense_sum = round(aq.filter(models.Transaction.amount < 0).with_entities(func.sum(func.abs(net_amount))).scalar() or 0, 2)
     total = q.count()
     items = q.order_by(models.Transaction.date.desc(), models.Transaction.datetime.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+    # Attach the collapsed legs of any merged group back onto its primary row
+    group_ids = [t.link_group_id for t in items if t.link_group_id and t.is_link_primary]
+    if group_ids:
+        siblings = (
+            db.query(models.Transaction)
+            .options(joinedload(models.Transaction.category))
+            .filter(
+                models.Transaction.link_group_id.in_(group_ids),
+                models.Transaction.is_link_primary == False,
+            )
+            .all()
+        )
+        by_group: dict[int, list] = {}
+        for s in siblings:
+            by_group.setdefault(s.link_group_id, []).append(s)
+        for t in items:
+            if t.link_group_id and t.is_link_primary:
+                t.linked_transactions = by_group.get(t.link_group_id, [])
+
     return schemas.TransactionListResponse(items=items, total=total, page=page, page_size=page_size, income_sum=income_sum, expense_sum=expense_sum)
+
+
+def _dissolve_link_group(db: Session, link_group_id: int):
+    members = db.query(models.Transaction).filter(models.Transaction.link_group_id == link_group_id).all()
+    for t in members:
+        t.link_group_id = None
+        t.is_link_primary = False
+        t.effective_amount = None
+        t.exclude_from_stats = False
+    link = db.query(models.TransactionLink).filter(models.TransactionLink.id == link_group_id).first()
+    if link:
+        db.delete(link)
+
+
+@router.post("/link", response_model=schemas.TransactionOut)
+def link_transactions(
+    data: schemas.LinkTransactionsRequest,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    ids = list(dict.fromkeys(data.transaction_ids))
+    if len(ids) < 2:
+        raise HTTPException(400, "Selecciona al menos 2 transacciones para unir")
+
+    txs = db.query(models.Transaction).filter(
+        models.Transaction.id.in_(ids),
+        models.Transaction.user_id == current_user.id,
+    ).all()
+    if len(txs) != len(ids):
+        raise HTTPException(404, "Alguna transacción no existe")
+    if any(t.link_group_id is not None for t in txs):
+        raise HTTPException(400, "Alguna transacción ya está unida a otro grupo")
+
+    link = models.TransactionLink(user_id=current_user.id)
+    db.add(link)
+    db.flush()
+
+    primary = max(txs, key=lambda t: abs(t.amount))
+    net = round(sum(t.amount for t in txs), 2)
+
+    for t in txs:
+        t.link_group_id = link.id
+        t.is_link_primary = (t.id == primary.id)
+        if t.id == primary.id:
+            t.effective_amount = net
+        else:
+            t.exclude_from_stats = True
+
+    db.commit()
+    db.refresh(primary)
+    primary.linked_transactions = [t for t in txs if t.id != primary.id]
+    return primary
+
+
+@router.delete("/link/{link_group_id}")
+def unlink_transactions(
+    link_group_id: int,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    link = db.query(models.TransactionLink).filter(
+        models.TransactionLink.id == link_group_id,
+        models.TransactionLink.user_id == current_user.id,
+    ).first()
+    if not link:
+        raise HTTPException(404, "Grupo no encontrado")
+    _dissolve_link_group(db, link_group_id)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("", response_model=schemas.TransactionOut)
@@ -135,6 +227,9 @@ def delete_transaction(
     ).first()
     if not tx:
         raise HTTPException(404, "Transacción no encontrada")
+    if tx.link_group_id is not None:
+        _dissolve_link_group(db, tx.link_group_id)
+        db.flush()
     db.delete(tx)
     db.commit()
     return {"ok": True}

@@ -112,6 +112,9 @@ class Transaction(Base):
     exclude_from_stats = Column(Boolean, default=False)
     is_pending = Column(Boolean, nullable=True, default=False)
     recurring_group_id = Column(Integer, ForeignKey("recurring_groups.id"), nullable=True)
+    link_group_id = Column(Integer, ForeignKey("transaction_links.id"), nullable=True)
+    is_link_primary = Column(Boolean, default=False)
+    effective_amount = Column(Float, nullable=True)
     created_at = Column(DateTime, default=_dt.utcnow)
 
     __table_args__ = (UniqueConstraint("user_id", "external_id", name="uq_user_external_id"),)
@@ -120,6 +123,16 @@ class Transaction(Base):
     category = relationship("Category", back_populates="transactions")
     recurring_group = relationship("RecurringGroup", back_populates="transactions")
     debt_payments = relationship("DebtPayment", back_populates="transaction")
+    link_group = relationship("TransactionLink", back_populates="transactions")
+
+
+class TransactionLink(Base):
+    __tablename__ = "transaction_links"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=_dt.utcnow)
+
+    transactions = relationship("Transaction", back_populates="link_group")
 
 
 class RecurringGroup(Base):
