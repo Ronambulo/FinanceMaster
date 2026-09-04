@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Outlet, NavLink, Link } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowLeftRight, TrendingUp,
-  CreditCard, Target, Settings, LogOut, CalendarDays, Sparkles, Flame, Baby, Trophy, RefreshCw,
+  CreditCard, Target, Settings, LogOut, CalendarDays, Sparkles, Trophy, RefreshCw, Search,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Sidebar } from './Sidebar'
@@ -16,10 +16,8 @@ function ProfileSheet({ onClose }: { onClose: () => void }) {
   const features = useFeaturesStore(s => s.features)
 
   const extra = [
-    { to: '/fire',       icon: Flame,     label: 'Calculadora FIRE', show: features.fire },
     { to: '/logros',     icon: Trophy,    label: 'Logros',           show: features.achievements },
     { to: '/recurrentes',icon: RefreshCw, label: 'Recurrentes',      show: features.recurring },
-    { to: '/baby-steps', icon: Baby,      label: '7 Baby Steps',     show: features.babySteps },
   ].filter(n => n.show)
 
   return (
@@ -110,12 +108,19 @@ export function AppLayout() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary ring-1 ring-border transition-all active:scale-95"
+              aria-label="Buscar"
+            >
+              <Search className="h-4 w-4 text-muted-foreground" />
+            </button>
+            <button
               onClick={toggleChat}
               className={cn(
                 'flex h-8 w-8 items-center justify-center rounded-full transition-all active:scale-95',
                 chatOpen
                   ? 'bg-primary/20 ring-1 ring-primary/40'
-                  : 'bg-white/[0.06] ring-1 ring-white/10',
+                  : 'bg-secondary ring-1 ring-border',
               )}
             >
               <Sparkles className={cn('h-4 w-4', chatOpen ? 'text-primary' : 'text-muted-foreground')} />

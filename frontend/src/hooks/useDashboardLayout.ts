@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 
 export type WidgetId =
   | 'hero'
+  | 'goals'
   | 'metrics'
   | 'trend'
   | 'pie'
@@ -13,14 +14,15 @@ export type WidgetId =
 
 const DEFAULT_ORDER: WidgetId[] = [
   'hero',
+  'goals',
   'metrics',
   'trend',
   'pie',
+  'upcoming',
+  'recent',
   'insights',
   'networth',
   'personality',
-  'upcoming',
-  'recent',
 ]
 
 const LS_KEY = 'fm_dashboard_layout'
@@ -30,8 +32,12 @@ function loadLayout(): { order: WidgetId[]; hidden: WidgetId[] } {
     const raw = localStorage.getItem(LS_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
+      const storedOrder = (parsed.order ?? DEFAULT_ORDER) as WidgetId[]
+      // Merge in any widget ids introduced after this layout was saved (e.g. 'goals')
+      // so returning users pick up new widgets without losing their customization.
+      const missing = DEFAULT_ORDER.filter(id => !storedOrder.includes(id))
       return {
-        order: (parsed.order ?? DEFAULT_ORDER) as WidgetId[],
+        order: [...storedOrder, ...missing],
         hidden: (parsed.hidden ?? []) as WidgetId[],
       }
     }

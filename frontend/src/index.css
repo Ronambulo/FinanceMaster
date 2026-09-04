@@ -4,38 +4,44 @@
 
 @layer base {
   :root {
-    /* ── Default palette (Trade Republic dark + Lima accent) ──
+    /* ── Default palette (charcoal-navy + sage accent) ──
        These are CSS fallbacks; applyTheme() in theme.ts overrides them at runtime
        based on the user's saved preference (localStorage). */
 
-    --background:        228 22% 5%;
-    --foreground:        0 0% 94%;
-    --card:              228 18% 9%;
-    --card-foreground:   0 0% 94%;
-    --popover:           228 20% 7%;
-    --popover-foreground:0 0% 94%;
+    --background:        218 17% 9%;
+    --foreground:        210 13% 94%;
+    --card:              218 17% 13%;
+    --card-foreground:   210 13% 94%;
+    --popover:           217 17% 15%;
+    --popover-foreground:210 13% 94%;
 
-    /* Accent — updated by applyTheme(); default = TR lime green */
-    --primary:           87 100% 72%;
-    --primary-foreground:228 22% 5%;
+    /* Accent — updated by applyTheme(); default = sage */
+    --primary:           153 27% 60%;
+    --primary-foreground:218 17% 9%;
 
-    --secondary:         228 14% 14%;
-    --secondary-foreground:0 0% 85%;
-    --muted:             228 14% 12%;
-    --muted-foreground:  220 9% 46%;
-    --accent:            228 14% 14%;
-    --accent-foreground: 0 0% 90%;
-    --destructive:       3 88% 62%;
+    --secondary:         218 17% 15%;
+    --secondary-foreground:210 8% 85%;
+    --muted:             218 17% 13%;
+    --muted-foreground:  217 10% 64%;
+    --accent:            218 17% 15%;
+    --accent-foreground: 210 10% 90%;
+    --destructive:       6 65% 58%;
     --destructive-foreground:0 0% 98%;
-    --border:            228 14% 15%;
-    --input:             228 14% 14%;
-    --ring:              87 100% 72%;
-    --radius:            0.875rem;
+    --border:            218 17% 19%;
+    --input:             218 17% 15%;
+    --ring:              153 27% 60%;
+    --radius:            1rem;
 
     /* Semantic financial tokens — updated by applyTheme() */
-    --positive:  87 100% 72%;   /* lime green = gain / income */
-    --negative:  3 88% 62%;     /* coral red  = loss / expense */
-    --warning:   38 95% 58%;    /* amber      = caution */
+    --positive:  153 27% 60%;   /* sage      = gain / income */
+    --negative:  9 55% 67%;     /* coral     = loss / expense */
+    --warning:   39 55% 63%;    /* gold      = caution */
+
+    /* Qualitative dataviz palette — constant across themes */
+    --chart-1: 153 27% 60%;   /* sage */
+    --chart-2: 216 35% 63%;   /* blue */
+    --chart-3: 39 59% 63%;    /* gold */
+    --chart-4: 267 33% 66%;   /* mauve */
   }
 }
 
@@ -45,10 +51,13 @@
   html { scroll-behavior: smooth; }
 
   body {
-    @apply bg-background text-foreground antialiased;
-    font-family: -apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+    @apply bg-background text-foreground antialiased font-sans;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3 {
+    @apply font-display;
   }
 
   /* ── Subtle scrollbar ── */

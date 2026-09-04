@@ -13,8 +13,6 @@ import { Debts } from '@/pages/Debts'
 import { Goals } from '@/pages/Goals'
 import { Monthly } from '@/pages/Monthly'
 import { Settings } from '@/pages/Settings'
-import { FireCalculator } from '@/pages/FireCalculator'
-import { BabySteps } from '@/pages/BabySteps'
 import { AchievementsPage } from '@/pages/Achievements'
 import { CommandPalette } from '@/components/CommandPalette'
 import { OnboardingWizard } from '@/components/OnboardingWizard'
@@ -186,8 +184,6 @@ export default function App() {
               <Route path="deudas" element={<FeatureRoute feature="debts"><Debts /></FeatureRoute>} />
               <Route path="objetivos" element={<FeatureRoute feature="goals"><Goals /></FeatureRoute>} />
               <Route path="monthly" element={<Monthly />} />
-              <Route path="fire" element={<FeatureRoute feature="fire"><FireCalculator /></FeatureRoute>} />
-              <Route path="baby-steps" element={<FeatureRoute feature="babySteps"><BabySteps /></FeatureRoute>} />
               <Route path="logros" element={<FeatureRoute feature="achievements"><AchievementsPage /></FeatureRoute>} />
               <Route path="ajustes" element={<Settings />} />
             </Route>

@@ -3,6 +3,14 @@ export default {
   darkMode: ['class'],
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
+    screens: {
+      xs: '420px',
+      sm: '640px',
+      md: '768px',
+      lg: '1024px',
+      xl: '1280px',
+      '2xl': '1536px',
+    },
     extend: {
       colors: {
         border:      'hsl(var(--border))',
@@ -38,6 +46,17 @@ export default {
         positive: 'hsl(var(--positive))',
         negative: 'hsl(var(--negative))',
         warning:  'hsl(var(--warning))',
+        /* Qualitative dataviz palette — constant across themes */
+        chart: {
+          1: 'hsl(var(--chart-1))',
+          2: 'hsl(var(--chart-2))',
+          3: 'hsl(var(--chart-3))',
+          4: 'hsl(var(--chart-4))',
+        },
+      },
+      fontFamily: {
+        sans:    ['"IBM Plex Sans"', '-apple-system', 'system-ui', 'sans-serif'],
+        display: ['"Space Grotesk"', '"IBM Plex Sans"', '-apple-system', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         lg:   'var(--radius)',
@@ -81,9 +100,8 @@ export default {
         'number-pop':     'number-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) both',
       },
       boxShadow: {
-        'card':      '0 2px 8px rgba(0,0,0,0.4)',
-        'card-hover':'0 12px 40px rgba(0,0,0,0.5)',
-        'glow-green':'0 0 24px rgba(194,255,114,0.2)',
+        'card':      '0 2px 10px rgba(0,0,0,0.35)',
+        'card-hover':'0 14px 36px rgba(0,0,0,0.45)',
       },
     },
   },
