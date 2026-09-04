@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowLeftRight, TrendingUp,
   CreditCard, Target, Settings, LogOut, CalendarDays,
-  Flame, Search, Sparkles, Baby, Trophy, RefreshCw,
+  Search, Sparkles, Trophy, RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
@@ -25,9 +25,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
     { to: '/recurrentes',   icon: RefreshCw,       label: 'Recurrentes',  badge: null,               show: features.recurring },
     { to: '/deudas',        icon: CreditCard,      label: 'Deudas',       badge: null,               show: features.debts },
     { to: '/objetivos',     icon: Target,          label: 'Objetivos',    badge: null,               show: features.goals },
-    { to: '/fire',          icon: Flame,           label: 'FIRE',         badge: null,               show: features.fire },
     { to: '/logros',        icon: Trophy,          label: 'Logros',       badge: null,               show: features.achievements },
-    { to: '/baby-steps',    icon: Baby,            label: '7 Baby Steps', badge: null,               show: features.babySteps },
   ].filter(n => n.show)
 
   return (
@@ -49,7 +47,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       <div className="px-3 pb-2">
         <button
           onClick={() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))}
-          className="flex items-center gap-2 w-full rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+          className="flex items-center gap-2 w-full rounded-lg border border-border bg-input/30 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
         >
           <Search className="h-3.5 w-3.5 shrink-0" />
           <span className="flex-1 text-left">Buscar...</span>
@@ -74,7 +72,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                 'transition-all duration-150 ease-out',
                 isActive
                   ? 'text-primary bg-primary/[0.08]'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]',
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent',
               )}
             >
               {({ isActive }) => (
@@ -89,7 +87,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                       isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground',
                     )} />
                     {badgeCount > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-sky-500 px-0.5 text-[9px] font-bold text-white leading-none">
+                      <span className="absolute -top-1.5 -right-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-chart-2 px-0.5 text-[9px] font-bold text-white leading-none">
                         {badgeCount}
                       </span>
                     )}
@@ -103,14 +101,14 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       </nav>
 
       {/* ── Bottom ── */}
-      <div className="px-3 pb-4 pt-2 border-t border-white/[0.06] space-y-0.5">
+      <div className="px-3 pb-4 pt-2 border-t border-border space-y-0.5">
         <button
           onClick={toggleChat}
           className={cn(
             'group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150',
             chatOpen
               ? 'text-primary bg-primary/[0.08]'
-              : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]',
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent',
           )}
         >
           <Sparkles className={cn('h-4 w-4 shrink-0 transition-colors', chatOpen ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground')} />
@@ -123,7 +121,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           onClick={onClose}
           className={({ isActive }) => cn(
             'group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150',
-            isActive ? 'text-primary bg-primary/[0.08]' : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]',
+            isActive ? 'text-primary bg-primary/[0.08]' : 'text-muted-foreground hover:text-foreground hover:bg-accent',
           )}
         >
           {({ isActive }) => (
@@ -150,7 +148,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <button
             onClick={logout}
             title="Cerrar sesión"
-            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
           >
             <LogOut className="h-3.5 w-3.5" />
           </button>

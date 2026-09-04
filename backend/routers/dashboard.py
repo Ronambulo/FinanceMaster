@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy import func, extract
+from sqlalchemy import func, extract, or_
 from sqlalchemy.orm import Session, joinedload
 from .. import models, schemas, auth
 from ..database import get_db
@@ -44,13 +44,16 @@ def overview(
         models.Transaction.user_id == current_user.id,
         models.Transaction.account_category == "CASH",
         models.Transaction.is_internal_transfer == False,
+        models.Transaction.exclude_from_stats == False,
     )
+
+    net_amount = func.coalesce(models.Transaction.effective_amount, models.Transaction.amount)
 
     def _sum(q, types, start_d=None, end_d=None):
         qq = q.filter(models.Transaction.type.in_(types))
         if start_d:
             qq = qq.filter(models.Transaction.date >= start_d, models.Transaction.date <= end_d)
-        result = qq.with_entities(func.sum(func.abs(models.Transaction.amount))).scalar()
+        result = qq.with_entities(func.sum(func.abs(net_amount))).scalar()
         return round(result or 0.0, 2)
 
     income_month = _sum(cash_txs, INCOME_TYPES, start, end)
@@ -91,23 +94,25 @@ def by_category(
     end = date_to or today
 
     types = INCOME_TYPES if tx_type == "income" else EXPENSE_TYPES
+    net_amount = func.coalesce(models.Transaction.effective_amount, models.Transaction.amount)
 
     q = (
         db.query(
             models.Transaction.category_id,
-            func.sum(func.abs(models.Transaction.amount)).label("total"),
+            func.sum(func.abs(net_amount)).label("total"),
             func.count(models.Transaction.id).label("cnt"),
         )
         .filter(
             models.Transaction.user_id == current_user.id,
             models.Transaction.account_category == "CASH",
             models.Transaction.is_internal_transfer == False,
+            models.Transaction.exclude_from_stats == False,
             models.Transaction.type.in_(types),
             models.Transaction.date >= start,
             models.Transaction.date <= end,
         )
         .group_by(models.Transaction.category_id)
-        .order_by(func.sum(func.abs(models.Transaction.amount)).desc())
+        .order_by(func.sum(func.abs(net_amount)).desc())
         .all()
     )
 
@@ -272,6 +277,7 @@ def monthly_detail(
             models.Transaction.is_internal_transfer == False,
             models.Transaction.date >= start,
             models.Transaction.date <= end,
+            or_(models.Transaction.link_group_id.is_(None), models.Transaction.is_link_primary == True),
         )
         .order_by(models.Transaction.date.desc())
         .all()
@@ -286,7 +292,7 @@ def monthly_detail(
             category_name=tx.category.name if tx.category else "Sin categoría",
             category_color=tx.category.color if tx.category else "#94a3b8",
             category_icon=tx.category.icon if tx.category else "❓",
-            amount=tx.amount,
+            amount=tx.effective_amount if tx.effective_amount is not None else tx.amount,
             exclude_from_stats=tx.exclude_from_stats or False,
             recurring_group_id=tx.recurring_group_id,
         )

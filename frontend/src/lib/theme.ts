@@ -3,17 +3,17 @@
 export const THEMES = [
   {
     id: 'trade-republic',
-    name: 'Trade Republic',
-    preview: 'bg-gradient-to-br from-[#080910] to-[#111520]',
+    name: 'Oscuro',
+    preview: 'bg-gradient-to-br from-[#14171c] to-[#20252d]',
     vars: {
-      '--background': '228 22% 5%',
-      '--card':       '228 18% 9%',
-      '--popover':    '228 20% 7%',
-      '--secondary':  '228 14% 14%',
-      '--muted':      '228 14% 12%',
-      '--border':     '228 14% 15%',
-      '--input':      '228 14% 14%',
-      '--accent':     '228 14% 14%',
+      '--background': '218 17% 9%',
+      '--card':       '218 17% 13%',
+      '--popover':    '217 17% 15%',
+      '--secondary':  '218 17% 15%',
+      '--muted':      '218 17% 13%',
+      '--border':     '218 17% 19%',
+      '--input':      '218 17% 15%',
+      '--accent':     '218 17% 15%',
     },
   },
   {
@@ -100,7 +100,7 @@ export const THEMES = [
 ]
 
 export const ACCENT_COLORS = [
-  { id: 'lime',   name: 'Lima (TR)',  h: '87',  s: '100%', l: '72%' },   // default — Trade Republic
+  { id: 'lime',   name: 'Salvia',     h: '153', s: '27%',  l: '60%' },   // default
   { id: 'blue',   name: 'Azul',       h: '217', s: '91%',  l: '60%' },
   { id: 'green',  name: 'Verde',      h: '142', s: '72%',  l: '50%' },
   { id: 'purple', name: 'Púrpura',    h: '270', s: '80%',  l: '65%' },
@@ -163,24 +163,24 @@ export function applyTheme(themeId: string, accentId?: string) {
   Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v))
 
   if (!isLight) {
-    root.style.setProperty('--foreground',           '0 0% 94%')
-    root.style.setProperty('--card-foreground',      '0 0% 94%')
-    root.style.setProperty('--popover-foreground',   '0 0% 94%')
-    root.style.setProperty('--accent-foreground',    '0 0% 90%')
-    root.style.setProperty('--secondary-foreground', '0 0% 85%')
-    root.style.setProperty('--muted-foreground',     '220 9% 46%')
-    root.style.setProperty('--destructive',          '3 88% 62%')
+    root.style.setProperty('--foreground',           '210 13% 94%')
+    root.style.setProperty('--card-foreground',      '210 13% 94%')
+    root.style.setProperty('--popover-foreground',   '210 13% 94%')
+    root.style.setProperty('--accent-foreground',    '210 10% 90%')
+    root.style.setProperty('--secondary-foreground', '210 8% 85%')
+    root.style.setProperty('--muted-foreground',     '217 10% 64%')
+    root.style.setProperty('--destructive',          '6 65% 58%')
     root.style.setProperty('--destructive-foreground','0 0% 98%')
-    root.style.setProperty('--radius',               '0.875rem')
+    root.style.setProperty('--radius',               '1rem')
     // Semantic financial colors — fixed across dark themes
-    root.style.setProperty('--positive', '87 100% 72%')
-    root.style.setProperty('--negative', '3 88% 62%')
-    root.style.setProperty('--warning',  '38 95% 58%')
+    root.style.setProperty('--positive', '153 27% 60%')
+    root.style.setProperty('--negative', '9 55% 67%')
+    root.style.setProperty('--warning',  '39 55% 63%')
   } else {
     root.style.setProperty('--muted-foreground',     '215 16% 46%')
     root.style.setProperty('--destructive',          '0 72% 51%')
     root.style.setProperty('--destructive-foreground','210 40% 98%')
-    root.style.setProperty('--radius',               '0.875rem')
+    root.style.setProperty('--radius',               '1rem')
     // Semantic financial colors — adjusted for light mode
     root.style.setProperty('--positive', '142 72% 36%')
     root.style.setProperty('--negative', '0 72% 45%')
@@ -199,7 +199,7 @@ export function applyTheme(themeId: string, accentId?: string) {
   if (!isLight) {
     root.style.setProperty(
       '--primary-foreground',
-      isLightAccent(accent) ? '228 22% 5%' : '0 0% 98%',
+      isLightAccent(accent) ? '218 17% 9%' : '0 0% 98%',
     )
   }
 }

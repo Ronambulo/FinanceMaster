@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, Pencil, Check, X, Radio, Plus, Trash2, Search } from 'lucide-react'
+import { Loader2, Pencil, Check, X, Radio, Plus, Trash2, Search, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -395,23 +395,6 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
       }
       return out
     })
-    // Debug: log state for each symbol so we can identify failures in the browser console
-    for (const sym of symbols) {
-      const gk   = ghostKeys[sym]
-      const base = ghostBaseOf[sym]
-      const firstBuy = firstBuyOf[sym]
-      const gapRow = chartData.find(r => {
-        const d = r.date as string
-        return d > '2025-11-30' && d < '2026-06-01'
-      })
-      console.log(`[ghost:${sym}] gk=${gk} base=${base} firstBuy=${firstBuy}`, {
-        gapDate: gapRow?.date,
-        gapRawVal: gapRow ? gapRow[sym] : 'NO_GAP_ROW_IN_DATE_RANGE',
-        ghostInGap: gapRow ? rows.find(r => r.date === gapRow.date)?.[gk ?? ''] : 'N/A',
-        totalRows: rows.length,
-        rowsWithGhost: rows.filter(r => r[gk ?? ''] !== undefined).length,
-      })
-    }
     return rows
   }, [chartData, normalisedData, ghostBaseOf, symbols, firstBuyOf, ghostKeys])
 
@@ -518,20 +501,20 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
           <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/20 p-0.5">
             <button
               onClick={() => setCumulative(false)}
-              className={`text-xs px-3 py-1.5 rounded-md transition-all ${!cumulative ? 'bg-primary/20 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`text-xs px-3 py-2 rounded-md transition-all ${!cumulative ? 'bg-primary/20 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Comparativa
             </button>
             <button
               onClick={() => setCumulative(true)}
-              className={`text-xs px-3 py-1.5 rounded-md transition-all ${cumulative ? 'bg-primary/20 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
+              className={`text-xs px-3 py-2 rounded-md transition-all ${cumulative ? 'bg-primary/20 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'}`}
             >
               Valor total
             </button>
           </div>
           <button
             onClick={() => setSinceMyBuy(v => !v)}
-            className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${
+            className={`text-xs px-3 py-2 rounded-lg border transition-all ${
               sinceMyBuy
                 ? 'border-primary/40 bg-primary/15 text-primary font-semibold'
                 : 'border-border bg-muted/20 text-muted-foreground hover:text-foreground'
@@ -545,7 +528,7 @@ function PriceChart({ positions, totalInvested = 0 }: { positions: PortfolioPosi
             <button
               key={p.value}
               onClick={() => setPeriod(p.value)}
-              className={`text-xs px-2.5 py-1.5 rounded-md transition-all ${
+              className={`text-xs px-2.5 py-2 rounded-md transition-all ${
                 period === p.value
                   ? 'bg-primary/20 text-primary font-semibold'
                   : 'text-muted-foreground hover:text-foreground'
@@ -785,6 +768,30 @@ function applyOverrides(positions: PortfolioPosition[]): PortfolioPosition[] {
 
 function round2(v: number) { return Math.round(v * 100) / 100 }
 
+/* ─── Allocation donut helper ─────────────────────────────────── */
+// Purely derived from already-fetched positions — groups the long tail into
+// "Otros" so the donut never needs more than the 4-color qualitative palette.
+interface AllocSlice { label: string; value: number; pct: number; color: string }
+const ALLOC_TOKENS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))']
+
+function buildAllocation(positions: PortfolioPosition[], total: number): AllocSlice[] {
+  if (total <= 0) return []
+  const withValue = positions
+    .map(p => ({ label: p.name || p.symbol, value: p.market_value ?? p.total_invested }))
+    .filter(p => p.value > 0.0001)
+    .sort((a, b) => b.value - a.value)
+  if (!withValue.length) return []
+
+  const groups = withValue.length <= 4
+    ? withValue
+    : [
+        ...withValue.slice(0, 3),
+        { label: 'Otros', value: withValue.slice(3).reduce((s, p) => s + p.value, 0) },
+      ]
+
+  return groups.map((g, i) => ({ ...g, pct: (g.value / total) * 100, color: ALLOC_TOKENS[i % ALLOC_TOKENS.length] }))
+}
+
 function AddManualPositionModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -912,7 +919,7 @@ function AddManualPositionModal({ open, onClose }: { open: boolean; onClose: () 
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <label className="text-xs text-muted-foreground font-medium">Nº de acciones</label>
                 <Input
@@ -1055,13 +1062,23 @@ export function Portfolio() {
 
   const totalMarketValue = openPositions.reduce((s, p) => s + (p.market_value ?? p.total_invested), 0)
   const totalUnrealized = openPositions.reduce((s, p) => s + (p.unrealized_pnl ?? 0), 0)
+  const totalUnrealizedPct = perf?.total_invested ? (totalUnrealized / perf.total_invested) * 100 : 0
+
+  // Purely visual, derived from data already fetched above — no extra requests.
+  const allocation = buildAllocation(openPositions, totalMarketValue)
+  const recentDividends = (history?.items ?? []).filter(tx => tx.type === 'DIVIDEND').slice(0, 4)
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Portfolio de Inversiones</h1>
-          <p className="text-sm text-muted-foreground">Seguimiento de tus activos financieros</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {trConnected
+              ? `Trade Republic · conectado${trStatus?.last_sync ? ` · última sync ${new Date(trStatus.last_sync).toLocaleString('es-ES')}` : ''}`
+              : 'Seguimiento de tus activos financieros'}
+          </p>
         </div>
         {/* Actions + live indicator */}
         <div className="flex items-center gap-2">
@@ -1070,48 +1087,65 @@ export function Portfolio() {
             <span className="hidden sm:inline">Añadir posición</span>
           </Button>
           {livePerf && (
-            <span className="text-xs text-emerald-400/70 bg-emerald-500/10 px-2 py-1 rounded-full">
+            <Badge variant="success" className="rounded-full px-2.5 py-1 font-medium">
               Posiciones de TR
-            </span>
+            </Badge>
           )}
-          <div className={cn(
-            'flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full',
-            liveConnected ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.05] text-muted-foreground'
+          <span className={cn(
+            'inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full',
+            liveConnected ? 'bg-positive/10 text-positive' : 'bg-muted text-muted-foreground'
           )}>
-            <span className={cn('h-1.5 w-1.5 rounded-full', liveConnected ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground/40')} />
+            <span className={cn('h-1.5 w-1.5 rounded-full', liveConnected ? 'bg-positive animate-pulse' : 'bg-muted-foreground/40')} />
             {liveConnected ? 'Live' : 'Offline'}
-          </div>
+          </span>
         </div>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
-          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-primary/[0.05] blur-2xl" />
-          <CardContent className="relative z-10 p-5">
-          <p className="text-xs text-muted-foreground mb-1">Valor de mercado actual</p>
-          <p className="text-xl font-semibold tracking-tight">{totalMarketValue > 0 ? formatCurrency(totalMarketValue) : '—'}</p>
-          <p className="text-xs text-muted-foreground mt-1">Coste: {formatCurrency(perf?.total_invested ?? 0)}</p>
-        </CardContent></Card>
-        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
-          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-primary/[0.05] blur-2xl" />
-          <CardContent className="relative z-10 p-5">
-          <p className="text-xs text-muted-foreground mb-1">P&L No realizado</p>
-          <p className={`text-xl font-semibold tracking-tight ${totalUnrealized >= 0 ? 'text-positive' : 'text-negative'}`}>
-            {totalMarketValue > 0
-              ? `${totalUnrealized >= 0 ? '+' : ''}${formatCurrency(totalUnrealized)}`
-              : '—'}
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">P&L Realizado: {(perf?.total_realized_pnl ?? 0) >= 0 ? '+' : ''}{formatCurrency(perf?.total_realized_pnl ?? 0)}</p>
-        </CardContent></Card>
-        <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
-          <div className="pointer-events-none absolute -top-8 -right-8 h-32 w-32 rounded-full bg-positive/[0.05] blur-2xl" />
-          <CardContent className="relative z-10 p-5">
-          <p className="text-xs text-muted-foreground mb-1">Dividendos recibidos</p>
-          <p className="text-xl font-semibold tracking-tight text-positive">+{formatCurrency(perf?.total_dividends ?? 0)}</p>
-          <p className="text-xs text-muted-foreground mt-1">Comisiones: -{formatCurrency(perf?.total_fees ?? 0)}</p>
-        </CardContent></Card>
-      </div>
+      {/* Hero — dominant total portfolio value */}
+      <Card className="relative overflow-hidden rounded-2xl card-hover">
+        <div className="pointer-events-none absolute -top-10 -right-10 h-56 w-56 rounded-full bg-primary/[0.06] blur-3xl" />
+        <CardContent className="relative z-10 p-6 sm:p-8">
+          <div className="flex flex-wrap items-end justify-between gap-x-10 gap-y-6">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Valor de mercado actual</p>
+              <p className="font-display text-4xl sm:text-5xl font-semibold tracking-tight tabular-nums mt-2">
+                {totalMarketValue > 0 ? formatCurrency(totalMarketValue) : '—'}
+              </p>
+              <div className="flex flex-wrap items-center gap-2.5 mt-3">
+                {totalMarketValue > 0 && (
+                  <span className={cn(
+                    'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums',
+                    totalUnrealized >= 0 ? 'bg-positive/10 text-positive' : 'bg-negative/10 text-negative'
+                  )}>
+                    {totalUnrealized >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                    {totalUnrealized >= 0 ? '+' : ''}{formatCurrency(totalUnrealized)}
+                    {perf?.total_invested ? ` (${totalUnrealized >= 0 ? '+' : ''}${totalUnrealizedPct.toFixed(1)}%)` : ''}
+                  </span>
+                )}
+                <span className="text-xs text-muted-foreground">coste {formatCurrency(perf?.total_invested ?? 0)}</span>
+              </div>
+            </div>
+
+            {/* Secondary stats — smaller than the hero number on purpose */}
+            <div className="flex flex-wrap gap-x-8 gap-y-3">
+              <div>
+                <p className="text-xs text-muted-foreground">P&amp;L realizado</p>
+                <p className={cn('text-base font-semibold tabular-nums mt-0.5', (perf?.total_realized_pnl ?? 0) >= 0 ? 'text-positive' : 'text-negative')}>
+                  {(perf?.total_realized_pnl ?? 0) >= 0 ? '+' : ''}{formatCurrency(perf?.total_realized_pnl ?? 0)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Dividendos</p>
+                <p className="text-base font-semibold tabular-nums mt-0.5 text-positive">+{formatCurrency(perf?.total_dividends ?? 0)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Comisiones</p>
+                <p className="text-base font-semibold tabular-nums mt-0.5 text-muted-foreground">-{formatCurrency(perf?.total_fees ?? 0)}</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Tabs value={tab} onValueChange={setTab}>
         {/* Scrollable tab list on mobile */}
@@ -1125,10 +1159,30 @@ export function Portfolio() {
 
 
         <TabsContent value="dividends">
-          <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <Card className="relative overflow-hidden rounded-2xl card-hover">
             <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
             <CardContent className="relative z-10 p-0">
-              <div className="overflow-x-auto">
+              {/* Mobile cards */}
+              <div className="sm:hidden divide-y divide-border/50">
+                {perf?.dividends_by_asset.map(d => (
+                  <div key={d.symbol} className="flex items-center gap-3 px-4 py-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{d.name}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <Badge variant="muted" className="text-xs">{d.symbol}</Badge>
+                        <span className="text-xs text-muted-foreground">{d.count} pagos</span>
+                      </div>
+                    </div>
+                    <p className="text-sm font-semibold text-positive shrink-0 tabular-nums">+{formatCurrency(d.total)}</p>
+                  </div>
+                ))}
+                {(perf?.dividends_by_asset.length === 0) && (
+                  <p className="px-4 py-8 text-center text-muted-foreground text-sm">Sin dividendos registrados</p>
+                )}
+              </div>
+
+              {/* Desktop table */}
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground">
@@ -1144,8 +1198,8 @@ export function Portfolio() {
                           <p className="font-medium">{d.name}</p>
                           <Badge variant="muted" className="text-xs">{d.symbol}</Badge>
                         </td>
-                        <td className="px-4 py-3 text-right text-muted-foreground">{d.count}</td>
-                        <td className="px-4 py-3 text-right font-semibold text-positive">+{formatCurrency(d.total)}</td>
+                        <td className="px-4 py-3 text-right text-muted-foreground tabular-nums">{d.count}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-positive tabular-nums">+{formatCurrency(d.total)}</td>
                       </tr>
                     ))}
                     {(perf?.dividends_by_asset.length === 0) && (
@@ -1159,7 +1213,7 @@ export function Portfolio() {
         </TabsContent>
 
         <TabsContent value="history">
-          <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+          <Card className="relative overflow-hidden rounded-2xl card-hover">
             <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
             <CardContent className="relative z-10 p-0">
               {/* Mobile cards */}
@@ -1175,7 +1229,7 @@ export function Portfolio() {
                       </div>
                       <span className="text-xs text-muted-foreground">{formatDate(tx.date)}</span>
                     </div>
-                    <p className={`text-sm font-semibold shrink-0 ${tx.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
+                    <p className={`text-sm font-semibold shrink-0 tabular-nums ${tx.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
                       {tx.amount >= 0 ? '+' : ''}{formatCurrency(tx.amount)}
                     </p>
                   </div>
@@ -1206,9 +1260,9 @@ export function Portfolio() {
                             </Badge>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-right text-muted-foreground hidden md:table-cell">{tx.shares?.toFixed(4)}</td>
-                        <td className="px-4 py-3 text-right text-muted-foreground hidden md:table-cell">{tx.price ? formatCurrency(tx.price) : '—'}</td>
-                        <td className={`px-4 py-3 text-right font-semibold ${tx.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
+                        <td className="px-4 py-3 text-right text-muted-foreground tabular-nums hidden md:table-cell">{tx.shares?.toFixed(4)}</td>
+                        <td className="px-4 py-3 text-right text-muted-foreground tabular-nums hidden md:table-cell">{tx.price ? formatCurrency(tx.price) : '—'}</td>
+                        <td className={`px-4 py-3 text-right font-semibold tabular-nums ${tx.amount >= 0 ? 'text-positive' : 'text-negative'}`}>
                           {tx.amount >= 0 ? '+' : ''}{formatCurrency(tx.amount)}
                         </td>
                       </tr>
@@ -1220,97 +1274,194 @@ export function Portfolio() {
           </Card>
         </TabsContent>
         <TabsContent value="charts">
-          <div className="grid gap-4 grid-cols-1 md:grid-cols-[3fr_2fr]">
-            {/* Gráfica — columna izquierda */}
-            <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
-              <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
-              <CardContent className="relative z-10 p-5">
-                <PriceChart positions={openPositions.filter(p => p.shares > 0.0001)} totalInvested={perf?.total_invested ?? 0} />
-              </CardContent>
-            </Card>
+          <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1.5fr_1fr]">
+            {/* Columna izquierda: evolución + posiciones */}
+            <div className="flex min-w-0 flex-col gap-4">
+              <Card className="relative overflow-hidden rounded-2xl card-hover">
+                <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
+                <CardHeader className="relative z-10 pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Evolución</CardTitle>
+                </CardHeader>
+                <CardContent className="relative z-10 p-5 pt-0">
+                  <PriceChart positions={openPositions.filter(p => p.shares > 0.0001)} totalInvested={perf?.total_invested ?? 0} />
+                </CardContent>
+              </Card>
 
-            {/* Posiciones — columna derecha */}
-            <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
-              <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
-              <CardHeader className="relative z-10 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Posiciones abiertas
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="relative z-10 p-0">
-                <div className="divide-y divide-border/50">
-                  {openPositions.map(p => {
-                    const sharesKnown = p.shares > 0.0001
-                    return (
-                    <div key={p.symbol} className="px-4 py-3 flex items-center gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="text-sm font-medium truncate">{p.name}</p>
-                          {p.is_manual && (
-                            <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wider text-primary/70 border border-primary/20 rounded px-1 py-0.5">manual</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <Badge variant="muted" className="text-xs">{p.symbol}</Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {sharesKnown ? `${p.shares.toFixed(6)} acc.` : '? acc.'}
-                          </span>
-                          {!sharesKnown && !p.is_manual && (
-                            <span className="text-xs text-amber-400/70" title="Reconecta TR para ver acciones">sync pendiente</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-semibold">
-                          {sharesKnown && p.market_value != null
-                            ? formatCurrency(p.market_value)
-                            : formatCurrency(p.total_invested)}
-                        </p>
-                        {sharesKnown && p.unrealized_pnl != null && (
-                          <p className={`text-xs font-medium ${p.unrealized_pnl >= 0 ? 'text-positive' : 'text-negative'}`}>
-                            {p.unrealized_pnl >= 0 ? '+' : ''}{formatCurrency(p.unrealized_pnl)}
-                            {p.unrealized_pnl_pct != null && (
-                              <span className="opacity-70 ml-1">({p.unrealized_pnl_pct >= 0 ? '+' : ''}{p.unrealized_pnl_pct.toFixed(1)}%)</span>
+              <Card className="relative overflow-hidden rounded-2xl card-hover">
+                <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
+                <CardHeader className="relative z-10 pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Posiciones abiertas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="relative z-10 p-0">
+                  <div className="divide-y divide-border/50">
+                    {openPositions.map(p => {
+                      const sharesKnown = p.shares > 0.0001
+                      const value = sharesKnown && p.market_value != null ? p.market_value : p.total_invested
+                      const weightPct = totalMarketValue > 0 ? Math.min(100, Math.max(0, (value / totalMarketValue) * 100)) : 0
+                      const gain = sharesKnown ? (p.unrealized_pnl ?? 0) >= 0 : true
+                      const badgeColor = symbolColor(p.symbol)
+                      return (
+                        <div key={p.symbol} className="px-4 py-3 flex items-center gap-3">
+                          <div
+                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-display text-[11px] font-bold tracking-tight"
+                            style={{ backgroundColor: `${badgeColor}22`, color: badgeColor }}
+                          >
+                            {p.symbol.slice(0, 4)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-sm font-medium truncate">{p.name}</p>
+                              {p.is_manual && (
+                                <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wider text-primary/70 border border-primary/20 rounded px-1 py-0.5">manual</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-xs text-muted-foreground tabular-nums">
+                                {sharesKnown ? `${p.shares.toFixed(6)} acc.` : '? acc.'}
+                              </span>
+                              {!sharesKnown && !p.is_manual && (
+                                <span className="text-xs text-warning/80" title="Reconecta TR para ver acciones">sync pendiente</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-sm font-semibold tabular-nums">{formatCurrency(value)}</p>
+                            {sharesKnown && p.unrealized_pnl != null && (
+                              <p className={`text-xs font-medium tabular-nums ${p.unrealized_pnl >= 0 ? 'text-positive' : 'text-negative'}`}>
+                                {p.unrealized_pnl >= 0 ? '+' : ''}{formatCurrency(p.unrealized_pnl)}
+                                {p.unrealized_pnl_pct != null && (
+                                  <span className="opacity-70 ml-1">({p.unrealized_pnl_pct >= 0 ? '+' : ''}{p.unrealized_pnl_pct.toFixed(1)}%)</span>
+                                )}
+                              </p>
                             )}
-                          </p>
-                        )}
-                      </div>
-                      {p.is_manual && p.manual_id != null && (
-                        <button
-                          onClick={() => portfolioApi.deleteManualPosition(p.manual_id!).then(() => {
-                            qc.invalidateQueries({ queryKey: ['portfolio'] })
-                            qc.invalidateQueries({ queryKey: ['portfolio-live'] })
-                            toast('Posición eliminada', 'success')
-                          }).catch(() => toast('Error al eliminar', 'error'))}
-                          className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-negative hover:bg-negative/10 transition-colors"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                    )
-                  })}
-                  {openPositions.length === 0 && (
-                    <p className="px-4 py-8 text-center text-sm text-muted-foreground">Sin posiciones abiertas</p>
-                  )}
-                </div>
-
-                {/* Totales */}
-                {openPositions.length > 0 && (
-                  <div className="border-t border-border px-4 py-3 bg-muted/30">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground">Total</span>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold">{formatCurrency(totalMarketValue)}</p>
-                        <p className={`text-xs font-medium ${totalUnrealized >= 0 ? 'text-positive' : 'text-negative'}`}>
-                          {totalUnrealized >= 0 ? '+' : ''}{formatCurrency(totalUnrealized)}
-                        </p>
-                      </div>
-                    </div>
+                          </div>
+                          <div className="hidden w-14 shrink-0 sm:block" title={`${weightPct.toFixed(0)}% del total`}>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                              <div
+                                className={cn('h-full rounded-full', gain ? 'bg-positive' : 'bg-negative')}
+                                style={{ width: `${Math.max(4, weightPct)}%` }}
+                              />
+                            </div>
+                          </div>
+                          {p.is_manual && p.manual_id != null && (
+                            <button
+                              onClick={() => portfolioApi.deleteManualPosition(p.manual_id!).then(() => {
+                                qc.invalidateQueries({ queryKey: ['portfolio'] })
+                                qc.invalidateQueries({ queryKey: ['portfolio-live'] })
+                                toast('Posición eliminada', 'success')
+                              }).catch(() => toast('Error al eliminar', 'error'))}
+                              className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-negative hover:bg-negative/10 transition-colors"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                    {openPositions.length === 0 && (
+                      <p className="px-4 py-8 text-center text-sm text-muted-foreground">Sin posiciones abiertas</p>
+                    )}
                   </div>
-                )}
-              </CardContent>
-            </Card>
+
+                  {/* Totales */}
+                  {openPositions.length > 0 && (
+                    <div className="border-t border-border px-4 py-3 bg-muted/30">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">Total</span>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold tabular-nums">{formatCurrency(totalMarketValue)}</p>
+                          <p className={`text-xs font-medium tabular-nums ${totalUnrealized >= 0 ? 'text-positive' : 'text-negative'}`}>
+                            {totalUnrealized >= 0 ? '+' : ''}{formatCurrency(totalUnrealized)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Columna derecha: distribución + dividendos */}
+            <div className="flex flex-col gap-4">
+              <Card className="relative overflow-hidden rounded-2xl card-hover">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Distribución</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  {allocation.length > 0 ? (
+                    <>
+                      <div className="flex justify-center py-1">
+                        <svg viewBox="0 0 150 150" width={150} height={150}>
+                          <circle cx="75" cy="75" r="58" fill="none" stroke="hsl(var(--border))" strokeWidth="16" />
+                          {(() => {
+                            const C = 2 * Math.PI * 58
+                            let offset = 0
+                            return allocation.map(slice => {
+                              const dash = (slice.pct / 100) * C
+                              const el = (
+                                <circle
+                                  key={slice.label}
+                                  cx="75" cy="75" r="58" fill="none"
+                                  stroke={slice.color}
+                                  strokeWidth="16"
+                                  strokeDasharray={`${dash} ${C - dash}`}
+                                  strokeDashoffset={-offset}
+                                  strokeLinecap="round"
+                                  transform="rotate(-90 75 75)"
+                                />
+                              )
+                              offset += dash
+                              return el
+                            })
+                          })()}
+                          <text x="75" y="71" textAnchor="middle" className="fill-foreground font-display text-[16px] font-semibold">
+                            {openPositions.length}
+                          </text>
+                          <text x="75" y="88" textAnchor="middle" className="fill-muted-foreground text-[10px]">
+                            {openPositions.length === 1 ? 'activo' : 'activos'}
+                          </text>
+                        </svg>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {allocation.map(slice => (
+                          <div key={slice.label} className="flex items-center justify-between gap-3 text-xs">
+                            <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: slice.color }} />
+                              <span className="truncate">{slice.label}</span>
+                            </span>
+                            <span className="shrink-0 font-medium tabular-nums">{slice.pct.toFixed(0)}%</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="py-8 text-center text-xs text-muted-foreground">Sin posiciones abiertas</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="relative overflow-hidden rounded-2xl card-hover">
+                <CardContent className="p-5">
+                  <p className="text-xs text-muted-foreground">Dividendos recibidos</p>
+                  <p className="font-display text-2xl font-semibold tabular-nums mt-1.5">
+                    +{formatCurrency(perf?.total_dividends ?? 0)}
+                  </p>
+                  <div className="h-px bg-border my-3.5" />
+                  <div className="space-y-2.5">
+                    {recentDividends.length > 0 ? recentDividends.map(tx => (
+                      <div key={tx.id} className="flex items-center justify-between gap-3 text-xs">
+                        <span className="truncate text-muted-foreground">{tx.name}</span>
+                        <span className="shrink-0 font-medium tabular-nums">{formatDate(tx.date)} · +{formatCurrency(tx.amount)}</span>
+                      </div>
+                    )) : (
+                      <p className="text-xs text-muted-foreground">Sin pagos recientes</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </TabsContent>
       </Tabs>

@@ -40,6 +40,9 @@ async def lifespan(app: FastAPI):
         for stmt in [
             "ALTER TABLE transactions ADD COLUMN exclude_from_stats BOOLEAN DEFAULT FALSE",
             "ALTER TABLE recurring_groups ADD COLUMN amount_is_manual BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE transactions ADD COLUMN link_group_id INTEGER",
+            "ALTER TABLE transactions ADD COLUMN is_link_primary BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE transactions ADD COLUMN effective_amount REAL",
         ]:
             try:
                 conn.execute(text(stmt))

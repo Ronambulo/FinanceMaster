@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { Command } from 'cmdk'
 import {
   LayoutDashboard, ArrowLeftRight, TrendingUp, CalendarDays,
-  RefreshCw, CreditCard, Target, Settings, Flame, Upload,
+  RefreshCw, CreditCard, Target, Settings, Upload,
   Plus, Palette, Trophy, Moon, Sun, Minimize2, Maximize2,
-  PiggyBank, FileText, FileSpreadsheet, Wallet, Baby,
+  PiggyBank, FileText, FileSpreadsheet, Wallet,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getCompact, setCompact, getTheme, applyTheme, ACCENT_KEY } from '@/lib/theme'
@@ -57,9 +57,7 @@ export function CommandPalette() {
     { id: 'recurring',    group: 'Navegación', icon: <RefreshCw       className="h-4 w-4" />, label: 'Recurrentes',       desc: 'Suscripciones y pagos fijos',         action: () => go('/recurrentes'),   keywords: 'suscripciones pagos fijos',              feature: 'recurring' },
     { id: 'debts',        group: 'Navegación', icon: <CreditCard      className="h-4 w-4" />, label: 'Deudas',            desc: 'Préstamos y deudas pendientes',       action: () => go('/deudas'),        keywords: 'prestamo credito',                       feature: 'debts' },
     { id: 'goals',        group: 'Navegación', icon: <Target          className="h-4 w-4" />, label: 'Objetivos',         desc: 'Metas de ahorro e inversión',         action: () => go('/objetivos'),     keywords: 'metas ahorro objetivo',                  feature: 'goals' },
-    { id: 'fire',         group: 'Navegación', icon: <Flame           className="h-4 w-4" />, label: 'Calculadora FIRE',  desc: '¿Cuándo puedes retirarte?',           action: () => go('/fire'),          keywords: 'independencia financiera jubilacion retiro', feature: 'fire' },
     { id: 'achievements', group: 'Navegación', icon: <Trophy          className="h-4 w-4" />, label: 'Mis logros',        desc: 'Ver logros desbloqueados',            action: () => go('/logros'),        keywords: 'logros badges gamificacion',              feature: 'achievements' },
-    { id: 'baby-steps',   group: 'Navegación', icon: <Baby            className="h-4 w-4" />, label: '7 Baby Steps',      desc: 'Plan de Dave Ramsey',                 action: () => go('/baby-steps'),    keywords: 'dave ramsey pasos finanzas',              feature: 'babySteps' },
     { id: 'settings',     group: 'Navegación', icon: <Settings        className="h-4 w-4" />, label: 'Ajustes',           desc: 'Categorías, tema y seguridad',        action: () => go('/ajustes'),       keywords: 'configuracion tema color' },
 
     // Acciones rápidas — algunas feature-gated
@@ -158,7 +156,7 @@ export function CommandPalette() {
           </Command.List>
 
           {/* Footer */}
-          <div className="border-t border-border px-4 py-2 flex items-center gap-4 text-[10px] text-muted-foreground">
+          <div className="hidden sm:flex border-t border-border px-4 py-2 items-center gap-4 text-[10px] text-muted-foreground">
             <span><kbd className="font-mono">↑↓</kbd> navegar</span>
             <span><kbd className="font-mono">↵</kbd> ejecutar</span>
             <span><kbd className="font-mono">Esc</kbd> cerrar</span>

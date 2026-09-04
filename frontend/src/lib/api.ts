@@ -61,6 +61,10 @@ export const txApi = {
     fd.append('bank_format', bankFormat)
     return request<ImportResult>('/transactions/import', { method: 'POST', body: fd })
   },
+  link: (transactionIds: number[]) =>
+    request<Transaction>('/transactions/link', { method: 'POST', body: JSON.stringify({ transaction_ids: transactionIds }) }),
+  unlink: (linkGroupId: number) =>
+    request<{ ok: boolean }>(`/transactions/link/${linkGroupId}`, { method: 'DELETE' }),
 }
 
 // Dashboard
@@ -207,6 +211,7 @@ export interface Transaction {
   description: string | null; counterparty_name: string | null; mcc_code: string | null
   category_id: number | null; category: Category | null
   is_auto_categorized: boolean; is_ai_categorized: boolean; is_internal_transfer: boolean; exclude_from_stats: boolean; is_pending: boolean; recurring_group_id: number | null
+  link_group_id: number | null; is_link_primary: boolean; effective_amount: number | null; linked_transactions: Transaction[] | null
 }
 export interface TransactionListResponse { items: Transaction[]; total: number; page: number; page_size: number; income_sum: number; expense_sum: number }
 export interface ImportResult { imported: number; skipped_duplicates: number; errors: number }

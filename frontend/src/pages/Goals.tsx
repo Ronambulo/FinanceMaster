@@ -13,19 +13,25 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Plus, Trash2, Target, PiggyBank, TrendingUp, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Target, PiggyBank, Loader2 } from 'lucide-react'
 
-function GoalCard({ goal, onDelete, onUpdate }: { goal: Goal; onDelete: (id: number) => void; onUpdate: (id: number, d: Partial<Goal>) => void }) {
+function GoalCard({ goal, onDelete, onUpdate, delay = 0 }: { goal: Goal; onDelete: (id: number) => void; onUpdate: (id: number, d: Partial<Goal>) => void; delay?: number }) {
   const [editAmt, setEditAmt] = useState(false)
   const [newAmt, setNewAmt] = useState(String(goal.current_amount))
 
   return (
-    <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+    <Card
+      className="card-hover animate-fade-up relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]"
+      style={{ animationDelay: `${delay}ms` }}
+    >
       <div className="pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full bg-primary/[0.04] blur-3xl" />
       <CardContent className="relative z-10 p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-white/[0.06]">
+                <Target className="h-4 w-4 text-primary" />
+              </span>
               <p className="font-semibold">{goal.name}</p>
               {goal.deadline && (
                 <Badge variant={new Date(goal.deadline) < new Date() ? 'destructive' : 'muted'} className="text-xs">
@@ -35,7 +41,7 @@ function GoalCard({ goal, onDelete, onUpdate }: { goal: Goal; onDelete: (id: num
             </div>
             {goal.type === 'EURO_TARGET' && goal.target_amount ? (
               <>
-                <div className="flex items-center gap-3 text-sm mb-2">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm mb-2">
                   <span className="text-muted-foreground">Objetivo: <span className="text-foreground font-medium">{formatCurrency(goal.target_amount)}</span></span>
                   {editAmt ? (
                     <div className="flex items-center gap-1">
@@ -88,7 +94,7 @@ function GoalForm({ onSave, onCancel }: { onSave: (d: Partial<Goal>) => void; on
         </Select>
       </div>
       {form.type === 'EURO_TARGET' ? (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label>Importe objetivo (€)</Label>
             <Input type="number" step="0.01" value={form.target_amount} onChange={e => setForm(f => ({ ...f, target_amount: e.target.value }))} />
@@ -99,7 +105,7 @@ function GoalForm({ onSave, onCancel }: { onSave: (d: Partial<Goal>) => void; on
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label>Porcentaje (%)</Label>
             <Input type="number" min="0" max="100" value={form.target_percent} onChange={e => setForm(f => ({ ...f, target_percent: e.target.value }))} />
@@ -171,7 +177,7 @@ export function Goals() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-up">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Objetivos</h1>
           <p className="text-sm text-muted-foreground">Metas de ahorro e inversión</p>
@@ -180,7 +186,7 @@ export function Goals() {
       </div>
 
       {/* Savings allocation */}
-      <Card className="relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+      <Card className="card-hover animate-fade-up relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
         <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-positive/[0.04] blur-3xl" />
         <CardHeader className="relative z-10 pb-3">
           <CardTitle className="text-base flex items-center gap-2"><PiggyBank className="h-5 w-5 text-primary" />Asignación mensual de ingresos</CardTitle>
@@ -228,11 +234,11 @@ export function Goals() {
         <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {goals?.map(g => (
-            <GoalCard key={g.id} goal={g} onDelete={id => deleteMutation.mutate(id)} onUpdate={(id, d) => updateMutation.mutate({ id, data: d })} />
+          {goals?.map((g, i) => (
+            <GoalCard key={g.id} goal={g} onDelete={id => deleteMutation.mutate(id)} onUpdate={(id, d) => updateMutation.mutate({ id, data: d })} delay={Math.min(i, 8) * 40} />
           ))}
           {goals?.length === 0 && (
-            <Card className="col-span-2 relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
+            <Card className="col-span-2 animate-fade-up relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
               <div className="pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full bg-primary/[0.04] blur-3xl" />
               <CardContent className="relative z-10 py-12 text-center text-sm text-muted-foreground">
               No tienes objetivos activos. Crea uno para empezar a hacer seguimiento.

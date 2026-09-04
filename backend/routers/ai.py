@@ -48,7 +48,7 @@ CHAT_PROVIDERS = [
         "name": "gemini",
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "api_key_env": "GEMINI_API_KEY",
-        "model": "gemini-2.0-flash",
+        "model": "gemini-3.6-flash",
         "supports_thinking": False,
         "rpm": 15,
     },
@@ -74,7 +74,7 @@ FAST_PROVIDERS = [
         "name": "gemini",
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
         "api_key_env": "GEMINI_API_KEY",
-        "model": "gemini-2.0-flash",
+        "model": "gemini-3.6-flash",
         "rpm": 15,
     },
 ]
