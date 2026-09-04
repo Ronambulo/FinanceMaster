@@ -109,14 +109,128 @@ def _fix_misfiled_trades(db: Session) -> int:
     return fixed
 
 
+# Un saveback tiene dos patas: TR abona la recompensa y la reinvierte en el
+# acto. El timeline de la API solo devuelve la compra (el abono únicamente
+# aparece en la exportación CSV), así que importando el sync tal cual el saldo
+# queda corto exactamente en el importe reinvertido. Reconstruimos el abono.
+_SAVEBACK_CREDIT_SUFFIX = "--saveback-reward"
+# Margen para emparejar un abono real (del CSV) con su compra: TR abona el día 1
+# y ejecuta la compra uno o dos días después.
+_SAVEBACK_MATCH_DAYS = 5
+_SAVEBACK_MATCH_EPS = 0.02
+
+
+def _saveback_buys(db: Session, user_id: int | None):
+    q = db.query(models.Transaction).filter(
+        models.Transaction.type == "BUY",
+        models.Transaction.amount < 0,
+        models.Transaction.description.ilike("%saveback%"),
+    )
+    if user_id is not None:
+        q = q.filter(models.Transaction.user_id == user_id)
+    return q.all()
+
+
+def ensure_saveback_credits(db: Session, user_id: int | None = None) -> int:
+    """
+    Crea el abono que financia cada compra de saveback, si no está ya.
+
+    No inventa dinero: el efecto neto sobre el saldo es cero, que es justo lo
+    que ocurre en Trade Republic (te abonan la recompensa y la invierten en el
+    mismo movimiento). Sin esto el saldo baja por una compra que nunca salió
+    del bolsillo del usuario.
+
+    Es idempotente por `external_id`, y si el abono real ya entró por el CSV
+    (con su desglose bruto/retención) se respeta ese y no se duplica.
+    """
+    from datetime import timedelta
+    from .categorizer import auto_categorize
+
+    buys = _saveback_buys(db, user_id)
+    if not buys:
+        return 0
+
+    uids = {tx.user_id for tx in buys}
+    credits = db.query(models.Transaction).filter(
+        models.Transaction.type == "BENEFITS_SAVEBACK",
+        models.Transaction.user_id.in_(sorted(uids)),
+    ).all()
+    # Un abono solo puede financiar una compra: se va descartando al emparejar.
+    unclaimed = list(credits)
+
+    created = 0
+    for tx in buys:
+        ext_id = f"{tx.external_id or f'tx{tx.id}'}{_SAVEBACK_CREDIT_SUFFIX}"
+        if any(c.external_id == ext_id for c in credits):
+            continue
+
+        # ¿Existe ya el abono real, importado del CSV? Se compara en neto
+        # (bruto + retención), que es lo que TR reinvierte.
+        target = abs(tx.amount)
+        match = next(
+            (
+                c for c in unclaimed
+                if c.user_id == tx.user_id
+                and abs(c.date - tx.date) <= timedelta(days=_SAVEBACK_MATCH_DAYS)
+                and abs((c.amount + (c.tax or 0) + (c.fee or 0)) - target) < _SAVEBACK_MATCH_EPS
+            ),
+            None,
+        )
+        if match is not None:
+            unclaimed.remove(match)
+            continue
+
+        category_id = None
+        try:
+            category_id, _, _ = auto_categorize(
+                db=db,
+                user_id=tx.user_id,
+                tx_type="BENEFITS_SAVEBACK",
+                tx_name=tx.name,
+                tx_description="Saveback",
+                mcc_code=None,
+                counterparty_name=None,
+                amount=target,
+                user_own_name=None,
+            )
+        except Exception:
+            log.warning("No se pudo categorizar el abono de saveback de %s", tx.id)
+
+        credit = models.Transaction(
+            user_id=tx.user_id,
+            category_id=category_id,
+            is_auto_categorized=True,
+            external_id=ext_id,
+            date=tx.date,
+            datetime=tx.datetime,
+            type="BENEFITS_SAVEBACK",
+            account_category="CASH",
+            name=tx.name,
+            amount=target,
+            currency=tx.currency,
+            description="Saveback (abono reconstruido: TR no lo expone por API)",
+        )
+        db.add(credit)
+        credits.append(credit)
+        created += 1
+    return created
+
+
 def run_data_repairs(db: Session) -> dict:
     """Aplica todas las reparaciones. Nunca lanza: un fallo aquí no debe
     impedir que la app arranque."""
-    result = {"cache_purged": 0, "symbols_fixed": 0, "trades_reclassified": 0}
+    result = {
+        "cache_purged": 0, "symbols_fixed": 0,
+        "trades_reclassified": 0, "saveback_credits": 0,
+    }
     try:
         result["cache_purged"] = _purge_ticker_cache()
         result["symbols_fixed"] = _fix_bad_symbols(db)
         result["trades_reclassified"] = _fix_misfiled_trades(db)
+        # Después de reclasificar: una compra de saveback mal archivada como
+        # gasto de tarjeta acaba de convertirse en BUY y también necesita abono.
+        db.flush()
+        result["saveback_credits"] = ensure_saveback_credits(db)
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -126,8 +240,9 @@ def run_data_repairs(db: Session) -> dict:
     if any(result.values()):
         log.info(
             "Reparación de datos: %d entrada(s) de caché purgada(s), "
-            "%d símbolo(s) corregido(s), %d operación(es) reclasificada(s)",
+            "%d símbolo(s) corregido(s), %d operación(es) reclasificada(s), "
+            "%d abono(s) de saveback reconstruido(s)",
             result["cache_purged"], result["symbols_fixed"],
-            result["trades_reclassified"],
+            result["trades_reclassified"], result["saveback_credits"],
         )
     return result
