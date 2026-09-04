@@ -422,16 +422,22 @@ function CategoryPickerDialog({ open, onClose, categories, value, onSelect, titl
   const [query, setQuery] = useState('')
   useEffect(() => { if (open) setQuery('') }, [open])
   const filtered = categories.filter(c => c.name.toLowerCase().includes(query.toLowerCase()))
+  // Autofocus solo con puntero fino (ratón): en touch, popa el teclado virtual
+  // nada más abrir el diálogo, tapando la rejilla que se quiere pulsar.
+  const autoFocusSearch = typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent
+        className="max-w-md"
+        onOpenAutoFocus={e => { if (!autoFocusSearch) e.preventDefault() }}
+      >
         <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              autoFocus
+              autoFocus={autoFocusSearch}
               placeholder="Buscar categoría..."
               className="rounded-xl pl-9"
               value={query}
