@@ -38,6 +38,9 @@ export const authApi = {
     request<{ ok: boolean }>('/auth/password', { method: 'PUT', body: JSON.stringify(data) }),
   deleteAllData: () =>
     request<{ ok: boolean }>('/auth/data', { method: 'DELETE' }),
+  deleteTransactionData: () =>
+    request<{ ok: boolean; transactions: number; recurring_groups: number; manual_positions: number }>(
+      '/auth/data/transactions', { method: 'DELETE' }),
   deleteAccount: () =>
     request<void>('/auth/account', { method: 'DELETE' }),
 }
