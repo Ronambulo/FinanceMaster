@@ -216,12 +216,45 @@ def ensure_saveback_credits(db: Session, user_id: int | None = None) -> int:
     return created
 
 
+def _recategorize_known_types(db: Session) -> int:
+    """
+    Rescata las filas que cayeron en "Sin categorizar" porque su tipo todavía
+    no estaba en TYPE_MAP cuando se importaron (p.ej. BENEFITS_SAVEBACK).
+
+    Solo toca filas que están en la categoría de descarte, así que no pisa
+    ninguna elección del usuario salvo que hubiera escogido "Sin categorizar"
+    a mano para un movimiento cuyo tipo ya tiene categoría propia.
+    """
+    from .categorizer import TYPE_MAP, _get_system_cat_by_name
+
+    fallback = _get_system_cat_by_name(db, "Sin categorizar")
+    if not fallback:
+        return 0
+
+    rows = db.query(models.Transaction).filter(
+        models.Transaction.category_id == fallback.id,
+        models.Transaction.type.in_(sorted(TYPE_MAP)),
+    ).all()
+
+    fixed = 0
+    for tx in rows:
+        cat_name, _ = TYPE_MAP[tx.type]
+        cat = _get_system_cat_by_name(db, cat_name)
+        if not cat or cat.id == fallback.id:
+            continue
+        tx.category_id = cat.id
+        tx.is_auto_categorized = True
+        fixed += 1
+    return fixed
+
+
 def run_data_repairs(db: Session) -> dict:
     """Aplica todas las reparaciones. Nunca lanza: un fallo aquí no debe
     impedir que la app arranque."""
     result = {
         "cache_purged": 0, "symbols_fixed": 0,
         "trades_reclassified": 0, "saveback_credits": 0,
+        "recategorized": 0,
     }
     try:
         result["cache_purged"] = _purge_ticker_cache()
@@ -231,6 +264,8 @@ def run_data_repairs(db: Session) -> dict:
         # gasto de tarjeta acaba de convertirse en BUY y también necesita abono.
         db.flush()
         result["saveback_credits"] = ensure_saveback_credits(db)
+        db.flush()
+        result["recategorized"] = _recategorize_known_types(db)
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -241,8 +276,9 @@ def run_data_repairs(db: Session) -> dict:
         log.info(
             "Reparación de datos: %d entrada(s) de caché purgada(s), "
             "%d símbolo(s) corregido(s), %d operación(es) reclasificada(s), "
-            "%d abono(s) de saveback reconstruido(s)",
+            "%d abono(s) de saveback reconstruido(s), %d recategorizada(s)",
             result["cache_purged"], result["symbols_fixed"],
             result["trades_reclassified"], result["saveback_credits"],
+            result["recategorized"],
         )
     return result
