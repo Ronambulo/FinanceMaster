@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 INCOME_TYPES = {
     "CUSTOMER_INPAYMENT", "TRANSFER_INSTANT_INBOUND", "TRANSFER_INBOUND",
-    "INTEREST_PAYMENT", "DIVIDEND", "STOCKPERK",
+    "INTEREST_PAYMENT", "DIVIDEND", "STOCKPERK", "BENEFITS_SAVEBACK",
 }
 EXPENSE_TYPES = {
     "CARD_TRANSACTION", "CARD_TRANSACTION_INTERNATIONAL",
@@ -64,9 +64,18 @@ def overview(
     interest_month = _sum(cash_txs, INTEREST_TYPES, start, end)
     interest_total = _sum(cash_txs, INTEREST_TYPES)
 
-    balance_raw = db.query(func.sum(models.Transaction.amount)).filter(
-        models.Transaction.user_id == current_user.id
-    ).scalar()
+    # Fees and taxes are booked differently depending on the import path: the
+    # TR API already nets them into `amount`, while the CSV export keeps them
+    # in their own columns. Adding them here is correct for the CSV and a
+    # no-op for the API (where both columns are empty), so a single formula
+    # gives the real cash balance regardless of where the data came from.
+    balance_raw = db.query(
+        func.sum(
+            models.Transaction.amount
+            + func.coalesce(models.Transaction.fee, 0.0)
+            + func.coalesce(models.Transaction.tax, 0.0)
+        )
+    ).filter(models.Transaction.user_id == current_user.id).scalar()
     balance = round(balance_raw or 0.0, 2)
 
     return schemas.DashboardOverview(
