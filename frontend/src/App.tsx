@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { queryClient } from '@/lib/queryClient'
 import { ToastProvider } from '@/components/ui/toast'
 import { useAuthStore } from '@/store/auth'
 import { AppLayout } from '@/components/layout/AppLayout'
@@ -133,10 +134,6 @@ function PendingTwoFABanner() {
     </button>
   )
 }
-
-export const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
-})
 
 let lastTokenAutoConnected: string | null = null
 
