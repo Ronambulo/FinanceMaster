@@ -6,6 +6,9 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 import os
+import mimetypes
+
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 # Load .env before any other module reads os.environ (works even with --reload worker)
 _env_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -106,11 +109,16 @@ app.include_router(integrations.router)
 
 
 # Serve React frontend
-static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "static"))
 if os.path.isdir(static_dir):
     app.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        index = os.path.join(static_dir, "index.html")
-        return FileResponse(index)
+        # Sirve directamente cualquier archivo estático real en la raíz del build
+        # (manifest.webmanifest, sw.js, registerSW.js, workbox-*.js, icon.png...);
+        # si no existe, se asume ruta del router de React y se devuelve index.html.
+        candidate = os.path.normpath(os.path.join(static_dir, full_path))
+        if full_path and candidate.startswith(static_dir) and os.path.isfile(candidate):
+            return FileResponse(candidate)
+        return FileResponse(os.path.join(static_dir, "index.html"))

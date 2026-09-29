@@ -14,6 +14,9 @@ services:
       - DATABASE_URL=sqlite:////data/finance.db
       # AI chat (opcional — sin esta clave el chat de IA queda desactivado)
       - OPENWEBUI_API_KEY=
+      # Opcional: solo hace falta si tu IA local no está en la URL/modelo por defecto
+      # - OPENWEBUI_BASE_URL=http://tu-ip:puerto/api
+      # - OPENWEBUI_MODEL=nombre-del-modelo
 
 x-casaos:
   architectures:

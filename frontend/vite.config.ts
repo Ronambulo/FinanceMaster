@@ -8,18 +8,22 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.png', 'favicon.ico'],
+      includeAssets: ['icon.png'],
       manifest: {
         name: 'FinanceMaster',
         short_name: 'FinanceMaster',
         description: 'Tu gestor de finanzas personales',
+        lang: 'es',
         theme_color: '#0f1117',
         background_color: '#0f1117',
         display: 'standalone',
         start_url: '/',
+        scope: '/',
+        orientation: 'portrait-primary',
         icons: [
-          { src: 'icon.png', sizes: '192x192', type: 'image/png' },
-          { src: 'icon.png', sizes: '512x512', type: 'image/png' },
+          { src: 'icon.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {

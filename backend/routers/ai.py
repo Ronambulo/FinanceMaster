@@ -26,13 +26,18 @@ EXPENSE_TYPES = {
 }
 
 # ── Provider configuration ─────────────────────────────────────────────────────
+# Base URL y modelo se pueden sobreescribir por entorno (p.ej. en el yaml de
+# CasaOS/Docker) para apuntar a otra IA local sin tocar código.
+_OPENWEBUI_BASE_URL = os.environ.get("OPENWEBUI_BASE_URL", "http://10.147.13.1:3050/api")
+_OPENWEBUI_MODEL = os.environ.get("OPENWEBUI_MODEL", "gemma4:e4b")
+
 # Chat providers: tried in order until one succeeds. Primary uses reasoning model.
 CHAT_PROVIDERS = [
     {
         "name": "openwebui",
-        "base_url": "http://10.147.13.1:3050/api",
+        "base_url": _OPENWEBUI_BASE_URL,
         "api_key_env": "OPENWEBUI_API_KEY",
-        "model": "gemma4:e4b",
+        "model": _OPENWEBUI_MODEL,
         "supports_thinking": False,
         "rpm": 60,
     },
@@ -42,9 +47,9 @@ CHAT_PROVIDERS = [
 FAST_PROVIDERS = [
     {
         "name": "openwebui",
-        "base_url": "http://10.147.13.1:3050/api",
+        "base_url": _OPENWEBUI_BASE_URL,
         "api_key_env": "OPENWEBUI_API_KEY",
-        "model": "gemma4:e4b",
+        "model": _OPENWEBUI_MODEL,
         "rpm": 60,
     },
 ]
