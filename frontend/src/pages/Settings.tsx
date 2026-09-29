@@ -1,13 +1,8 @@
 import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-<<<<<<< Updated upstream
-import { catApi, authApi } from '@/lib/api'
-import { queryClient } from '@/lib/queryClient'
-=======
 import { catApi, authApi, aiApi } from '@/lib/api'
-import { queryClient } from '@/App'
->>>>>>> Stashed changes
+import { queryClient } from '@/lib/queryClient'
 import type { Category } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'

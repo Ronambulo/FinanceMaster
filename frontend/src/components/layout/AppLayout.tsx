@@ -171,11 +171,7 @@ export function AppLayout() {
         {/* Mobile top bar */}
         <header
           className="md:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-background/95 backdrop-blur-sm sticky top-0 z-40"
-<<<<<<< Updated upstream
-          style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}
-=======
           style={{ paddingTop: 'calc(0.75rem + var(--safe-top))' }}
->>>>>>> Stashed changes
         >
           <div className="flex items-center gap-2">
             <img
@@ -213,10 +209,9 @@ export function AppLayout() {
           </div>
         </header>
 
-<<<<<<< Updated upstream
         <main
           ref={mainRef}
-          className="relative flex-1 overflow-y-auto p-4 pb-32 md:p-6 md:pb-6"
+          className="app-main relative flex-1 overflow-y-auto p-4 md:p-6"
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
@@ -241,9 +236,6 @@ export function AppLayout() {
               </div>
             </div>
           )}
-=======
-        <main className="app-main flex-1 overflow-y-auto p-4 md:p-6">
->>>>>>> Stashed changes
           <Outlet />
         </main>
       </div>
@@ -251,11 +243,7 @@ export function AppLayout() {
       {/* ── Mobile bottom nav ── */}
       <nav
         className="md:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-background/95 backdrop-blur-xl"
-<<<<<<< Updated upstream
-        style={{ height: 'calc(78px + env(safe-area-inset-bottom))', paddingBottom: 'env(safe-area-inset-bottom)' }}
-=======
-        style={{ paddingBottom: 'var(--safe-bottom)' }}
->>>>>>> Stashed changes
+        style={{ height: 'calc(78px + var(--safe-bottom))', paddingBottom: 'var(--safe-bottom)' }}
       >
         <div
           className="grid h-[78px]"
