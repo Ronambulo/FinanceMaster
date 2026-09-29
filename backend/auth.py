@@ -1,5 +1,6 @@
 import os
 import bcrypt
+import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -8,6 +9,8 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from . import models
 from .database import get_db
+
+API_TOKEN_PREFIX = "fm_"
 
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production-use-long-random-string")
 ALGORITHM = "HS256"
@@ -46,6 +49,23 @@ def get_user_from_token(token: str, db: Session) -> models.User:
         raise HTTPException(status_code=401, detail="Invalid token") from exc
 
 
+def _resolve_api_token(token: str, db: Session) -> Optional[models.User]:
+    """Long-lived token for external clients (e.g. an iOS Shortcut) that
+    shouldn't have to re-authenticate every 7 days like a normal login session."""
+    if not token.startswith(API_TOKEN_PREFIX):
+        return None
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    rec = db.query(models.ApiToken).filter(models.ApiToken.token_hash == token_hash).first()
+    if rec is None:
+        return None
+    user = db.query(models.User).filter(models.User.id == rec.user_id).first()
+    if user is None or not user.is_active:
+        return None
+    rec.last_used_at = datetime.utcnow()
+    db.commit()
+    return user
+
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> models.User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -58,7 +78,10 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         if user_id is None:
             raise credentials_exception
     except JWTError:
-        raise credentials_exception
+        api_user = _resolve_api_token(token, db)
+        if api_user is None:
+            raise credentials_exception
+        return api_user
 
     user = db.query(models.User).filter(models.User.id == int(user_id)).first()
     if user is None or not user.is_active:

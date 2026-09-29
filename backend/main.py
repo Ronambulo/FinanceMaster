@@ -24,7 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from .database import engine
 from . import models
-from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic, myinvestor
+from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic, myinvestor, integrations
 from .services.categorizer import seed_system_categories
 from .database import SessionLocal
 from sqlalchemy import text
@@ -102,6 +102,7 @@ app.include_router(ai.router)
 app.include_router(webhooks.router)
 app.include_router(trade_republic.router)
 app.include_router(myinvestor.router)
+app.include_router(integrations.router)
 
 
 # Serve React frontend

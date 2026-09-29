@@ -76,6 +76,16 @@ class TransactionCreate(BaseModel):
     category_id: Optional[int] = None
     fee: Optional[float] = None
 
+class QuickTransactionCreate(BaseModel):
+    """Entrada simplificada para clientes externos (p.ej. un Atajo de iOS) que
+    no conocen los códigos de tipo internos ni los ids de categoría."""
+    amount: float  # siempre positivo; el signo se deriva de `type`
+    type: str = "expense"  # "expense" | "income"
+    name: Optional[str] = None  # si no se manda (o va vacío), se usa un título por defecto
+    category_name: Optional[str] = None
+    date: Optional[date] = None
+    note: Optional[str] = None
+
 class TransactionUpdate(BaseModel):
     category_id: Optional[int] = None
     name: Optional[str] = None

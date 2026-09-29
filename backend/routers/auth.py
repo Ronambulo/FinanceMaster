@@ -61,17 +61,6 @@ def change_password(
     return {"ok": True}
 
 
-@router.get("/api-token")
-def get_api_token(current_user: models.User = Depends(auth.get_current_user)):
-    """Generate a long-lived token for external / programmatic use."""
-    import datetime as dt
-    token = auth.create_access_token(
-        {"sub": str(current_user.id)},
-        expires_delta=dt.timedelta(days=365),
-    )
-    return {"token": token, "expires_in_days": 365}
-
-
 @router.delete("/account", status_code=204)
 def delete_account(
     current_user: models.User = Depends(auth.get_current_user),

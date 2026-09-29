@@ -127,6 +127,7 @@ class TradeRepublicAPI:
         self.pin = pin
         self._client = None
         self._connected = False
+        self._awaiting_2fa = False
         self._last_sync: Optional[datetime] = None
 
     def _build_client(self):
@@ -158,6 +159,7 @@ class TradeRepublicAPI:
             log.info("TR: initiating web login (Playwright WAF bypass)…")
             countdown = self._client.initiate_weblogin()
             log.info(f"TR: 2FA SMS sent, countdown={countdown}s")
+            self._awaiting_2fa = True
             return {"status": "awaiting_2fa", "countdown": countdown}
 
         except ImportError:
@@ -190,6 +192,7 @@ class TradeRepublicAPI:
         try:
             self._client.complete_weblogin(code)
             self._connected = True
+            self._awaiting_2fa = False
             log.info("TR: 2FA verificado, sesión activa")
             return {"status": "connected"}
         except Exception as e:
@@ -435,6 +438,9 @@ class TradeRepublicAPI:
 
     def is_connected(self) -> bool:
         return self._connected
+
+    def is_awaiting_2fa(self) -> bool:
+        return self._awaiting_2fa and not self._connected
 
     def last_sync(self) -> Optional[datetime]:
         return self._last_sync
