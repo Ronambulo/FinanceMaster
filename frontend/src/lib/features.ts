@@ -1,5 +1,5 @@
 export const FEATURES = {
-  achievements: { key: 'fm-feat-achievements',  label: 'Logros',            desc: 'Gamificación y retos financieros',     default: true  },
+  achievements: { key: 'fm-feat-achievements',  label: 'Logros',            desc: 'Gamificación y retos financieros',     default: false },
   debts:        { key: 'fm-feat-debts',         label: 'Deudas',            desc: 'Seguimiento de préstamos y créditos',  default: true  },
   goals:        { key: 'fm-feat-goals',         label: 'Objetivos',         desc: 'Metas de ahorro e inversión',          default: true  },
   recurring:    { key: 'fm-feat-recurring',     label: 'Recurrentes',       desc: 'Suscripciones y pagos fijos',          default: true  },
