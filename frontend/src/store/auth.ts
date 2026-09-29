@@ -22,7 +22,7 @@ export const useAuthStore = create<AuthState>()(
         localStorage.removeItem('fm_token')
         set({ user: null, token: null })
         // Lazily clear query cache to avoid stale data on next login
-        import('@/App').then(m => m.queryClient.clear()).catch(() => {})
+        import('@/lib/queryClient').then(m => m.queryClient.clear()).catch(() => {})
       },
     }),
     { name: 'fm-auth', partialize: (s) => ({ user: s.user, token: s.token }) }
