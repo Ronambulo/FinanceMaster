@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowLeftRight, TrendingUp,
   CreditCard, Target, Settings, LogOut, CalendarDays,
-  Search, Sparkles, Trophy, RefreshCw,
+  Search, Sparkles, Trophy, RefreshCw, ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
@@ -135,6 +135,28 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             </>
           )}
         </NavLink>
+
+        {user?.is_admin && (
+          <NavLink
+            to="/admin"
+            onClick={onClose}
+            className={({ isActive }) => cn(
+              'group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150',
+              isActive ? 'text-primary bg-primary/[0.08]' : 'text-muted-foreground hover:text-foreground hover:bg-accent',
+            )}
+          >
+            {({ isActive }) => (
+              <>
+                <span className={cn(
+                  'absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full transition-all duration-200',
+                  isActive ? 'h-5 bg-primary' : 'h-0',
+                )} />
+                <ShieldCheck className="h-4 w-4 shrink-0" />
+                <span>Administración</span>
+              </>
+            )}
+          </NavLink>
+        )}
 
         <div className="flex items-center gap-2.5 px-3 py-2 mt-1 rounded-lg">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 ring-1 ring-primary/20">

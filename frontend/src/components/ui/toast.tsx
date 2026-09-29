@@ -22,7 +22,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      <div className="fixed top-4 left-4 right-4 sm:left-auto z-[300] flex flex-col gap-2 max-w-sm">
+      <div
+        className="fixed left-4 right-4 sm:left-auto z-[300] flex flex-col gap-2 max-w-sm"
+        style={{ top: 'calc(1rem + var(--safe-top))' }}
+      >
         {toasts.map(t => (
           <div key={t.id} className={cn('flex items-start gap-3 p-4 rounded-lg border shadow-lg text-sm animate-in slide-in-from-right-5', {
             'bg-emerald-950 border-emerald-700 text-emerald-200': t.type === 'success',

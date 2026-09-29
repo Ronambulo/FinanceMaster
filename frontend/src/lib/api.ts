@@ -45,6 +45,20 @@ export const authApi = {
     request<void>('/auth/account', { method: 'DELETE' }),
 }
 
+// Admin
+export const adminApi = {
+  listUsers: () => request<AdminUser[]>('/admin/users'),
+  setActive: (userId: number, isActive: boolean) =>
+    request<AdminUser>(`/admin/users/${userId}/active`, { method: 'PUT', body: JSON.stringify({ is_active: isActive }) }),
+  setAi: (userId: number, aiEnabled: boolean, aiModel: string | null) =>
+    request<AdminUser>(`/admin/users/${userId}/ai`, { method: 'PUT', body: JSON.stringify({ ai_enabled: aiEnabled, ai_model: aiModel }) }),
+  deleteUser: (userId: number) =>
+    request<{ success: boolean }>(`/admin/users/${userId}`, { method: 'DELETE' }),
+  getUserUsage: (userId: number, months = 12) =>
+    request<AiUsageSummary>(`/admin/users/${userId}/usage?months=${months}`),
+  getStats: () => request<AdminStats>('/admin/stats'),
+}
+
 // Transactions
 export const txApi = {
   list: (params: Record<string, string | number | undefined>) => {
@@ -203,7 +217,8 @@ export const budgetApi = {
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-export interface User { id: number; email: string; username: string; created_at: string }
+export interface User { id: number; email: string; username: string; created_at: string; is_admin: boolean; ai_enabled: boolean; ai_model: string | null }
+export interface AdminUser extends User { is_active: boolean }
 export interface Category { id: number; user_id: number | null; name: string; icon: string; color: string; type: string; is_system: boolean }
 export interface CategoryRule { id: number; keyword: string; category_id: number; field: string; priority: number; category: Category }
 export interface Transaction {
@@ -339,6 +354,8 @@ export const aiApi = {
     }),
   listModels: () =>
     request<{ models: AiModel[]; default: string }>('/ai/models'),
+  getUsage: (months = 12) =>
+    request<AiUsageSummary>(`/ai/usage?months=${months}`),
 }
 
 export interface AiModel {
@@ -353,6 +370,56 @@ export interface AiCategorizeResult {
   category_icon?: string
   category_color?: string
   error?: string
+}
+
+export interface AiUsageMonth {
+  month: string
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  estimated_cost: number
+}
+export interface AdminGlobalAiUsageMonth {
+  month: string
+  requests: number
+  total_tokens: number
+  estimated_cost: number
+}
+export interface AdminGlobalAiUsage {
+  months: AdminGlobalAiUsageMonth[]
+  total_requests: number
+  total_tokens: number
+  total_estimated_cost: number
+  cost_per_1k_tokens: number
+}
+export interface AdminSignupMonth {
+  month: string
+  count: number
+}
+export interface AdminStats {
+  total_users: number
+  active_users: number
+  closed_users: number
+  admin_users: number
+  ai_enabled_users: number
+  connected_bank_users: number
+  total_transactions: number
+  users_with_debts: number
+  users_with_goals: number
+  users_with_recurring: number
+  users_with_budgets: number
+  signups_by_month: AdminSignupMonth[]
+  ai_usage: AdminGlobalAiUsage
+}
+export interface AiUsageSummary {
+  months: AiUsageMonth[]
+  total_requests: number
+  total_input_tokens: number
+  total_output_tokens: number
+  total_tokens: number
+  total_estimated_cost: number
+  cost_per_1k_tokens: number
 }
 
 // MyInvestor

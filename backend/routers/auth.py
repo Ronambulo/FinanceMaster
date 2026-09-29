@@ -69,6 +69,12 @@ def delete_account(
     """Permanently delete the user account and all associated data."""
     from ..services.trade_republic_api import remove_client
     remove_client(current_user.id)
+
+    # Estas tablas referencian al usuario sin cascade ORM configurado en User;
+    # se limpian a mano para no dejar filas huérfanas tras el borrado.
+    db.query(models.Insight).filter(models.Insight.user_id == current_user.id).delete()
+    db.query(models.AiUsageLog).filter(models.AiUsageLog.user_id == current_user.id).delete()
+
     db.delete(current_user)
     db.commit()
 

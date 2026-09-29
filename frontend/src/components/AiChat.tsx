@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 import { useChatStore } from '@/store/chat'
+import { useAuthStore } from '@/store/auth'
 import { aiApi, type AiModel } from '@/lib/api'
 
 interface MessageMeta {
@@ -129,6 +130,8 @@ const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>['components'] = 
 
 export function AiChat() {
   const { isOpen, close: closeChat } = useChatStore()
+  const user = useAuthStore(s => s.user)
+  const hasAiAccess = !!(user?.is_admin || user?.ai_enabled)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -160,6 +163,7 @@ export function AiChat() {
 
   // Load available models once
   useEffect(() => {
+    if (!hasAiAccess) return
     aiApi.listModels()
       .then(res => {
         setModels(res.models)
@@ -309,7 +313,10 @@ export function AiChat() {
         <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(ellipse_at_top,_hsl(var(--primary)/0.14),_transparent_70%)]" />
 
         {/* Header */}
-        <div className="relative flex items-center justify-between px-4 py-3.5 border-b border-white/[0.07] shrink-0">
+        <div
+          className="relative flex items-center justify-between px-4 py-3.5 border-b border-white/[0.07] shrink-0"
+          style={{ paddingTop: 'calc(0.875rem + var(--safe-top))' }}
+        >
           <div className="flex items-center gap-2.5">
             <div className="relative flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary/25 to-primary/5 ring-1 ring-primary/20">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -339,6 +346,20 @@ export function AiChat() {
           </div>
         </div>
 
+        {!hasAiAccess ? (
+          <div className="relative flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/25 to-primary/5 ring-1 ring-primary/20">
+              <Sparkles className="h-7 w-7 text-primary" />
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-sm font-semibold">Acceso a la IA no habilitado</p>
+              <p className="text-xs text-muted-foreground leading-relaxed max-w-[260px]">
+                Este asistente usa un modelo de IA autoalojado por el administrador. Pídele que te active el acceso desde el panel de administración.
+              </p>
+            </div>
+          </div>
+        ) : (
+        <>
         {/* Messages */}
         <div className="relative flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 ? (
@@ -440,7 +461,10 @@ export function AiChat() {
         </div>
 
         {/* Input bar */}
-        <div className="relative shrink-0 border-t border-white/[0.07] p-3">
+        <div
+          className="relative shrink-0 border-t border-white/[0.07] p-3"
+          style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}
+        >
           {/* Model Selector */}
           {models.length > 0 && (
             <div className="mb-2">
@@ -524,6 +548,8 @@ export function AiChat() {
             Enter para enviar · Shift+Enter para nueva línea
           </p>
         </div>
+        </>
+        )}
       </div>
 
       {/* ── Backdrop ── */}

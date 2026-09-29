@@ -19,12 +19,27 @@ class UserOut(BaseModel):
     email: str
     username: str
     created_at: datetime
+    is_admin: bool = False
+    ai_enabled: bool = False
+    ai_model: Optional[str] = None
     model_config = {"from_attributes": True}
 
 class Token(BaseModel):
     access_token: str
     token_type: str
     user: UserOut
+
+
+# ── Admin ────────────────────────────────────────────────────────────────────
+class AdminUserOut(UserOut):
+    is_active: bool
+
+class AdminSetActive(BaseModel):
+    is_active: bool
+
+class AdminSetAi(BaseModel):
+    ai_enabled: bool
+    ai_model: Optional[str] = None
 
 
 # ── Categories ───────────────────────────────────────────────────────────────

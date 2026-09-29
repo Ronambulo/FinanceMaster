@@ -14,6 +14,7 @@ import { Debts } from '@/pages/Debts'
 import { Goals } from '@/pages/Goals'
 import { Monthly } from '@/pages/Monthly'
 import { Settings } from '@/pages/Settings'
+import { Admin } from '@/pages/Admin'
 import { AchievementsPage } from '@/pages/Achievements'
 import { CommandPalette } from '@/components/CommandPalette'
 import { OnboardingWizard } from '@/components/OnboardingWizard'
@@ -41,7 +42,10 @@ function OfflineBanner() {
   }, [])
   if (!offline) return null
   return (
-    <div className="fixed top-0 inset-x-0 z-[200] flex items-center justify-center gap-2 bg-amber-500/90 backdrop-blur-sm py-1.5 text-xs font-medium text-amber-950">
+    <div
+      className="fixed top-0 inset-x-0 z-[200] flex items-center justify-center gap-2 bg-amber-500/90 backdrop-blur-sm py-1.5 text-xs font-medium text-amber-950"
+      style={{ paddingTop: 'calc(0.375rem + var(--safe-top))' }}
+    >
       <WifiOff className="h-3.5 w-3.5" />
       Sin conexión — mostrando datos en caché
     </div>
@@ -127,7 +131,7 @@ function PendingTwoFABanner() {
   return (
     <button
       onClick={open}
-      className="fixed bottom-20 right-4 z-[150] flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/25 md:bottom-6"
+      className="fixed right-4 z-[150] flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/25 bottom-[calc(5rem_+_var(--safe-bottom))] md:bottom-6"
     >
       <span className="text-base">📱</span>
       Código de Trade Republic pendiente
@@ -191,6 +195,12 @@ function FeatureRoute({ feature, children }: { feature: FeatureId; children: Rea
   return <>{children}</>
 }
 
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const user = useAuthStore(s => s.user)
+  if (!user?.is_admin) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 export default function App() {
   useEffect(() => {
     const themeId  = localStorage.getItem(THEME_KEY)  || 'trade-republic'
@@ -219,6 +229,7 @@ export default function App() {
               <Route path="monthly" element={<Monthly />} />
               <Route path="logros" element={<FeatureRoute feature="achievements"><AchievementsPage /></FeatureRoute>} />
               <Route path="ajustes" element={<Settings />} />
+              <Route path="admin" element={<AdminRoute><Admin /></AdminRoute>} />
             </Route>
           </Routes>
         </BrowserRouter>

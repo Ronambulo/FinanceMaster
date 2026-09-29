@@ -3,7 +3,7 @@ import type { TouchEvent } from 'react'
 import { Outlet, NavLink, Link } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowLeftRight, TrendingUp,
-  CreditCard, Target, Settings, LogOut, CalendarDays, Sparkles, Trophy, RefreshCw, Search,
+  CreditCard, Target, Settings, LogOut, CalendarDays, Sparkles, Trophy, RefreshCw, Search, ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Sidebar } from './Sidebar'
@@ -115,6 +115,17 @@ function ProfileSheet({ onClose }: { onClose: () => void }) {
           Ajustes y apariencia
         </Link>
 
+        {user?.is_admin && (
+          <Link
+            to="/admin"
+            onClick={onClose}
+            className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium hover:bg-accent transition-colors"
+          >
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+            Administración
+          </Link>
+        )}
+
         <button
           onClick={() => { logout(); onClose() }}
           className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-negative hover:bg-negative/10 transition-colors"
@@ -123,7 +134,7 @@ function ProfileSheet({ onClose }: { onClose: () => void }) {
           Cerrar sesión
         </button>
 
-        <div className="h-6" />
+        <div style={{ height: 'calc(1.5rem + var(--safe-bottom))' }} />
       </div>
     </div>
   )
@@ -160,7 +171,11 @@ export function AppLayout() {
         {/* Mobile top bar */}
         <header
           className="md:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-background/95 backdrop-blur-sm sticky top-0 z-40"
+<<<<<<< Updated upstream
           style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}
+=======
+          style={{ paddingTop: 'calc(0.75rem + var(--safe-top))' }}
+>>>>>>> Stashed changes
         >
           <div className="flex items-center gap-2">
             <img
@@ -198,6 +213,7 @@ export function AppLayout() {
           </div>
         </header>
 
+<<<<<<< Updated upstream
         <main
           ref={mainRef}
           className="relative flex-1 overflow-y-auto p-4 pb-32 md:p-6 md:pb-6"
@@ -225,6 +241,9 @@ export function AppLayout() {
               </div>
             </div>
           )}
+=======
+        <main className="app-main flex-1 overflow-y-auto p-4 md:p-6">
+>>>>>>> Stashed changes
           <Outlet />
         </main>
       </div>
@@ -232,10 +251,14 @@ export function AppLayout() {
       {/* ── Mobile bottom nav ── */}
       <nav
         className="md:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-background/95 backdrop-blur-xl"
+<<<<<<< Updated upstream
         style={{ height: 'calc(78px + env(safe-area-inset-bottom))', paddingBottom: 'env(safe-area-inset-bottom)' }}
+=======
+        style={{ paddingBottom: 'var(--safe-bottom)' }}
+>>>>>>> Stashed changes
       >
         <div
-          className="grid h-full"
+          className="grid h-[78px]"
           style={{ gridTemplateColumns: `repeat(${mobileNav.length}, minmax(0, 1fr))` }}
         >
           {mobileNav.map(({ to, icon: Icon, label }) => (

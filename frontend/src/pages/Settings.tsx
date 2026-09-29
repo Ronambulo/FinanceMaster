@@ -1,8 +1,13 @@
 import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+<<<<<<< Updated upstream
 import { catApi, authApi } from '@/lib/api'
 import { queryClient } from '@/lib/queryClient'
+=======
+import { catApi, authApi, aiApi } from '@/lib/api'
+import { queryClient } from '@/App'
+>>>>>>> Stashed changes
 import type { Category } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -13,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Plus, Trash2, Settings as SettingsIcon, Lock, Palette, Loader2, Check, Pencil, Plug, Copy, Trash, LayoutGrid, AlertTriangle, Smartphone } from 'lucide-react'
+import { Plus, Trash2, Settings as SettingsIcon, Lock, Palette, Loader2, Check, Pencil, Plug, Copy, Trash, LayoutGrid, AlertTriangle, Smartphone, Sparkles } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { THEMES, ACCENT_COLORS, THEME_KEY, ACCENT_KEY, applyTheme, getChartColors, saveChartColors, resetChartColors, getCompact, setCompact } from '@/lib/theme'
 import type { ChartColors } from '@/lib/theme'
@@ -119,6 +124,69 @@ const WEBHOOK_EVENTS = [
   'transaction.created', 'transaction.imported', 'recurring.detected',
   'goal.completed', 'achievement.unlocked',
 ]
+
+function AiUsageTab() {
+  const { data: usage, isLoading } = useQuery({
+    queryKey: ['ai-usage'],
+    queryFn: () => aiApi.getUsage(),
+  })
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
+        <Loader2 className="h-4 w-4 animate-spin" /> Cargando uso de IA...
+      </div>
+    )
+  }
+
+  if (!usage) return null
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-4">
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-lg bg-secondary/50 p-3">
+              <p className="text-xl font-semibold">{usage.total_requests}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Peticiones</p>
+            </div>
+            <div className="rounded-lg bg-secondary/50 p-3">
+              <p className="text-xl font-semibold">{usage.total_tokens.toLocaleString('es-ES')}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Tokens totales</p>
+            </div>
+            <div className="rounded-lg bg-secondary/50 p-3">
+              <p className="text-xl font-semibold">{usage.total_estimated_cost > 0 ? `${usage.total_estimated_cost.toFixed(2)}€` : '—'}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Coste estimado</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Uso por mes</CardTitle></CardHeader>
+        <CardContent className="space-y-1.5">
+          {usage.months.length === 0 && (
+            <p className="text-center text-sm text-muted-foreground py-6">Todavía no has usado el asistente de IA.</p>
+          )}
+          {usage.months.slice().reverse().map(m => (
+            <div key={m.month} className="flex items-center justify-between text-sm px-3 py-2.5 rounded-lg bg-secondary/30">
+              <span className="font-medium">{m.month}</span>
+              <span className="text-xs text-muted-foreground">{m.requests} peticiones</span>
+              <span className="text-xs text-muted-foreground">{m.total_tokens.toLocaleString('es-ES')} tokens</span>
+              {m.estimated_cost > 0 && <span className="text-xs font-medium">{m.estimated_cost.toFixed(2)}€</span>}
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {usage.cost_per_1k_tokens === 0 && (
+        <p className="text-xs text-muted-foreground text-center">
+          El modelo se ejecuta en un servidor propio, así que el coste estimado es 0€ salvo que el administrador configure un precio.
+        </p>
+      )}
+    </div>
+  )
+}
 
 function DiagnosticsTab() {
   const { toast } = useToast()
@@ -697,6 +765,11 @@ export function Settings() {
           <TabsTrigger value="security">
             <Lock className="h-3.5 w-3.5 mr-1.5" />Seguridad
           </TabsTrigger>
+          {(user?.ai_enabled || user?.is_admin) && (
+            <TabsTrigger value="ai-usage">
+              <Sparkles className="h-3.5 w-3.5 mr-1.5" />Uso de IA
+            </TabsTrigger>
+          )}
           <TabsTrigger value="features">
             <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />Funciones
           </TabsTrigger>
@@ -962,6 +1035,12 @@ export function Settings() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {(user?.ai_enabled || user?.is_admin) && (
+          <TabsContent value="ai-usage" className="mt-4">
+            <AiUsageTab />
+          </TabsContent>
+        )}
 
         <TabsContent value="features" className="mt-4">
           <FeaturesTab />
