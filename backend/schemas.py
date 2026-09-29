@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from .models import CategoryType, DebtDirection, GoalType, GoalCategory
 
 
@@ -100,6 +100,16 @@ class QuickTransactionCreate(BaseModel):
     category_name: Optional[str] = None
     date: Optional[date] = None
     note: Optional[str] = None
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def _parse_amount(cls, v):
+        # El teclado del Atajo de iOS usa coma decimal en es-ES; el endpoint
+        # debe aceptar tanto "12,50" como "12.50".
+        if isinstance(v, str):
+            v = v.strip()
+            v = v.replace(".", "").replace(",", ".") if "," in v and "." in v else v.replace(",", ".")
+        return v
 
 class TransactionUpdate(BaseModel):
     category_id: Optional[int] = None
