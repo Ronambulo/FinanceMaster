@@ -242,7 +242,9 @@ export interface MonthlyDetailRow { id: number; date: string; name: string | nul
 export interface NetWorthPoint { month: string; cash: number; portfolio: number; debt: number; net_worth: number }
 export interface Insight { id: number; type: string; title: string; message: string; severity: string; is_read: boolean; created_at: string }
 export interface Webhook { id: number; url: string; events: string[]; is_active: boolean; created_at: string }
-export interface TRStatus { connected: boolean; last_sync: string | null }
+export interface ApiToken { id: number; name: string; token_prefix: string; created_at: string; last_used_at: string | null }
+export interface ApiTokenCreated { id: number; name: string; token: string; created_at: string }
+export interface TRStatus { connected: boolean; needs_2fa: boolean; last_sync: string | null }
 export interface TRPosition {
   instrumentId: string
   netSize: string
@@ -266,6 +268,14 @@ export const webhookApi = {
     request<Webhook>('/webhooks', { method: 'POST', body: JSON.stringify(data) }),
   delete: (id: number) => request<void>(`/webhooks/${id}`, { method: 'DELETE' }),
   toggle: (id: number) => request<{ is_active: boolean }>(`/webhooks/${id}/toggle`, { method: 'PATCH' }),
+}
+
+// Tokens de API de larga duración (p.ej. para un Atajo de iOS)
+export const integrationsApi = {
+  list: () => request<ApiToken[]>('/integrations/tokens'),
+  create: (name: string) =>
+    request<ApiTokenCreated>('/integrations/tokens', { method: 'POST', body: JSON.stringify({ name }) }),
+  delete: (id: number) => request<void>(`/integrations/tokens/${id}`, { method: 'DELETE' }),
 }
 
 // Trade Republic
@@ -327,6 +337,13 @@ export const aiApi = {
       method: 'POST',
       body: JSON.stringify({ transaction_ids }),
     }),
+  listModels: () =>
+    request<{ models: AiModel[]; default: string }>('/ai/models'),
+}
+
+export interface AiModel {
+  id: string
+  name: string
 }
 
 export interface AiCategorizeResult {
@@ -374,4 +391,3 @@ export const miApi = {
 }
 
 // API token
-export const getApiToken = () => request<{ token: string; expires_in_days: number }>('/auth/api-token')

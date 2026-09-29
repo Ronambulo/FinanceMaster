@@ -79,13 +79,26 @@ def compute_insights(db: Session, user_id: int) -> List[dict]:
     prev2_y = prev_y if prev_m > 1 else prev_y - 1
     prev2_start, prev2_end = _month_range(prev2_y, prev2_m)
 
-    # ── 1. Category spike > 30% ────────────────────────────────────────────────
+    # Insight types that should only ever appear once per calendar month
+    # (celebratory "moment" insights, not running metrics that should keep
+    # updating as the month goes on).
+    types_already_this_month = {
+        row[0] for row in
+        db.query(models.Insight.type)
+        .filter(models.Insight.user_id == user_id, models.Insight.created_at >= cur_start)
+        .distinct()
+        .all()
+    }
+
+    # ── 1. Category spike: needs a real absolute amount involved, not just a
+    #      big percentage on a tiny base ─────────────────────────────────────
     cur_by_cat  = _expenses_by_cat(db, user_id, cur_start, cur_end)
     prev_by_cat = _expenses_by_cat(db, user_id, prev_start, prev_end)
 
     for cat_id, cur_total in cur_by_cat.items():
         prev_total = prev_by_cat.get(cat_id, 0.0)
-        if prev_total > 20 and cur_total > prev_total * 1.30:
+        delta = cur_total - prev_total
+        if prev_total > 50 and delta > 30 and cur_total > prev_total * 1.5:
             cat = db.query(models.Category).filter(models.Category.id == cat_id).first()
             cat_name = cat.name if cat else "Sin categoría"
             pct = int((cur_total / prev_total - 1) * 100)
@@ -112,9 +125,13 @@ def compute_insights(db: Session, user_id: int) -> List[dict]:
         })
 
     # ── 3. Savings rate > 25% this month ──────────────────────────────────────
+    # Only evaluated once the month is at least half over, otherwise an early
+    # paycheck with no expenses posted yet looks like a fake 100% savings rate.
     cur_inc = _cash_sum(db, user_id, INCOME_TYPES, cur_start, cur_end)
     cur_exp = _cash_sum(db, user_id, EXPENSE_TYPES, cur_start, cur_end)
-    if cur_inc > 0:
+    days_in_cur_month = (cur_end - cur_start).days + 1
+    month_is_half_over = today.day >= days_in_cur_month / 2
+    if cur_inc > 0 and cur_exp > 0 and month_is_half_over and "high_savings_rate" not in types_already_this_month:
         savings_rate = (cur_inc - cur_exp) / cur_inc
         if savings_rate > 0.25:
             insights.append({
@@ -157,7 +174,13 @@ def compute_insights(db: Session, user_id: int) -> List[dict]:
                 "severity": "info",
             })
 
-    # ── 5. Month with ≥50% fewer transactions than previous ───────────────────
+    # ── 5. Fewer transactions than the usual pace for this point in the month ──
+    # The current month is necessarily partial (it only runs up to today), so
+    # its raw count is compared against the previous month's DAILY RATE
+    # projected over the days elapsed so far, not against the previous
+    # month's full total. Also gated to only fire once at least a week has
+    # passed, so it doesn't trip on day 2 of every month.
+    days_elapsed_cur = (today - cur_start).days + 1
     cur_count = (
         db.query(func.count(models.Transaction.id))
         .filter(
@@ -178,11 +201,13 @@ def compute_insights(db: Session, user_id: int) -> List[dict]:
         )
         .scalar()
     ) or 0
-    if prev_count > 10 and cur_count < prev_count * 0.5:
+    days_in_prev_month = (prev_end - prev_start).days + 1
+    expected_count = (prev_count / days_in_prev_month) * days_elapsed_cur
+    if prev_count > 10 and days_elapsed_cur >= 7 and cur_count < expected_count * 0.5:
         insights.append({
             "type": "low_data_month",
             "title": "Pocos datos este mes",
-            "message": f"Este mes tienes {cur_count} transacciones frente a {prev_count} el mes pasado. ¿Falta algún extracto?",
+            "message": f"Llevas {days_elapsed_cur} días de mes con {cur_count} transacciones; a tu ritmo habitual deberías tener unas {expected_count:.0f}. ¿Falta algún extracto por sincronizar?",
             "severity": "info",
         })
 
@@ -197,7 +222,7 @@ def compute_insights(db: Session, user_id: int) -> List[dict]:
         )
         .all()
     )
-    if dividends:
+    if dividends and "dividend_received" not in types_already_this_month:
         total_div = sum(abs(d.amount) for d in dividends)
         insights.append({
             "type": "dividend_received",
@@ -206,19 +231,22 @@ def compute_insights(db: Session, user_id: int) -> List[dict]:
             "severity": "positive",
         })
 
-    # ── 7. Portfolio first time in positive ───────────────────────────────────
-    from ..services.portfolio_calculator import calculate_portfolio
-    try:
-        perf = calculate_portfolio(db, user_id)
-        if perf.total_unrealized_pnl > 0 and perf.total_unrealized_pnl < 500:
-            insights.append({
-                "type": "portfolio_positive",
-                "title": "¡Portfolio en verde!",
-                "message": f"Tu cartera acumula +{perf.total_unrealized_pnl:.2f}€ de plusvalías no realizadas. 📈",
-                "severity": "positive",
-            })
-    except Exception:
-        pass
+    # ── 7. Portfolio newly in positive ─────────────────────────────────────────
+    # Only announced once per month (not on every refresh while it hangs out
+    # in the same small positive range).
+    if "portfolio_positive" not in types_already_this_month:
+        from ..services.portfolio_calculator import calculate_portfolio
+        try:
+            perf = calculate_portfolio(db, user_id)
+            if perf.total_unrealized_pnl > 0 and perf.total_unrealized_pnl < 500:
+                insights.append({
+                    "type": "portfolio_positive",
+                    "title": "¡Portfolio en verde!",
+                    "message": f"Tu cartera acumula +{perf.total_unrealized_pnl:.2f}€ de plusvalías no realizadas. 📈",
+                    "severity": "positive",
+                })
+        except Exception:
+            pass
 
     return insights
 

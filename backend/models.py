@@ -53,6 +53,7 @@ class User(Base):
     webhooks = relationship("Webhook", back_populates="user", cascade="all, delete-orphan")
     bank_connections = relationship("BankConnection", back_populates="user", cascade="all, delete-orphan")
     manual_positions = relationship("ManualPosition", back_populates="user", cascade="all, delete-orphan")
+    api_tokens = relationship("ApiToken", back_populates="user", cascade="all, delete-orphan")
 
 
 class Category(Base):
@@ -264,6 +265,21 @@ class Webhook(Base):
     created_at = Column(DateTime, default=_dt.utcnow)
 
     user = relationship("User", back_populates="webhooks")
+
+
+class ApiToken(Base):
+    """Token de acceso de larga duración para clientes externos (p.ej. un
+    Atajo de iOS) que no deben depender de la sesión de login de 7 días."""
+    __tablename__ = "api_tokens"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String, nullable=False)
+    token_hash = Column(String, nullable=False, unique=True, index=True)
+    token_prefix = Column(String, nullable=False)  # para mostrarlo enmascarado en la UI
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_dt.utcnow)
+
+    user = relationship("User", back_populates="api_tokens")
 
 
 class ManualPosition(Base):

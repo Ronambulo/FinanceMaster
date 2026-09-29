@@ -26,56 +26,31 @@ EXPENSE_TYPES = {
 }
 
 # ── Provider configuration ─────────────────────────────────────────────────────
+# Base URL y modelo se pueden sobreescribir por entorno (p.ej. en el yaml de
+# CasaOS/Docker) para apuntar a otra IA local sin tocar código.
+_OPENWEBUI_BASE_URL = os.environ.get("OPENWEBUI_BASE_URL", "http://10.147.13.1:3050/api")
+_OPENWEBUI_MODEL = os.environ.get("OPENWEBUI_MODEL", "gemma4:e4b")
+
 # Chat providers: tried in order until one succeeds. Primary uses reasoning model.
 CHAT_PROVIDERS = [
     {
-        "name": "nvidia",
-        "base_url": "https://integrate.api.nvidia.com/v1",
-        "api_key_env": "NVIDIA_API_KEY",
-        "model": "deepseek-ai/deepseek-v4-pro",
-        "supports_thinking": True,
-        "rpm": 40,
-    },
-    {
-        "name": "groq",
-        "base_url": "https://api.groq.com/openai/v1",
-        "api_key_env": "GROQ_API_KEY",
-        "model": "llama-3.3-70b-versatile",
+        "name": "openwebui",
+        "base_url": _OPENWEBUI_BASE_URL,
+        "api_key_env": "OPENWEBUI_API_KEY",
+        "model": _OPENWEBUI_MODEL,
         "supports_thinking": False,
-        "rpm": 30,
-    },
-    {
-        "name": "gemini",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "api_key_env": "GEMINI_API_KEY",
-        "model": "gemini-3.6-flash",
-        "supports_thinking": False,
-        "rpm": 15,
+        "rpm": 60,
     },
 ]
 
 # Fast providers for single-shot categorization (no reasoning needed)
 FAST_PROVIDERS = [
     {
-        "name": "groq",
-        "base_url": "https://api.groq.com/openai/v1",
-        "api_key_env": "GROQ_API_KEY",
-        "model": "llama-3.1-8b-instant",
-        "rpm": 30,
-    },
-    {
-        "name": "nvidia",
-        "base_url": "https://integrate.api.nvidia.com/v1",
-        "api_key_env": "NVIDIA_API_KEY",
-        "model": "nvidia/llama-3.1-nemotron-70b-instruct",
-        "rpm": 40,
-    },
-    {
-        "name": "gemini",
-        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "api_key_env": "GEMINI_API_KEY",
-        "model": "gemini-3.6-flash",
-        "rpm": 15,
+        "name": "openwebui",
+        "base_url": _OPENWEBUI_BASE_URL,
+        "api_key_env": "OPENWEBUI_API_KEY",
+        "model": _OPENWEBUI_MODEL,
+        "rpm": 60,
     },
 ]
 
@@ -96,7 +71,7 @@ class ChatRequest(BaseModel):
     history: List[ChatMessage] = []
     period_start: Optional[str] = None
     period_end: Optional[str] = None
-    thinking_level: Optional[str] = "high"
+    model: Optional[str] = None
 
 
 class CategorizeBatchRequest(BaseModel):
@@ -174,6 +149,71 @@ TOOLS = [
                 "properties": {},
                 "required": [],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_recurring_payments",
+            "description": (
+                "Devuelve los pagos e ingresos recurrentes detectados (suscripciones, nóminas, alquiler, etc.), "
+                "con su importe medio, frecuencia y próxima fecha esperada. "
+                "Úsala SIEMPRE que el usuario pregunte por próximos pagos, suscripciones o gastos recurrentes "
+                "— esta es información propia de la app, no busques en internet para esto."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {
+                        "type": "integer",
+                        "description": "Si se indica, solo incluye los que vencen en los próximos N días (opcional; por defecto, todos los activos)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_debts",
+            "description": (
+                "Devuelve las deudas del usuario: lo que debe y lo que le deben, con importe pendiente y fecha límite."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "include_settled": {"type": "boolean", "description": "Incluir deudas ya saldadas (por defecto false)"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_goals",
+            "description": "Devuelve los objetivos financieros activos del usuario (ahorro, inversión, gasto) y su progreso actual.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_net_worth",
+            "description": (
+                "Calcula el patrimonio neto actual del usuario: efectivo en cuenta + valor de mercado "
+                "de la cartera de inversión − deudas pendientes."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_budgets",
+            "description": "Devuelve los presupuestos configurados por categoría y cuánto se ha gastado ya este mes en cada uno.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
     {
@@ -381,6 +421,23 @@ def build_financial_context(
         elif g.target_percent:
             goal_lines.append(f"{g.name}: objetivo {g.target_percent}%")
 
+    upcoming_cutoff = today + timedelta(days=30)
+    recurring = (
+        db.query(models.RecurringGroup)
+        .filter(
+            models.RecurringGroup.user_id == user_id,
+            models.RecurringGroup.is_active == True,
+            models.RecurringGroup.next_expected_date <= upcoming_cutoff,
+        )
+        .order_by(models.RecurringGroup.next_expected_date)
+        .limit(8)
+        .all()
+    )
+    recurring_lines = [
+        f"{g.display_name}: {g.avg_amount:.2f}€ el {g.next_expected_date.strftime('%d %b')}"
+        for g in recurring if g.next_expected_date
+    ]
+
     lines = [
         f"CONTEXTO FINANCIERO DEL USUARIO — Ciclo de nómina: {month_label}:",
         f"- Balance neto del mes: {balance_month:.2f}€",
@@ -401,6 +458,11 @@ def build_financial_context(
         lines += [f"  • {i}" for i in goal_lines]
     else:
         lines.append("- Sin objetivos activos.")
+    if recurring_lines:
+        lines.append("- Próximos pagos/ingresos recurrentes (30 días):")
+        lines += [f"  • {i}" for i in recurring_lines]
+    else:
+        lines.append("- Sin pagos recurrentes próximos en 30 días.")
 
     return "\n".join(lines)
 
@@ -549,6 +611,151 @@ def execute_tool(tool_name: str, tool_input: dict, db: Session, user_id: int) ->
         except Exception as exc:
             return json.dumps({"error": str(exc)}, ensure_ascii=False)
 
+    elif tool_name == "get_recurring_payments":
+        days = tool_input.get("days")
+        q = (
+            db.query(models.RecurringGroup)
+            .options(joinedload(models.RecurringGroup.category))
+            .filter(
+                models.RecurringGroup.user_id == user_id,
+                models.RecurringGroup.is_active == True,
+            )
+        )
+        if days:
+            try:
+                cutoff = today + timedelta(days=int(days))
+                q = q.filter(models.RecurringGroup.next_expected_date <= cutoff)
+            except (TypeError, ValueError):
+                pass
+        groups = q.order_by(models.RecurringGroup.next_expected_date).all()
+        result = []
+        for g in groups:
+            days_until = (g.next_expected_date - today).days if g.next_expected_date else None
+            result.append({
+                "id": g.id,
+                "name": g.display_name,
+                "avg_amount": round(g.avg_amount or 0.0, 2),
+                "period_days": g.period_days,
+                "next_expected_date": g.next_expected_date.isoformat() if g.next_expected_date else None,
+                "days_until": days_until,
+                "category_name": g.category.name if g.category else "Sin categoría",
+            })
+        return json.dumps({"recurring_payments": result, "count": len(result)}, ensure_ascii=False)
+
+    elif tool_name == "get_debts":
+        include_settled = bool(tool_input.get("include_settled", False))
+        q = db.query(models.Debt).filter(models.Debt.user_id == user_id)
+        if not include_settled:
+            q = q.filter(models.Debt.is_settled == False)
+        debts = q.order_by(models.Debt.due_date).all()
+        result = []
+        for d in debts:
+            paid = sum(p.amount for p in d.payments)
+            remaining = max(0.0, d.total_amount - paid)
+            result.append({
+                "id": d.id,
+                "name": d.name,
+                "direction": "yo_debo" if d.direction.value == "I_OWE" else "me_deben",
+                "total_amount": d.total_amount,
+                "paid": round(paid, 2),
+                "remaining": round(remaining, 2),
+                "due_date": d.due_date.isoformat() if d.due_date else None,
+                "is_settled": d.is_settled,
+            })
+        return json.dumps({"debts": result, "count": len(result)}, ensure_ascii=False)
+
+    elif tool_name == "get_goals":
+        goals = db.query(models.Goal).filter(
+            models.Goal.user_id == user_id, models.Goal.is_active == True
+        ).all()
+        result = []
+        for g in goals:
+            entry = {
+                "id": g.id,
+                "name": g.name,
+                "type": g.type.value if hasattr(g.type, "value") else str(g.type),
+                "category": (g.category.value if hasattr(g.category, "value") else str(g.category)) if g.category else None,
+                "deadline": g.deadline.isoformat() if g.deadline else None,
+                "current_amount": round(g.current_amount or 0.0, 2),
+            }
+            if g.target_amount:
+                entry["target_amount"] = g.target_amount
+                entry["progress_pct"] = round((g.current_amount / g.target_amount) * 100, 1)
+            if g.target_percent:
+                entry["target_percent"] = g.target_percent
+            result.append(entry)
+        return json.dumps({"goals": result, "count": len(result)}, ensure_ascii=False)
+
+    elif tool_name == "get_net_worth":
+        balance_raw = db.query(
+            func.sum(
+                models.Transaction.amount
+                + func.coalesce(models.Transaction.fee, 0.0)
+                + func.coalesce(models.Transaction.tax, 0.0)
+            )
+        ).filter(models.Transaction.user_id == user_id).scalar()
+        cash_balance = round(balance_raw or 0.0, 2)
+
+        portfolio_val = 0.0
+        try:
+            from ..services.portfolio_calculator import calculate_portfolio
+            perf = calculate_portfolio(db, user_id)
+            portfolio_val = perf.total_market_value
+        except Exception:
+            pass
+
+        debts = db.query(models.Debt).filter(
+            models.Debt.user_id == user_id, models.Debt.is_settled == False
+        ).all()
+        debt_total = sum(
+            max(0.0, d.total_amount - sum(p.amount for p in d.payments))
+            for d in debts if d.direction.value == "I_OWE"
+        )
+
+        net_worth = round(cash_balance + portfolio_val - debt_total, 2)
+        return json.dumps({
+            "cash": cash_balance,
+            "portfolio_value": round(portfolio_val, 2),
+            "debts_owed_by_me": round(debt_total, 2),
+            "net_worth": net_worth,
+        }, ensure_ascii=False)
+
+    elif tool_name == "get_budgets":
+        budgets = (
+            db.query(models.Budget)
+            .options(joinedload(models.Budget.category))
+            .filter(models.Budget.user_id == user_id)
+            .all()
+        )
+        month_str = today.strftime("%Y-%m")
+        start, end = _month_range(today.year, today.month)
+        result = []
+        for b in budgets:
+            if not b.is_recurring and b.month and b.month != month_str:
+                continue
+            spent = 0.0
+            if b.category_id:
+                spent = (
+                    db.query(func.sum(func.abs(models.Transaction.amount)))
+                    .filter(
+                        models.Transaction.user_id == user_id,
+                        models.Transaction.category_id == b.category_id,
+                        models.Transaction.account_category == "CASH",
+                        models.Transaction.is_internal_transfer == False,
+                        models.Transaction.date >= start,
+                        models.Transaction.date <= end,
+                    )
+                    .scalar() or 0.0
+                )
+            result.append({
+                "category_name": b.category.name if b.category else "General",
+                "budget_amount": b.amount,
+                "spent_this_month": round(spent, 2),
+                "remaining": round(b.amount - spent, 2),
+                "is_recurring": b.is_recurring,
+            })
+        return json.dumps({"month": month_str, "budgets": result, "count": len(result)}, ensure_ascii=False)
+
     elif tool_name == "search_web":
         query: str = tool_input.get("query", "")
         max_results: int = min(int(tool_input.get("max_results", 5)), 10)
@@ -667,10 +874,11 @@ async def _call_with_fallback(
     max_tokens: int = 4096,
     temperature: float = 0.7,
     extra_body_fn=None,
+    model_override: Optional[str] = None,
 ) -> tuple[object, str]:
     """
     Try each available provider with exponential backoff.
-    Returns (response, provider_name) or raises the last exception.
+    Returns (response, model_used) or raises the last exception.
     """
     from openai import OpenAI
 
@@ -679,13 +887,14 @@ async def _call_with_fallback(
         api_key = os.environ.get(provider["api_key_env"])
         client = OpenAI(base_url=provider["base_url"], api_key=api_key)
         extra_body = extra_body_fn(provider) if extra_body_fn else {}
+        model_used = model_override or provider["model"]
 
         for attempt, delay in enumerate([0] + _BACKOFF):
             if delay:
                 await asyncio.sleep(delay)
             try:
                 kwargs = dict(
-                    model=provider["model"],
+                    model=model_used,
                     messages=messages,
                     max_tokens=max_tokens,
                     temperature=temperature,
@@ -724,7 +933,7 @@ async def chat(
     if not available:
         raise HTTPException(
             status_code=503,
-            detail="No hay ninguna API key de IA configurada. Añade NVIDIA_API_KEY, GROQ_API_KEY o GEMINI_API_KEY al archivo .env.",
+            detail="No hay ninguna API key de IA configurada. Añade OPENWEBUI_API_KEY al archivo .env.",
         )
 
     try:
@@ -737,20 +946,20 @@ async def chat(
         f"{context}\n"
         "Responde siempre en español, de forma concisa y útil. "
         "Cuando necesites datos específicos usa las herramientas disponibles. "
+        "Para cualquier pregunta sobre la cuenta del usuario (transacciones, pagos recurrentes o suscripciones, "
+        "deudas, objetivos, presupuestos, patrimonio neto o cartera de inversión) usa SIEMPRE la herramienta de la "
+        "app correspondiente (get_recurring_payments, get_debts, get_goals, get_budgets, get_net_worth, "
+        "get_transactions, get_portfolio_performance, etc.) — nunca uses search_web para esto, ya que es "
+        "información privada que no existe en internet. search_web y get_stock_quote son solo para información "
+        "externa (mercados, cotizaciones, noticias). "
         "Usa formato Markdown cuando ayude a la legibilidad (listas, negritas, tablas). "
         "No inventes datos que no estén en el contexto o en los resultados de las herramientas."
     )
 
-    level = body.thinking_level or "high"
-
     def _extra_body_for_chat(provider: dict) -> dict:
         if not provider.get("supports_thinking"):
             return {}
-        if level == "fast":
-            return {"chat_template_kwargs": {"thinking": False}}
-        if level == "max":
-            return {"chat_template_kwargs": {"thinking": True, "reasoning_effort": "max"}}
-        return {"chat_template_kwargs": {"thinking": True, "reasoning_effort": "high"}}
+        return {"chat_template_kwargs": {"thinking": True}}
 
     captured_db = db
     captured_user_id = current_user.id
@@ -766,7 +975,7 @@ async def chat(
             max_iterations = 5
 
             for _ in range(max_iterations):
-                response, provider_name = await _call_with_fallback(
+                response, model_used = await _call_with_fallback(
                     CHAT_PROVIDERS,
                     messages,
                     tools=TOOLS,
@@ -774,6 +983,7 @@ async def chat(
                     max_tokens=4096,
                     temperature=0.7,
                     extra_body_fn=_extra_body_for_chat,
+                    model_override=body.model,
                 )
 
                 choice = response.choices[0]
@@ -839,7 +1049,7 @@ async def chat(
             usage = getattr(response, "usage", None)
             meta = {
                 "type": "meta",
-                "model": provider_name,
+                "model": model_used,
                 "elapsed_ms": elapsed_ms,
                 "input_tokens": getattr(usage, "prompt_tokens", None),
                 "output_tokens": getattr(usage, "completion_tokens", None),
@@ -861,6 +1071,38 @@ async def chat(
             "Connection": "keep-alive",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Available models endpoint
+# ---------------------------------------------------------------------------
+@router.get("/models")
+async def list_models(current_user: models.User = Depends(auth.get_current_user)):
+    available = _get_available_providers(CHAT_PROVIDERS)
+    if not available:
+        raise HTTPException(status_code=503, detail="No hay ningún proveedor de IA configurado.")
+
+    provider = available[0]
+    api_key = os.environ.get(provider["api_key_env"])
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                f"{provider['base_url']}/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"No se pudo obtener la lista de modelos: {exc}")
+
+    result = [
+        {"id": m["id"], "name": m.get("name", m["id"])}
+        for m in data.get("data", [])
+        if not m.get("arena") and m.get("id") != "arena-model"
+    ]
+    return {"models": result, "default": provider["model"]}
 
 
 # ---------------------------------------------------------------------------

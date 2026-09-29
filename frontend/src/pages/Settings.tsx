@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { catApi, authApi } from '@/lib/api'
@@ -13,12 +13,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Plus, Trash2, Settings as SettingsIcon, Lock, Palette, Loader2, Check, Pencil, Plug, Copy, Trash, LayoutGrid, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, Settings as SettingsIcon, Lock, Palette, Loader2, Check, Pencil, Plug, Copy, Trash, LayoutGrid, AlertTriangle, Smartphone } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { THEMES, ACCENT_COLORS, THEME_KEY, ACCENT_KEY, applyTheme, getChartColors, saveChartColors, resetChartColors, getCompact, setCompact } from '@/lib/theme'
 import type { ChartColors } from '@/lib/theme'
-import { webhookApi, trApi, portfolioApi, getApiToken } from '@/lib/api'
-import type { Webhook as WebhookType } from '@/lib/api'
+import { webhookApi, trApi, portfolioApi, integrationsApi } from '@/lib/api'
+import type { Webhook as WebhookType, ApiToken } from '@/lib/api'
 import { useFeaturesStore } from '@/store/features'
 import { FEATURES } from '@/lib/features'
 import type { FeatureId } from '@/lib/features'
@@ -235,12 +235,85 @@ function DiagnosticsTab() {
 }
 
 
+function Step({ n, children }: { n: number; children: ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[11px] font-semibold text-primary">{n}</span>
+      <div className="min-w-0 flex-1 space-y-1.5">{children}</div>
+    </div>
+  )
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      {children}
+    </div>
+  )
+}
+
+function CopyBox({ text, onCopy, multiline }: { text: string; onCopy: (t: string) => void; multiline?: boolean }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 p-2">
+      {multiline
+        ? <pre className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-xs">{text}</pre>
+        : <code className="min-w-0 flex-1 break-all font-mono text-xs">{text}</code>}
+      <button onClick={() => onCopy(text)} className="shrink-0 text-muted-foreground hover:text-foreground">
+        <Copy className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
+function CopyChip({ text, onCopy }: { text: string; onCopy: (t: string) => void }) {
+  return (
+    <button onClick={() => onCopy(text)} className="shrink-0 text-muted-foreground hover:text-foreground">
+      <Copy className="h-3.5 w-3.5" />
+    </button>
+  )
+}
+
+// Fila clave/valor para el cuerpo JSON o las cabeceras del atajo: la clave
+// siempre es texto literal a copiar; el valor solo lleva botón de copiar
+// cuando también es texto literal (no cuando es una variable mágica que el
+// usuario debe insertar a mano desde el selector de Atajos).
+function KeyValueRow({ keyText, valueLabel, valueCopyText, onCopy }: { keyText: string; valueLabel: string; valueCopyText?: string; onCopy: (t: string) => void }) {
+  return (
+    <div className="space-y-1.5 rounded-lg border border-border bg-muted/50 p-2">
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 break-all font-mono text-xs">{keyText}</code>
+        <CopyChip text={keyText} onCopy={onCopy} />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 break-words text-xs text-muted-foreground">→ {valueLabel}</span>
+        {valueCopyText !== undefined && <CopyChip text={valueCopyText} onCopy={onCopy} />}
+      </div>
+    </div>
+  )
+}
+
 function IntegrationsTab() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const { data: webhooks = [] } = useQuery({ queryKey: ['webhooks'], queryFn: webhookApi.list })
   const { data: trStatus } = useQuery({ queryKey: ['tr-status'], queryFn: trApi.status, retry: false })
-  const [apiToken, setApiToken] = useState<string | null>(null)
+  const { data: apiTokens = [] } = useQuery({ queryKey: ['api-tokens'], queryFn: integrationsApi.list })
+  const [newTokenName, setNewTokenName] = useState('Atajo de iOS')
+  const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null)
+  const createTokenMutation = useMutation({
+    mutationFn: () => integrationsApi.create(newTokenName || 'Token sin nombre'),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['api-tokens'] }); setJustCreatedToken(r.token); setNewTokenName('Atajo de iOS') },
+  })
+  const revokeTokenMutation = useMutation({
+    mutationFn: (id: number) => integrationsApi.delete(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['api-tokens'] }),
+  })
+  const { data: categories = [] } = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
+  const expenseCategoryNames = (categories as Category[]).filter(c => c.type === 'expense').map(c => c.name)
+  const quickUrl = `${window.location.origin}/api/transactions/quick`
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
+  const copyText = (text: string, label = 'Copiado') => { navigator.clipboard.writeText(text); toast(label, 'success') }
   const [newWh, setNewWh] = useState({ url: '', events: [] as string[] })
   const [trPhone, setTrPhone] = useState('')
   const [trPin, setTrPin] = useState('')
@@ -372,21 +445,131 @@ function IntegrationsTab() {
         </CardContent>
       </Card>
 
-      {/* API token */}
+      {/* API tokens */}
       <Card>
-        <CardHeader><CardTitle className="text-sm">Token de API</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-xs text-muted-foreground">Token de larga duración (365 días) para acceso externo via <code>Authorization: Bearer &lt;token&gt;</code>.</p>
-          {apiToken ? (
-            <div className="flex items-center gap-2">
-              <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-xs font-mono">{apiToken}</code>
-              <button onClick={() => { navigator.clipboard.writeText(apiToken); toast('Copiado', 'success') }} className="text-muted-foreground hover:text-foreground"><Copy className="h-4 w-4" /></button>
+        <CardHeader><CardTitle className="text-sm">Tokens de API</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Tokens de larga duración para clientes externos (p.ej. un Atajo de iOS) via <code>Authorization: Bearer &lt;token&gt;</code>. No caducan; revócalos aquí cuando quieras dejar de usarlos.
+          </p>
+
+          {justCreatedToken && (
+            <div className="space-y-1.5 rounded-lg border border-primary/40 bg-primary/5 p-3">
+              <p className="text-xs font-medium">Copia este token ahora — no se volverá a mostrar.</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-xs font-mono">{justCreatedToken}</code>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(justCreatedToken); toast('Copiado', 'success') }}
+                  className="text-muted-foreground hover:text-foreground shrink-0"
+                >
+                  <Copy className="h-4 w-4" />
+                </button>
+              </div>
+              <button className="text-xs text-muted-foreground underline" onClick={() => setJustCreatedToken(null)}>Ocultar</button>
             </div>
-          ) : (
-            <Button size="sm" variant="outline" onClick={() => getApiToken().then(r => setApiToken(r.token))}>Generar token</Button>
           )}
+
+          <div className="space-y-2">
+            {(apiTokens as ApiToken[]).map(t => (
+              <div key={t.id} className="flex items-center gap-2 rounded-lg border border-border p-2.5 text-xs">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">{t.name}</p>
+                  <p className="text-muted-foreground/60 mt-0.5 font-mono">{t.token_prefix}…</p>
+                  <p className="text-muted-foreground/60 mt-0.5">
+                    {t.last_used_at ? `Último uso: ${new Date(t.last_used_at).toLocaleString('es-ES')}` : 'Sin uso todavía'}
+                  </p>
+                </div>
+                <button onClick={() => revokeTokenMutation.mutate(t.id)} className="text-muted-foreground hover:text-negative shrink-0"><Trash className="h-3.5 w-3.5" /></button>
+              </div>
+            ))}
+            {apiTokens.length === 0 && <p className="text-xs text-muted-foreground">No hay tokens generados.</p>}
+          </div>
+
+          <div className="flex gap-2 border-t border-border pt-3">
+            <Input placeholder="Nombre (ej: Atajo de iOS)" value={newTokenName} onChange={e => setNewTokenName(e.target.value)} className="text-xs" />
+            <Button size="sm" disabled={createTokenMutation.isPending} onClick={() => createTokenMutation.mutate()}>Generar token</Button>
+          </div>
         </CardContent>
       </Card>
+
+      {/* Atajo de iOS */}
+      <Card>
+        <CardHeader><CardTitle className="text-sm flex items-center gap-1.5"><Smartphone className="h-4 w-4" />Atajo de iOS</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Crea a mano un Atajo de iOS para registrar un gasto en segundos: elige categoría, escribe el importe y lo manda a FinanceMaster.
+          </p>
+          <Button size="sm" variant="outline" onClick={() => setShortcutHelpOpen(true)}>Ver los pasos</Button>
+        </CardContent>
+      </Card>
+
+      <Dialog open={shortcutHelpOpen} onOpenChange={setShortcutHelpOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Crear el Atajo a mano</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <Step n={1}>Abre la app <strong>Atajos</strong> en el iPhone y crea un atajo nuevo.</Step>
+
+            <Step n={2}>
+              <p>Añade la acción <strong>"Lista"</strong> y escribe cada categoría como un elemento:</p>
+              <CopyBox text={expenseCategoryNames.join('\n') || 'Otros'} onCopy={copyText} multiline />
+            </Step>
+
+            <Step n={3}>
+              <p>Añade <strong>"Elegir de la lista"</strong> justo después — se conecta sola a la Lista anterior. Prompt (opcional):</p>
+              <CopyBox text="Elige categoría" onCopy={copyText} />
+            </Step>
+
+            <Step n={4}>
+              <p>Añade <strong>"Preguntar"</strong>, tipo <strong>Número</strong>, con este texto:</p>
+              <CopyBox text="Importe del gasto (€)" onCopy={copyText} />
+            </Step>
+
+            <Step n={5}>
+              <p>Opcional: añade otro <strong>"Preguntar"</strong>, tipo <strong>Texto</strong>, para poder ponerle título al gasto. Texto del prompt:</p>
+              <CopyBox text="Título (opcional)" onCopy={copyText} />
+              <p>Y en <strong>"Respuesta por defecto"</strong> pon:</p>
+              <CopyBox text="Gasto de Apple Pay" onCopy={copyText} />
+              <p className="text-xs text-muted-foreground">Si te saltas este paso, FinanceMaster usa igualmente "Gasto de Apple Pay" como título por defecto.</p>
+            </Step>
+
+            <Step n={6}>
+              <p>Añade <strong>"Obtener contenido de URL"</strong>:</p>
+              <Field label="URL"><CopyBox text={quickUrl} onCopy={copyText} /></Field>
+              <Field label="Método"><p className="text-xs font-medium">POST</p></Field>
+              <Field label="Cuerpo de la petición (JSON)">
+                <div className="space-y-2">
+                  <KeyValueRow keyText="amount" valueLabel={'variable mágica del primer "Preguntar"'} onCopy={copyText} />
+                  <KeyValueRow keyText="type" valueLabel={'texto literal "expense"'} valueCopyText="expense" onCopy={copyText} />
+                  <KeyValueRow keyText="name" valueLabel={'variable mágica del "Preguntar" del título (paso 5) — si lo omitiste, deja este campo vacío'} onCopy={copyText} />
+                  <KeyValueRow keyText="category_name" valueLabel={'variable mágica de "Elegir de la lista"'} onCopy={copyText} />
+                </div>
+              </Field>
+              <Field label="Cabeceras">
+                <div className="space-y-2">
+                  <KeyValueRow keyText="Authorization" valueLabel={justCreatedToken ? 'token generado abajo' : 'genera un token abajo'} onCopy={copyText} />
+                  {justCreatedToken ? (
+                    <CopyBox text={`Bearer ${justCreatedToken}`} onCopy={copyText} />
+                  ) : (
+                    <Button size="sm" variant="outline" disabled={createTokenMutation.isPending} onClick={() => createTokenMutation.mutate()}>
+                      {createTokenMutation.isPending ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Generando…</> : 'Generar token'}
+                    </Button>
+                  )}
+                </div>
+              </Field>
+            </Step>
+
+            <Step n={7}>
+              <p>Opcional: añade <strong>"Mostrar notificación"</strong> con este texto:</p>
+              <CopyBox text="Gasto registrado ✅" onCopy={copyText} />
+            </Step>
+          </div>
+          <DialogFooter>
+            <Button size="sm" variant="outline" onClick={() => setShortcutHelpOpen(false)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

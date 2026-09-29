@@ -27,6 +27,7 @@ import { useToast } from '@/components/ui/toast'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { useTR2FAStore } from '@/store/tr2fa'
 
 function OfflineBanner() {
   const [offline, setOffline] = useState(!navigator.onLine)
@@ -46,8 +47,13 @@ function OfflineBanner() {
   )
 }
 
-/* ── 2FA modal — shown when auto-connect finds a pending SMS code ── */
-export function TwoFAModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+/* ── 2FA modal — shown when auto-connect finds a pending SMS code ──
+   `onClose` just hides the dialog (the pending code, if any, is untouched
+   and can be resumed later — see `onVerified`). `onVerified` fires only
+   once the code has actually been confirmed, so callers can clear any
+   "pending 2FA" state they're tracking without confusing "dismissed" with
+   "done". */
+export function TwoFAModal({ open, onClose, onVerified }: { open: boolean; onClose: () => void; onVerified?: () => void }) {
   const { toast } = useToast()
   const [code, setCode] = useState('')
   const [loading, setLoading] = useState(false)
@@ -66,6 +72,7 @@ export function TwoFAModal({ open, onClose }: { open: boolean; onClose: () => vo
     try {
       await trApi.verify(code)
       toast('Trade Republic conectado', 'success')
+      onVerified?.()
       onClose()
     } catch (e: any) {
       toast(e.message || 'Código incorrecto o expirado', 'error')
@@ -108,6 +115,25 @@ export function TwoFAModal({ open, onClose }: { open: boolean; onClose: () => vo
   )
 }
 
+/* Small reopening affordance — shown whenever a 2FA code is pending but the
+   modal has been dismissed, so the user can get back to it without a resend. */
+function PendingTwoFABanner() {
+  const pending = useTR2FAStore(s => s.pending)
+  const show = useTR2FAStore(s => s.show)
+  const open = useTR2FAStore(s => s.open)
+
+  if (!pending || show) return null
+  return (
+    <button
+      onClick={open}
+      className="fixed bottom-20 right-4 z-[150] flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/25 md:bottom-6"
+    >
+      <span className="text-base">📱</span>
+      Código de Trade Republic pendiente
+    </button>
+  )
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 })
@@ -117,7 +143,10 @@ let lastTokenAutoConnected: string | null = null
 function TrAutoConnect() {
   const { toast } = useToast()
   const token = useAuthStore(s => s.token)
-  const [show2FA, setShow2FA] = useState(false)
+  const show = useTR2FAStore(s => s.show)
+  const setPending = useTR2FAStore(s => s.setPending)
+  const closeModal = useTR2FAStore(s => s.close)
+  const clearPending = useTR2FAStore(s => s.clear)
 
   useEffect(() => {
     if (!token || lastTokenAutoConnected === token) return
@@ -125,13 +154,20 @@ function TrAutoConnect() {
 
     trApi.autoConnect().then(r => {
       if (r.status === 'connected') toast('Trade Republic conectado', 'success')
-      else if (r.status === 'needs_2fa') setShow2FA(true)
+      // 'needs_2fa' here never sends a new SMS — the backend only reports a code
+      // that's already pending (either just sent, or from before a page reload).
+      else if (r.status === 'needs_2fa') setPending()
       else if (r.status === 'error') toast(`Trade Republic: ${r.message ?? 'error al conectar'}`, 'error')
       // 'no_credentials' → silencioso
     }).catch(() => {})
   }, [token])
 
-  return <TwoFAModal open={show2FA} onClose={() => setShow2FA(false)} />
+  return (
+    <>
+      <TwoFAModal open={show} onClose={closeModal} onVerified={clearPending} />
+      <PendingTwoFABanner />
+    </>
+  )
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {

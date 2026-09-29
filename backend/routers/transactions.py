@@ -198,6 +198,64 @@ def create_transaction(
     return tx
 
 
+@router.post("/quick", response_model=schemas.TransactionOut)
+def create_quick_transaction(
+    data: schemas.QuickTransactionCreate,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Punto de entrada minimalista para clientes externos (p.ej. un Atajo de
+    iOS): solo pide un importe positivo, un tipo simple y un nombre, en lugar
+    del código de tipo interno y el category_id que exige el endpoint normal.
+    Usa TRANSFER_INBOUND (no CUSTOMER_INPAYMENT) para los ingresos manuales,
+    para no interferir con la detección del ciclo de nómina."""
+    is_income = data.type.strip().lower() == "income"
+    tx_type = "TRANSFER_INBOUND" if is_income else "CARD_TRANSACTION"
+    signed_amount = abs(data.amount) if is_income else -abs(data.amount)
+    tx_date = data.date or date.today()
+    tx_name = (data.name or "").strip() or "Gasto de Apple Pay"
+
+    category_id: Optional[int] = None
+    is_auto = False
+    if data.category_name:
+        cat = db.query(models.Category).filter(
+            models.Category.name.ilike(f"%{data.category_name.strip()}%"),
+            (models.Category.user_id == current_user.id) | (models.Category.user_id == None),
+        ).first()
+        category_id = cat.id if cat else None
+
+    if category_id is None:
+        category_id, is_auto, _ = auto_categorize(
+            db=db,
+            user_id=current_user.id,
+            tx_type=tx_type,
+            tx_name=tx_name,
+            tx_description=data.note,
+            mcc_code=None,
+            counterparty_name=None,
+            amount=signed_amount,
+            user_own_name=current_user.username,
+        )
+
+    tx = models.Transaction(
+        user_id=current_user.id,
+        account_category="CASH",
+        type=tx_type,
+        date=tx_date,
+        name=tx_name,
+        description=data.note,
+        amount=signed_amount,
+        currency="EUR",
+        category_id=category_id,
+        is_auto_categorized=is_auto,
+        is_internal_transfer=False,
+    )
+    db.add(tx)
+    db.commit()
+    db.refresh(tx)
+    return tx
+
+
 @router.put("/{tx_id}", response_model=schemas.TransactionOut)
 def update_transaction(
     tx_id: int,

@@ -97,6 +97,7 @@ def tr_status(current_user: models.User = Depends(auth.get_current_user)):
     client = get_client(current_user.id)
     return {
         "connected": client is not None and client.is_connected(),
+        "needs_2fa": client is not None and client.is_awaiting_2fa(),
         "last_sync": client.last_sync().isoformat() if client and client.last_sync() else None,
     }
 
@@ -111,6 +112,12 @@ async def tr_auto_connect(
     client = get_client(current_user.id)
     if client and client.is_connected():
         return {"status": "connected"}
+
+    # A 2FA code was already sent and is still pending — do NOT call
+    # connect() again (that would send a brand-new SMS code). Just tell
+    # the caller a code is awaiting verification so it can reopen the modal.
+    if client and client.is_awaiting_2fa():
+        return {"status": "needs_2fa"}
 
     # Load encrypted credentials from DB
     conn = db.query(models.BankConnection).filter(

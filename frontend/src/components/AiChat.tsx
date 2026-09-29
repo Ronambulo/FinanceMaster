@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Send, Mic, MicOff, Sparkles, Trash2 } from 'lucide-react'
+import { X, Send, Mic, MicOff, Sparkles, Trash2, Bot, User, ChevronDown } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { cn } from '@/lib/utils'
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 import { useChatStore } from '@/store/chat'
+import { aiApi, type AiModel } from '@/lib/api'
 
 interface MessageMeta {
   model: string
@@ -131,8 +132,11 @@ export function AiChat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [thinkingLevel, setThinkingLevel] = useState<'fast' | 'high' | 'max'>('high')
   const [suggestions, setSuggestions] = useState(() => pickSuggestions(5))
+  const [models, setModels] = useState<AiModel[]>([])
+  const [selectedModel, setSelectedModel] = useState<string>(
+    () => localStorage.getItem('fm_ai_model') ?? ''
+  )
 
   const { periodStart, periodEnd } = usePayrollCycle(0)
 
@@ -153,6 +157,25 @@ export function AiChat() {
       setSuggestions(pickSuggestions(5))
     }
   }, [isOpen])
+
+  // Load available models once
+  useEffect(() => {
+    aiApi.listModels()
+      .then(res => {
+        setModels(res.models)
+        setSelectedModel(prev => {
+          if (prev && res.models.some(m => m.id === prev)) return prev
+          return res.default
+        })
+      })
+      .catch(() => {
+        // El chat sigue funcionando con el modelo por defecto del backend
+      })
+  }, [])
+
+  useEffect(() => {
+    if (selectedModel) localStorage.setItem('fm_ai_model', selectedModel)
+  }, [selectedModel])
 
   const sendMessage = useCallback(async (overrideText?: string) => {
     const text = overrideText ?? input
@@ -182,7 +205,7 @@ export function AiChat() {
           history,
           period_start: periodStart,
           period_end: periodEnd,
-          thinking_level: thinkingLevel
+          model: selectedModel || undefined
         }),
       })
 
@@ -243,7 +266,7 @@ export function AiChat() {
     } finally {
       setIsLoading(false)
     }
-  }, [input, messages, isLoading])
+  }, [input, messages, isLoading, periodStart, periodEnd, selectedModel])
 
   const { listening, supported: voiceSupported, start: startVoice, stop: stopVoice } =
     useSpeechRecognition((text) => {
@@ -275,23 +298,26 @@ export function AiChat() {
         className={cn(
           'fixed inset-y-0 right-0 z-[60] flex flex-col',
           'w-full md:w-[50vw] md:max-w-[calc(100vw-2rem)] md:min-w-80',
-          'bg-[hsl(228_22%_8%)] border-l border-white/[0.07]',
-          'shadow-[-24px_0_80px_rgba(0,0,0,0.6)]',
+          'bg-background/98 backdrop-blur-2xl border-l border-white/[0.08]',
+          'shadow-[-32px_0_90px_rgba(0,0,0,0.55)]',
           'transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
           isOpen ? 'translate-x-0' : 'translate-x-full'
         )}
         aria-hidden={!isOpen}
       >
+        {/* Ambient glow */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(ellipse_at_top,_hsl(var(--primary)/0.14),_transparent_70%)]" />
+
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3.5 border-b border-white/[0.07] shrink-0">
+        <div className="relative flex items-center justify-between px-4 py-3.5 border-b border-white/[0.07] shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
-              <Sparkles className="h-3.5 w-3.5 text-primary" />
+            <div className="relative flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-primary/25 to-primary/5 ring-1 ring-primary/20">
+              <Sparkles className="h-4 w-4 text-primary" />
             </div>
-            <span className="text-sm font-semibold">Asistente IA</span>
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary">
-              Beta
-            </span>
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm font-semibold">Asistente IA</span>
+              <span className="text-[10px] text-muted-foreground/60">Tus finanzas, al detalle</span>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             {messages.length > 0 && (
@@ -314,18 +340,20 @@ export function AiChat() {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="relative flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 ? (
-            <div className="flex flex-col gap-4 pt-2">
+            <div className="flex flex-col gap-5 pt-4">
               {/* Welcome */}
-              <div className="flex flex-col items-center gap-2 py-6 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
-                  <Sparkles className="h-6 w-6 text-primary" />
+              <div className="flex flex-col items-center gap-3 py-6 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/25 to-primary/5 ring-1 ring-primary/20 shadow-[0_0_30px_hsl(var(--primary)/0.15)]">
+                  <Sparkles className="h-7 w-7 text-primary" />
                 </div>
-                <p className="text-sm font-semibold">¿En qué puedo ayudarte?</p>
-                <p className="text-xs text-muted-foreground leading-relaxed max-w-[220px]">
-                  Pregúntame sobre tus finanzas, gastos, ahorro o inversiones.
-                </p>
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold">¿En qué puedo ayudarte?</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed max-w-[240px]">
+                    Pregúntame sobre tus finanzas, gastos, ahorro o inversiones.
+                  </p>
+                </div>
               </div>
 
               {/* Suggestion chips */}
@@ -335,9 +363,9 @@ export function AiChat() {
                     key={s}
                     onClick={() => sendMessage(s)}
                     className={cn(
-                      'rounded-xl border border-white/[0.07] bg-white/[0.03] px-3.5 py-2.5',
+                      'group rounded-xl border border-white/[0.06] bg-card/60 px-3.5 py-3',
                       'text-left text-xs text-muted-foreground leading-snug',
-                      'hover:bg-white/[0.07] hover:text-foreground hover:border-white/[0.12]',
+                      'hover:bg-primary/[0.06] hover:text-foreground hover:border-primary/25',
                       'transition-all duration-150 active:scale-[0.98]'
                     )}
                   >
@@ -351,46 +379,60 @@ export function AiChat() {
               <div
                 key={i}
                 className={cn(
-                  'flex',
-                  msg.role === 'user' ? 'justify-end' : 'justify-start'
+                  'flex items-end gap-2',
+                  msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'
                 )}
               >
+                {/* Avatar */}
                 <div
                   className={cn(
-                    'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
+                    'flex h-6 w-6 shrink-0 items-center justify-center rounded-full mb-0.5',
                     msg.role === 'user'
-                      ? 'bg-primary/15 text-foreground rounded-tr-sm'
-                      : 'bg-white/[0.05] border border-white/[0.07] text-foreground/90 rounded-tl-sm'
+                      ? 'bg-white/[0.08] text-muted-foreground'
+                      : 'bg-gradient-to-br from-primary/25 to-primary/5 text-primary ring-1 ring-primary/20'
                   )}
                 >
-                  {msg.role === 'assistant' && msg.content ? (
-                    <ReactMarkdown components={MD_COMPONENTS}>{msg.content}</ReactMarkdown>
-                  ) : (
-                    msg.content || (msg.isStreaming ? null : '…')
-                  )}
-                  {msg.isStreaming && (
-                    msg.content ? <TypingCursor /> : (
-                      <span className="flex gap-1 items-center h-4 mt-0.5">
-                        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
-                        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
-                        <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
-                      </span>
-                    )
-                  )}
+                  {msg.role === 'user' ? <User className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
                 </div>
-                {msg.role === 'assistant' && !msg.isStreaming && msg.meta && (
-                  <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-muted-foreground/40 px-1">
-                    <span>{msg.meta.model}</span>
-                    <span>·</span>
-                    <span>{(msg.meta.elapsed_ms / 1000).toFixed(1)}s</span>
-                    {msg.meta.input_tokens != null && (
-                      <>
-                        <span>·</span>
-                        <span>{msg.meta.input_tokens}↑ {msg.meta.output_tokens}↓ tok</span>
-                      </>
+
+                <div className={cn('flex flex-col max-w-[80%]', msg.role === 'user' ? 'items-end' : 'items-start')}>
+                  <div
+                    className={cn(
+                      'rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
+                      msg.role === 'user'
+                        ? 'bg-gradient-to-br from-primary/25 to-primary/10 text-foreground rounded-br-md'
+                        : 'bg-card/70 border border-white/[0.06] text-foreground/90 rounded-bl-md'
+                    )}
+                  >
+                    {msg.role === 'assistant' && msg.content ? (
+                      <ReactMarkdown components={MD_COMPONENTS}>{msg.content}</ReactMarkdown>
+                    ) : (
+                      msg.content || (msg.isStreaming ? null : '…')
+                    )}
+                    {msg.isStreaming && (
+                      msg.content ? <TypingCursor /> : (
+                        <span className="flex gap-1 items-center h-4 mt-0.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
+                        </span>
+                      )
                     )}
                   </div>
-                )}
+                  {msg.role === 'assistant' && !msg.isStreaming && msg.meta && (
+                    <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-muted-foreground/40 px-1">
+                      <span>{msg.meta.model}</span>
+                      <span>·</span>
+                      <span>{(msg.meta.elapsed_ms / 1000).toFixed(1)}s</span>
+                      {msg.meta.input_tokens != null && (
+                        <>
+                          <span>·</span>
+                          <span>{msg.meta.input_tokens}↑ {msg.meta.output_tokens}↓ tok</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             ))
           )}
@@ -398,48 +440,32 @@ export function AiChat() {
         </div>
 
         {/* Input bar */}
-        <div className="shrink-0 border-t border-white/[0.07] p-3">
-          {/* Thinking Level Selector */}
-          <div className="flex items-center gap-1.5 mb-2 px-1">
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-semibold select-none">
-              Razonamiento:
-            </span>
-            <button
-              onClick={() => setThinkingLevel('fast')}
-              className={cn(
-                'rounded px-1.5 py-0.5 text-[10px] font-medium transition-all duration-150 border',
-                thinkingLevel === 'fast'
-                  ? 'bg-primary/15 border-primary/30 text-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.1)]'
-                  : 'bg-transparent border-white/[0.05] text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.08]'
-              )}
-            >
-              Rápido
-            </button>
-            <button
-              onClick={() => setThinkingLevel('high')}
-              className={cn(
-                'rounded px-1.5 py-0.5 text-[10px] font-medium transition-all duration-150 border',
-                thinkingLevel === 'high'
-                  ? 'bg-primary/15 border-primary/30 text-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.1)]'
-                  : 'bg-transparent border-white/[0.05] text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.08]'
-              )}
-            >
-              Lógico
-            </button>
-            <button
-              onClick={() => setThinkingLevel('max')}
-              className={cn(
-                'rounded px-1.5 py-0.5 text-[10px] font-medium transition-all duration-150 border',
-                thinkingLevel === 'max'
-                  ? 'bg-primary/15 border-primary/30 text-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.1)]'
-                  : 'bg-transparent border-white/[0.05] text-muted-foreground/60 hover:text-foreground hover:bg-white/[0.08]'
-              )}
-            >
-              Profundo
-            </button>
-          </div>
+        <div className="relative shrink-0 border-t border-white/[0.07] p-3">
+          {/* Model Selector */}
+          {models.length > 0 && (
+            <div className="mb-2">
+              <div className="relative inline-flex items-center">
+                <select
+                  value={selectedModel}
+                  onChange={e => setSelectedModel(e.target.value)}
+                  className={cn(
+                    'appearance-none rounded-full pl-2.5 pr-6 py-1 text-[10px] font-medium transition-all duration-150 border',
+                    'bg-card/60 border-white/[0.08] text-muted-foreground/80',
+                    'hover:text-foreground hover:border-primary/25 focus:outline-none focus:border-primary/40 cursor-pointer'
+                  )}
+                >
+                  {models.map(m => (
+                    <option key={m.id} value={m.id} className="bg-[hsl(var(--card))] text-foreground">
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-1.5 h-3 w-3 text-muted-foreground/60" />
+              </div>
+            </div>
+          )}
 
-          <div className="flex items-end gap-2 rounded-xl border border-white/[0.09] bg-white/[0.04] px-3 py-2 focus-within:border-primary/30 focus-within:bg-white/[0.06] transition-colors">
+          <div className="flex items-end gap-2 rounded-2xl border border-white/[0.09] bg-card/50 px-3 py-2 focus-within:border-primary/35 focus-within:bg-card/70 focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.08)] transition-all">
             <textarea
               ref={textareaRef}
               rows={1}
@@ -484,9 +510,9 @@ export function AiChat() {
               onClick={() => sendMessage()}
               disabled={!input.trim() || isLoading}
               className={cn(
-                'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all',
+                'flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-all',
                 input.trim() && !isLoading
-                  ? 'bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95'
+                  ? 'bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-[0_0_16px_hsl(var(--primary)/0.35)] hover:brightness-110 active:scale-95'
                   : 'bg-white/[0.06] text-muted-foreground/40 cursor-not-allowed'
               )}
               aria-label="Enviar mensaje"
