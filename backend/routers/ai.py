@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from .. import models, auth
 from ..database import get_db
+from ..services import ai_usage
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -926,9 +927,14 @@ async def _call_with_fallback(
 @router.post("/chat")
 async def chat(
     body: ChatRequest,
-    current_user: models.User = Depends(auth.get_current_user),
+    current_user: models.User = Depends(auth.require_ai_access),
     db: Session = Depends(get_db),
 ):
+    # Los usuarios sin permiso de admin quedan fijados al modelo que les haya
+    # asignado el administrador, ignorando el modelo pedido por el frontend.
+    if not current_user.is_admin:
+        body.model = current_user.ai_model
+
     available = _get_available_providers(CHAT_PROVIDERS)
     if not available:
         raise HTTPException(
@@ -1047,14 +1053,21 @@ async def chat(
 
             elapsed_ms = int((time.time() - start_time) * 1000)
             usage = getattr(response, "usage", None)
+            input_tokens = getattr(usage, "prompt_tokens", None)
+            output_tokens = getattr(usage, "completion_tokens", None)
             meta = {
                 "type": "meta",
                 "model": model_used,
                 "elapsed_ms": elapsed_ms,
-                "input_tokens": getattr(usage, "prompt_tokens", None),
-                "output_tokens": getattr(usage, "completion_tokens", None),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
             }
             yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
+
+            try:
+                ai_usage.record_usage(captured_db, captured_user_id, model_used, "chat", input_tokens or 0, output_tokens or 0)
+            except Exception:
+                pass
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
@@ -1077,7 +1090,7 @@ async def chat(
 # Available models endpoint
 # ---------------------------------------------------------------------------
 @router.get("/models")
-async def list_models(current_user: models.User = Depends(auth.get_current_user)):
+async def list_models(current_user: models.User = Depends(auth.require_ai_access)):
     available = _get_available_providers(CHAT_PROVIDERS)
     if not available:
         raise HTTPException(status_code=503, detail="No hay ningún proveedor de IA configurado.")
@@ -1106,12 +1119,24 @@ async def list_models(current_user: models.User = Depends(auth.get_current_user)
 
 
 # ---------------------------------------------------------------------------
+# Own AI usage stats (tokens/mes, nº peticiones, coste estimado)
+# ---------------------------------------------------------------------------
+@router.get("/usage")
+async def get_my_usage(
+    months: int = Query(12, ge=1, le=24),
+    current_user: models.User = Depends(auth.require_ai_access),
+    db: Session = Depends(get_db),
+):
+    return ai_usage.usage_summary(db, current_user.id, months)
+
+
+# ---------------------------------------------------------------------------
 # Batch AI categorization endpoint
 # ---------------------------------------------------------------------------
 @router.post("/categorize-batch")
 async def categorize_batch(
     body: CategorizeBatchRequest,
-    current_user: models.User = Depends(auth.get_current_user),
+    current_user: models.User = Depends(auth.require_ai_access),
     db: Session = Depends(get_db),
 ):
     """
@@ -1136,6 +1161,8 @@ async def categorize_batch(
     )
 
     results = []
+    total_input_tokens = 0
+    total_output_tokens = 0
 
     for tx_id in body.transaction_ids:
         tx = db.query(models.Transaction).filter(
@@ -1171,6 +1198,9 @@ async def categorize_batch(
             chosen_name = (response.choices[0].message.content or "").strip()
             # Strip quotes if model wraps the answer
             chosen_name = chosen_name.strip('"\'').strip()
+            usage = getattr(response, "usage", None)
+            total_input_tokens += getattr(usage, "prompt_tokens", 0) or 0
+            total_output_tokens += getattr(usage, "completion_tokens", 0) or 0
         except Exception as exc:
             results.append({"id": tx_id, "error": str(exc)})
             continue
@@ -1196,4 +1226,13 @@ async def categorize_batch(
         })
 
     db.commit()
+
+    try:
+        ai_usage.record_usage(
+            db, current_user.id, FAST_PROVIDERS[0]["model"], "categorize",
+            total_input_tokens, total_output_tokens,
+        )
+    except Exception:
+        pass
+
     return {"results": results, "total": len(results)}

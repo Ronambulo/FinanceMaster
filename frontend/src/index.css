@@ -42,6 +42,14 @@
     --chart-2: 216 35% 63%;   /* blue */
     --chart-3: 39 59% 63%;    /* gold */
     --chart-4: 267 33% 66%;   /* mauve */
+
+    /* Safe-area insets (notch / home indicator / gesture bars) — 0 on
+       browsers or contexts that don't report them, so these are safe to
+       add unconditionally anywhere fixed chrome touches a screen edge. */
+    --safe-top:    env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left:   env(safe-area-inset-left, 0px);
+    --safe-right:  env(safe-area-inset-right, 0px);
   }
 }
 
@@ -54,6 +62,8 @@
     @apply bg-background text-foreground antialiased font-sans;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
+    /* Allow scrolling but block pinch-zoom and double-tap-to-zoom on touch devices. */
+    touch-action: pan-x pan-y;
   }
 
   h1, h2, h3 {
@@ -104,14 +114,29 @@
   .delay-375 { animation-delay: 375ms; }
 }
 
+/* ── App main content — bottom padding clears the mobile bottom nav
+   (78px) plus whatever safe-area the device reports below it. ── */
+main.app-main {
+  padding-bottom: calc(78px + 3.125rem + var(--safe-bottom)) !important;
+}
+@media (min-width: 768px) {
+  main.app-main {
+    padding-bottom: 1.5rem !important;
+  }
+}
+
 /* ── Compact mode ── */
 html.compact main {
   padding: 0.5rem !important;
-  padding-bottom: 5.5rem !important;
+}
+html.compact main.app-main {
+  padding-bottom: calc(78px + 0.625rem + var(--safe-bottom)) !important;
 }
 @media (min-width: 768px) {
   html.compact main {
     padding: 0.875rem !important;
+  }
+  html.compact main.app-main {
     padding-bottom: 0.875rem !important;
   }
 }

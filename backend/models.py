@@ -41,6 +41,9 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=_dt.utcnow)
     is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)
+    ai_enabled = Column(Boolean, default=False)
+    ai_model = Column(String, nullable=True)
 
     transactions = relationship("Transaction", back_populates="user", cascade="all, delete-orphan")
     categories = relationship("Category", back_populates="user", cascade="all, delete-orphan")
@@ -294,6 +297,19 @@ class ManualPosition(Base):
     created_at    = Column(DateTime, default=_dt.utcnow)
 
     user = relationship("User", back_populates="manual_positions")
+
+
+class AiUsageLog(Base):
+    __tablename__ = "ai_usage_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    model = Column(String, nullable=True)
+    endpoint = Column(String, default="chat")
+    input_tokens = Column(Integer, default=0)
+    output_tokens = Column(Integer, default=0)
+    created_at = Column(DateTime, default=_dt.utcnow, index=True)
+
+    user = relationship("User")
 
 
 class BankConnection(Base):

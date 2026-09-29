@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from .database import engine
 from . import models
-from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic, myinvestor, integrations
+from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic, myinvestor, integrations, admin
 from .services.categorizer import seed_system_categories
 from .database import SessionLocal
 from sqlalchemy import text
@@ -46,6 +46,9 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE transactions ADD COLUMN link_group_id INTEGER",
             "ALTER TABLE transactions ADD COLUMN is_link_primary BOOLEAN DEFAULT FALSE",
             "ALTER TABLE transactions ADD COLUMN effective_amount REAL",
+            "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE users ADD COLUMN ai_enabled BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE users ADD COLUMN ai_model VARCHAR",
         ]:
             try:
                 conn.execute(text(stmt))
@@ -56,6 +59,12 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         seed_system_categories(db)
+        # Bootstrap del admin por email: idempotente y auto-reparable si la
+        # BD se resetea, sin necesidad de tocar la BD a mano.
+        admin_user = db.query(models.User).filter(models.User.email == "enriquerodridel@gmail.com").first()
+        if admin_user and not admin_user.is_admin:
+            admin_user.is_admin = True
+            db.commit()
         # Repara filas escritas por bugs ya corregidos. La BD vive en un volumen
         # que sobrevive al despliegue, así que el código nuevo por sí solo no
         # las arregla. Es idempotente y sin red.
@@ -106,6 +115,7 @@ app.include_router(webhooks.router)
 app.include_router(trade_republic.router)
 app.include_router(myinvestor.router)
 app.include_router(integrations.router)
+app.include_router(admin.router)
 
 
 # Serve React frontend
