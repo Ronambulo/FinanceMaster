@@ -5,6 +5,7 @@ services:
     image: ghcr.io/ronambulo/financemaster:latest
     container_name: financemaster
     restart: unless-stopped
+    shm_size: "1gb"
     ports:
       - "8000:8000"
     volumes:
