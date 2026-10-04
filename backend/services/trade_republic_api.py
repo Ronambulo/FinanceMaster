@@ -158,6 +158,21 @@ class TradeRepublicAPI:
             # Full login: Playwright gets AWS WAF token, then POSTs credentials
             log.info("TR: initiating web login (Playwright WAF bypass)…")
             countdown = self._client.initiate_weblogin()
+
+            # pytr no lanza excepción si Playwright no consigue el token WAF a
+            # tiempo (p.ej. /dev/shm insuficiente o CPU lenta en el servidor) —
+            # simplemente continúa sin él. Trade Republic entonces acepta la
+            # petición (countdown válido) pero no llega a enviar el SMS/push
+            # real, dejando al usuario esperando un código que nunca llega.
+            if not getattr(self._client, "_waf_token", None):
+                log.error("TR: no se obtuvo el token WAF — el código de verificación probablemente NO llegará")
+                raise TRConnectionError(
+                    "No se pudo verificar la conexión con Trade Republic (token "
+                    "anti-bot no disponible). El código no llegará. Vuelve a "
+                    "intentarlo en unos segundos; si persiste, es probable que "
+                    "Chromium no tenga suficientes recursos en el servidor."
+                )
+
             log.info(f"TR: 2FA SMS sent, countdown={countdown}s")
             self._awaiting_2fa = True
             return {"status": "awaiting_2fa", "countdown": countdown}
