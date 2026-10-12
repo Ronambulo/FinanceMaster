@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import concurrent.futures
 import hashlib
 import logging
 import os
@@ -18,6 +19,20 @@ from ..services.trade_republic_api import (
 )
 
 router = APIRouter(prefix="/api/tr", tags=["trade-republic"])
+
+
+async def _run_connect(client: TradeRepublicAPI) -> dict:
+    """
+    Run client.connect() in a brand-new, single-use thread instead of the
+    loop's shared (reused) default executor. client.connect() can spin up
+    sync_playwright(), which owns a dedicated event loop/greenlet per thread —
+    if that thread gets recycled by the default pool for a later call, the
+    leftover Playwright state causes
+    "WriteUnixTransport closed...the handler is closed" errors.
+    """
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return await loop.run_in_executor(pool, client.connect)
 
 
 # ── Encryption ────────────────────────────────────────────────────────────────
@@ -135,7 +150,7 @@ async def tr_auto_connect(
 
     try:
         client = TradeRepublicAPI(phone=phone, pin=pin)
-        result = await asyncio.get_event_loop().run_in_executor(None, client.connect)
+        result = await _run_connect(client)
         if result.get("status") == "connected":
             set_client(current_user.id, client)
             conn.last_connected_at = datetime.utcnow()
@@ -157,7 +172,7 @@ async def tr_connect(
 ):
     client = TradeRepublicAPI(phone=body.phone, pin=body.pin)
     try:
-        result = await asyncio.get_event_loop().run_in_executor(None, client.connect)
+        result = await _run_connect(client)
         set_client(current_user.id, client)
         _save_credentials(db, current_user.id, body.phone, body.pin, result.get("status") == "connected")
         return result
