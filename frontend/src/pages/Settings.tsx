@@ -487,8 +487,8 @@ function IntegrationsTab() {
                   <p className="truncate font-mono text-muted-foreground">{wh.url}</p>
                   <p className="text-muted-foreground/60 mt-0.5">{wh.events.join(', ')}</p>
                 </div>
-                <button onClick={() => toggleWh.mutate(wh.id)} className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${wh.is_active ? 'bg-positive/15 text-positive' : 'bg-muted text-muted-foreground'}`}>{wh.is_active ? 'activo' : 'pausado'}</button>
-                <button onClick={() => deleteWh.mutate(wh.id)} className="text-muted-foreground hover:text-negative"><Trash className="h-3.5 w-3.5" /></button>
+                <button onClick={() => toggleWh.mutate(wh.id)} aria-label={wh.is_active ? 'Pausar webhook' : 'Activar webhook'} className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${wh.is_active ? 'bg-positive/15 text-positive' : 'bg-muted text-muted-foreground'}`}>{wh.is_active ? 'activo' : 'pausado'}</button>
+                <button onClick={() => deleteWh.mutate(wh.id)} aria-label="Eliminar webhook" className="text-muted-foreground hover:text-negative"><Trash className="h-3.5 w-3.5" /></button>
               </div>
             ))}
             {webhooks.length === 0 && <p className="text-xs text-muted-foreground">No hay webhooks configurados.</p>}

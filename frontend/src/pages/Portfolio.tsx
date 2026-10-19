@@ -5,10 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Loader2, Pencil, Check, X, Radio, Plus, Trash2, Search, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { Loader2, Pencil, Check, X, Radio, Plus, Trash2, Search, ArrowUpRight, ArrowDownRight, AlertTriangle } from 'lucide-react'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import type { PortfolioPosition, StockSearchResult } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import {
@@ -998,8 +999,20 @@ export function Portfolio() {
   const [tab, setTab] = useState('charts')
   const [, refresh] = useState(0)
   const [addModalOpen, setAddModalOpen] = useState(false)
+  const [confirmDeleteManual, setConfirmDeleteManual] = useState<{ id: number; symbol: string } | null>(null)
   const { toast } = useToast()
   const qc = useQueryClient()
+
+  const deleteManualMutation = useMutation({
+    mutationFn: (id: number) => portfolioApi.deleteManualPosition(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['portfolio'] })
+      qc.invalidateQueries({ queryKey: ['portfolio-live'] })
+      toast('Posición eliminada', 'success')
+      setConfirmDeleteManual(null)
+    },
+    onError: () => toast('Error al eliminar', 'error'),
+  })
 
   // ── SSE live price stream ──────────────────────────────────────────────────
   const [livePrices, setLivePrices] = useState<Record<string, number>>({})
@@ -1347,12 +1360,9 @@ export function Portfolio() {
                           </div>
                           {p.is_manual && p.manual_id != null && (
                             <button
-                              onClick={() => portfolioApi.deleteManualPosition(p.manual_id!).then(() => {
-                                qc.invalidateQueries({ queryKey: ['portfolio'] })
-                                qc.invalidateQueries({ queryKey: ['portfolio-live'] })
-                                toast('Posición eliminada', 'success')
-                              }).catch(() => toast('Error al eliminar', 'error'))}
+                              onClick={() => setConfirmDeleteManual({ id: p.manual_id!, symbol: p.symbol })}
                               className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-negative hover:bg-negative/10 transition-colors"
+                              aria-label="Eliminar posición manual"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -1467,6 +1477,31 @@ export function Portfolio() {
       </Tabs>
 
       <AddManualPositionModal open={addModalOpen} onClose={() => setAddModalOpen(false)} />
+
+      <Dialog open={confirmDeleteManual !== null} onOpenChange={open => !open && setConfirmDeleteManual(null)}>
+        <DialogContent className="max-w-[320px]">
+          <DialogHeader>
+            <DialogTitle className="text-negative flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4" />
+              Eliminar posición
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground mt-1">
+            Se eliminará la posición manual de {confirmDeleteManual?.symbol}. Esta acción no se puede deshacer.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDeleteManual(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteManualMutation.isPending}
+              onClick={() => confirmDeleteManual && deleteManualMutation.mutate(confirmDeleteManual.id)}
+            >
+              {deleteManualMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+              Borrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

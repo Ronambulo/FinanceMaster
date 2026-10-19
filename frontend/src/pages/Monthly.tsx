@@ -608,6 +608,7 @@ export function Monthly() {
                       const budget = allBudgets?.find(bgt => bgt.id === b.budget_id)
                       if (budget) deleteBudgetMutation.mutate(budget.id)
                     }}
+                    aria-label="Eliminar presupuesto"
                     className="text-muted-foreground/50 hover:text-negative transition-colors shrink-0"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
