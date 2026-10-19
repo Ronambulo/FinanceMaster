@@ -2,7 +2,7 @@ import logging
 from datetime import date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from .. import models, schemas, auth
@@ -87,8 +87,11 @@ def list_transactions(
     aq = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=False)
     aq = aq.filter(models.Transaction.type.notin_(INVESTMENT_TYPES))
     net_amount = func.coalesce(models.Transaction.effective_amount, models.Transaction.amount)
-    income_sum = round(aq.filter(models.Transaction.amount > 0).with_entities(func.sum(net_amount)).scalar() or 0, 2)
-    expense_sum = round(aq.filter(models.Transaction.amount < 0).with_entities(func.sum(func.abs(net_amount))).scalar() or 0, 2)
+    income_expr = func.sum(case((models.Transaction.amount > 0, net_amount), else_=0))
+    expense_expr = func.sum(case((models.Transaction.amount < 0, func.abs(net_amount)), else_=0))
+    income_sum_raw, expense_sum_raw = aq.with_entities(income_expr, expense_expr).one()
+    income_sum = round(income_sum_raw or 0, 2)
+    expense_sum = round(expense_sum_raw or 0, 2)
     total = q.count()
     items = q.order_by(models.Transaction.date.desc(), models.Transaction.datetime.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
