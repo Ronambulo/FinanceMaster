@@ -39,7 +39,7 @@ export function MonthlyHeroCard({
               )}
               {!!invested && (
                 <Badge variant="secondary" className="text-xs">
-                  💹 Invertido: {formatCurrency(invested)}
+                  Invertido: {formatCurrency(invested)}
                 </Badge>
               )}
             </div>
