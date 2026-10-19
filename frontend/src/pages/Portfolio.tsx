@@ -201,7 +201,7 @@ export function Portfolio() {
         {/* Scrollable tab list on mobile */}
         <div className="overflow-x-auto pb-0.5">
           <TabsList className="w-max min-w-full sm:w-auto">
-            <TabsTrigger value="charts">📈 Gráficas</TabsTrigger>
+            <TabsTrigger value="charts">Gráficas</TabsTrigger>
             <TabsTrigger value="dividends">Dividendos</TabsTrigger>
             <TabsTrigger value="history">Historial</TabsTrigger>
           </TabsList>
