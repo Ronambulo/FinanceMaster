@@ -252,6 +252,13 @@ export function Monthly() {
     enabled: !!(periodStart && periodEnd),
   })
 
+  // Investment purchases this cycle — informational only, excluded from savings calcs
+  const { data: investments } = useQuery({
+    queryKey: ['monthly-investments', periodStart, periodEnd],
+    queryFn: () => dashApi.monthlyInvestments({ date_from: periodStart, date_to: periodEnd }),
+    enabled: !!(periodStart && periodEnd),
+  })
+
   /* ── Previous cycle for comparison ──
      Day-aligned: if the selected cycle is still open (in progress), we
      only compare against the same number of elapsed days into the
@@ -497,6 +504,11 @@ export function Monthly() {
                 {totalIncome > 0 && (
                   <Badge variant={netSavings >= 0 ? 'success' : 'destructive'} className="text-xs">
                     {savingsRate.toFixed(1)}% tasa de ahorro
+                  </Badge>
+                )}
+                {!!investments?.invested && (
+                  <Badge variant="secondary" className="text-xs">
+                    💹 Invertido: {formatCurrency(investments.invested)}
                   </Badge>
                 )}
               </div>

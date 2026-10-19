@@ -108,6 +108,8 @@ export const dashApi = {
     if (params.date_to)   q.set('date_to',   params.date_to)
     return request<MonthlyDetailRow[]>(`/dashboard/monthly-detail?${q}`)
   },
+  monthlyInvestments: (params: { date_from: string; date_to: string }) =>
+    request<MonthlyInvestmentSummary>(`/dashboard/monthly-investments?date_from=${params.date_from}&date_to=${params.date_to}`),
   pendingRecurring: (dateFrom: string, dateTo: string) =>
     request<PendingRecurring[]>(`/dashboard/pending-recurring?date_from=${dateFrom}&date_to=${dateTo}`),
   netWorthHistory: (months = 24) =>
@@ -254,6 +256,7 @@ export interface PriceHistory { symbol: string; points: PricePoint[] }
 export interface Budget { id: number; category_id: number | null; category: Category | null; amount: number; month: string | null; is_recurring: boolean }
 export interface BudgetStatus { budget_id: number; category_id: number | null; category_name: string; category_color: string; category_icon: string; budgeted: number; spent: number; remaining: number; pct_used: number }
 export interface MonthlyDetailRow { id: number; date: string; name: string | null; category_id: number | null; category_name: string; category_color: string; category_icon: string; amount: number; exclude_from_stats: boolean; recurring_group_id: number | null }
+export interface MonthlyInvestmentSummary { invested: number; count: number }
 export interface NetWorthPoint { month: string; cash: number; portfolio: number; debt: number; net_worth: number }
 export interface Insight { id: number; type: string; title: string; message: string; severity: string; is_read: boolean; created_at: string }
 export interface Webhook { id: number; url: string; events: string[]; is_active: boolean; created_at: string }

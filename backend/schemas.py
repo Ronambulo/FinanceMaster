@@ -446,6 +446,11 @@ class MonthlyDetailRow(BaseModel):
     exclude_from_stats: bool
     recurring_group_id: Optional[int] = None
 
+class MonthlyInvestmentSummary(BaseModel):
+    """Investment purchases total for a monthly-cycle period (informational, not part of savings)."""
+    invested: float
+    count: int
+
 
 class RecurringGroupCreate(BaseModel):
     transaction_id: int

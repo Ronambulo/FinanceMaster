@@ -309,6 +309,28 @@ def monthly_detail(
     ]
 
 
+@router.get("/monthly-investments", response_model=schemas.MonthlyInvestmentSummary)
+def monthly_investments(
+    date_from: date,
+    date_to: date,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    txs = (
+        db.query(models.Transaction)
+        .filter(
+            models.Transaction.user_id == current_user.id,
+            models.Transaction.account_category.in_(["TRADING", "SECURITIES"]),
+            models.Transaction.type == "BUY",
+            models.Transaction.date >= date_from,
+            models.Transaction.date <= date_to,
+        )
+        .all()
+    )
+    invested = sum(abs(tx.amount) for tx in txs)
+    return schemas.MonthlyInvestmentSummary(invested=invested, count=len(txs))
+
+
 @router.get("/net-worth-history", response_model=List[schemas.NetWorthPoint])
 def net_worth_history(
     months: int = Query(24, ge=3, le=60),
