@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { Plus, Trash2, Target, PiggyBank, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Target, PiggyBank, Loader2, AlertTriangle } from 'lucide-react'
 
 function GoalCard({ goal, onDelete, onUpdate, delay = 0 }: { goal: Goal; onDelete: (id: number) => void; onUpdate: (id: number, d: Partial<Goal>) => void; delay?: number }) {
   const [editAmt, setEditAmt] = useState(false)
@@ -66,7 +66,7 @@ function GoalCard({ goal, onDelete, onUpdate, delay = 0 }: { goal: Goal; onDelet
               </p>
             )}
           </div>
-          <Button variant="ghost" size="icon" onClick={() => onDelete(goal.id)}>
+          <Button variant="ghost" size="icon" aria-label="Eliminar objetivo" onClick={() => onDelete(goal.id)}>
             <Trash2 className="h-4 w-4 text-destructive" />
           </Button>
         </div>
@@ -141,6 +141,7 @@ export function Goals() {
   const qc = useQueryClient()
   const { toast } = useToast()
   const [newOpen, setNewOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const month = currentMonth()
 
@@ -160,7 +161,7 @@ export function Goals() {
   })
   const deleteMutation = useMutation({
     mutationFn: goalApi.delete,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['goals'] }); toast('Objetivo eliminado', 'success') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['goals'] }); toast('Objetivo eliminado', 'success'); setConfirmDelete(null) },
   })
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: any) => goalApi.update(id, data),
@@ -235,7 +236,7 @@ export function Goals() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {goals?.map((g, i) => (
-            <GoalCard key={g.id} goal={g} onDelete={id => deleteMutation.mutate(id)} onUpdate={(id, d) => updateMutation.mutate({ id, data: d })} delay={Math.min(i, 8) * 40} />
+            <GoalCard key={g.id} goal={g} onDelete={setConfirmDelete} onUpdate={(id, d) => updateMutation.mutate({ id, data: d })} delay={Math.min(i, 8) * 40} />
           ))}
           {goals?.length === 0 && (
             <Card className="col-span-2 animate-fade-up relative overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.5)]">
@@ -251,6 +252,27 @@ export function Goals() {
         <DialogContent>
           <DialogHeader><DialogTitle>Nuevo objetivo</DialogTitle></DialogHeader>
           <GoalForm onSave={d => createMutation.mutate(d)} onCancel={() => setNewOpen(false)} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDelete !== null} onOpenChange={open => !open && setConfirmDelete(null)}>
+        <DialogContent className="max-w-[320px]">
+          <DialogHeader>
+            <DialogTitle className="text-negative flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4" /> Eliminar objetivo
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground mt-1">Esta acción no se puede deshacer.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => confirmDelete !== null && deleteMutation.mutate(confirmDelete)}
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Borrar'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

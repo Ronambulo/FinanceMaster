@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
 import { MetricCard } from '@/components/MetricCard'
-import { Plus, Trash2, Loader2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle } from 'lucide-react'
+import { Plus, Trash2, Loader2, ChevronDown, ChevronUp, ArrowDownCircle, ArrowUpCircle, AlertTriangle } from 'lucide-react'
 
 function DebtForm({ onSave, onCancel }: { onSave: (d: Partial<Debt>) => void; onCancel: () => void }) {
   const [form, setForm] = useState({ name: '', total_amount: '', direction: 'I_OWE' as const, due_date: '', description: '' })
@@ -89,10 +89,10 @@ function DebtCard({ debt, onAddPayment, onDelete, delay = 0 }: { debt: Debt; onA
                 <span className="hidden xs:inline">+ </span>Pago
               </Button>
             )}
-            <Button variant="ghost" size="icon" onClick={() => setExpanded(!expanded)}>
+            <Button variant="ghost" size="icon" aria-label={expanded ? 'Contraer' : 'Expandir'} onClick={() => setExpanded(!expanded)}>
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => onDelete(debt.id)}>
+            <Button variant="ghost" size="icon" aria-label="Eliminar deuda" onClick={() => onDelete(debt.id)}>
               <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
           </div>
@@ -117,6 +117,7 @@ export function Debts() {
   const { toast } = useToast()
   const [newDebtOpen, setNewDebtOpen] = useState(false)
   const [paymentDebt, setPaymentDebt] = useState<Debt | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
   const [paymentForm, setPaymentForm] = useState({ amount: '', payment_date: new Date().toISOString().slice(0, 10), note: '' })
 
   const { data: debts, isLoading } = useQuery({ queryKey: ['debts'], queryFn: debtApi.list })
@@ -127,7 +128,7 @@ export function Debts() {
   })
   const deleteMutation = useMutation({
     mutationFn: debtApi.delete,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['debts'] }); toast('Deuda eliminada', 'success') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['debts'] }); setConfirmDelete(null); toast('Deuda eliminada', 'success') },
   })
   const addPaymentMutation = useMutation({
     mutationFn: ({ id, data }: any) => debtApi.addPayment(id, data),
@@ -169,11 +170,11 @@ export function Debts() {
             <TabsTrigger value="owed_to_me">Me deben ({owedToMe.length})</TabsTrigger>
           </TabsList>
           <TabsContent value="i_owe" className="space-y-3 mt-4">
-            {iOwe.map((d, i) => <DebtCard key={d.id} debt={d} onAddPayment={setPaymentDebt} onDelete={id => deleteMutation.mutate(id)} delay={Math.min(i, 8) * 40} />)}
+            {iOwe.map((d, i) => <DebtCard key={d.id} debt={d} onAddPayment={setPaymentDebt} onDelete={setConfirmDelete} delay={Math.min(i, 8) * 40} />)}
             {iOwe.length === 0 && <p className="text-center py-8 text-muted-foreground text-sm">Sin deudas pendientes</p>}
           </TabsContent>
           <TabsContent value="owed_to_me" className="space-y-3 mt-4">
-            {owedToMe.map((d, i) => <DebtCard key={d.id} debt={d} onAddPayment={setPaymentDebt} onDelete={id => deleteMutation.mutate(id)} delay={Math.min(i, 8) * 40} />)}
+            {owedToMe.map((d, i) => <DebtCard key={d.id} debt={d} onAddPayment={setPaymentDebt} onDelete={setConfirmDelete} delay={Math.min(i, 8) * 40} />)}
             {owedToMe.length === 0 && <p className="text-center py-8 text-muted-foreground text-sm">Nadie te debe dinero</p>}
           </TabsContent>
         </Tabs>
@@ -211,6 +212,32 @@ export function Debts() {
               </Button>
             </DialogFooter>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm delete dialog */}
+      <Dialog open={confirmDelete !== null} onOpenChange={(open) => !open && setConfirmDelete(null)}>
+        <DialogContent className="max-w-[320px]">
+          <DialogHeader>
+            <DialogTitle className="text-negative flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4" /> Borrar deuda
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground mt-1">
+            ¿Estás seguro de que quieres borrar esta deuda? Esta acción no se puede deshacer.
+          </p>
+          <DialogFooter className="mt-4 sm:justify-end gap-2 sm:gap-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => { if (confirmDelete) deleteMutation.mutate(confirmDelete) }}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-3 w-3 mr-2 animate-spin" /> : null}
+              Borrar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

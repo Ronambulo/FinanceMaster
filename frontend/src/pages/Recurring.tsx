@@ -23,7 +23,7 @@ export function Recurring() {
 
   const deleteMutation = useMutation({
     mutationFn: recurringApi.delete,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['recurring'] }); toast('Eliminado', 'success') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['recurring'] }); toast('Eliminado', 'success'); setConfirmDelete(null) },
   })
 
   const toggleMutation = useMutation({
@@ -48,6 +48,7 @@ export function Recurring() {
   const [amountPickerFor, setAmountPickerFor] = useState<RecurringGroup | null>(null)
   const [selectedAmount, setSelectedAmount] = useState<string>('')
   const [showInactive, setShowInactive] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
 
   const totalMonthly = groups?.filter(g => g.is_active && g.period_days === 30)
     .reduce((sum, g) => sum + (g.avg_amount || 0), 0) || 0
@@ -129,7 +130,7 @@ export function Recurring() {
               >
                 <RefreshCw className={`h-4 w-4 ${g.is_active ? 'text-primary' : 'text-muted-foreground'}`} />
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(g.id)}>
+              <Button variant="ghost" size="icon" onClick={() => setConfirmDelete(g.id)}>
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             </div>
@@ -243,6 +244,27 @@ export function Recurring() {
             >
               {pickAmountMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDelete !== null} onOpenChange={open => !open && setConfirmDelete(null)}>
+        <DialogContent className="max-w-[320px]">
+          <DialogHeader>
+            <DialogTitle className="text-negative flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4" /> Eliminar recurrente
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground mt-1">Esta acción no se puede deshacer.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => confirmDelete !== null && deleteMutation.mutate(confirmDelete)}
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Borrar'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1208,6 +1208,7 @@ export function Transactions() {
                                   : <Sparkles className="h-3.5 w-3.5" />}
                               </button>
                               <button onClick={() => setConfirmDelete(tx.id)}
+                                  aria-label="Eliminar transacción"
                                   className="text-muted-foreground/30 hover:text-negative transition-colors flex items-center justify-center">
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </button>

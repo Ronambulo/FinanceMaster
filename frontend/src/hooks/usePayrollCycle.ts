@@ -61,19 +61,7 @@ export function usePayrollCycle(cycleOffset: number, overrideCategoryId?: number
   /* ── 3. Resolved category id: explicit override wins, then auto-detected ── */
   const activeCategoryId = overrideCategoryId ?? nominaCategory?.id ?? null
 
-  /* ── 4. Fetch payroll transactions — always try CUSTOMER_INPAYMENT ── */
-  const { data: payrollByType } = useQuery({
-    queryKey: ['payroll-transactions-type'],
-    queryFn: () =>
-      txApi.list({
-        type: 'CUSTOMER_INPAYMENT',
-        account_category: 'CASH',
-        page_size: 100,
-      }),
-    staleTime: 5 * 60_000,
-  })
-
-  /* Also query by the active category (override or auto-detected nómina) */
+  /* ── 4. Fetch payroll transactions by the active category (override or auto-detected nómina) ── */
   const { data: payrollByCategory } = useQuery({
     queryKey: ['payroll-transactions-cat', activeCategoryId ?? 'none'],
     queryFn: () =>
@@ -85,26 +73,17 @@ export function usePayrollCycle(cycleOffset: number, overrideCategoryId?: number
     staleTime: 5 * 60_000,
   })
 
-  /* ── 4. Unique sorted payroll dates (union of both sources) ── */
+  /* ── 4. Unique sorted payroll dates, trusting only the nómina category ── */
   const payrollDates = useMemo(() => {
-    const typeItems = payrollByType?.items ?? []
-    const catItems  = payrollByCategory?.items ?? []
-    if (!typeItems.length && !catItems.length) return []
+    const catItems = payrollByCategory?.items ?? []
+    if (!catItems.length) return []
 
     const dayMs = (a: string, b: string) =>
       (new Date(a + 'T12:00:00').getTime() - new Date(b + 'T12:00:00').getTime()) / 86_400_000
 
-    // Max amount per date, and whether the date came from the trusted
-    // category match (real, confirmed "nómina") vs. the broader
-    // CUSTOMER_INPAYMENT type search (could be any incoming payment).
     const dateAmounts = new Map<string, number>()
-    const dateIsCategory = new Map<string, boolean>()
-    for (const tx of typeItems) {
-      dateAmounts.set(tx.date, Math.max(dateAmounts.get(tx.date) ?? 0, Math.abs(tx.amount)))
-    }
     for (const tx of catItems) {
       dateAmounts.set(tx.date, Math.max(dateAmounts.get(tx.date) ?? 0, Math.abs(tx.amount)))
-      dateIsCategory.set(tx.date, true)
     }
 
     // Collapse same-payday duplicates (e.g. a payment split across a couple
@@ -115,58 +94,13 @@ export function usePayrollCycle(cycleOffset: number, overrideCategoryId?: number
     for (const d of allDates) {
       const prev = clustered[clustered.length - 1]
       if (prev && dayMs(d, prev) <= CLUSTER_WINDOW_DAYS) {
-        const prevIsCat = dateIsCategory.get(prev) ?? false
-        const dIsCat = dateIsCategory.get(d) ?? false
-        // Prefer the category-tagged date; otherwise keep the larger amount.
-        const dWins = dIsCat !== prevIsCat ? dIsCat : (dateAmounts.get(d) ?? 0) > (dateAmounts.get(prev) ?? 0)
-        if (dWins) clustered[clustered.length - 1] = d
+        if ((dateAmounts.get(d) ?? 0) > (dateAmounts.get(prev) ?? 0)) clustered[clustered.length - 1] = d
       } else {
         clustered.push(d)
       }
     }
-
-    // Category-tagged dates are trusted anchors — confirmed salary payments.
-    const anchors    = clustered.filter(d => dateIsCategory.get(d))
-    const candidates = clustered.filter(d => !dateIsCategory.get(d))
-    const FALLBACK_MIN_GAP_DAYS = 20
-
-    if (!anchors.length) {
-      // No categorized salary at all: fall back to the previous amount/gap
-      // heuristic across all (type-only) dates.
-      const filtered: string[] = []
-      for (const d of clustered) {
-        if (!filtered.length) { filtered.push(d); continue }
-        const prev = filtered[filtered.length - 1]
-        if (dayMs(d, prev) >= FALLBACK_MIN_GAP_DAYS) {
-          filtered.push(d)
-        } else if ((dateAmounts.get(d) ?? 0) > (dateAmounts.get(prev) ?? 0)) {
-          filtered[filtered.length - 1] = d
-        }
-      }
-      return filtered
-    }
-
-    // Adaptive threshold: how far an un-tagged candidate must be from the
-    // nearest anchor before it's trusted as a genuine (un-tagged) payday
-    // rather than dismissed as noise (a refund, transfer, extra income...).
-    // Derived from the anchors' own typical spacing so it self-tunes to
-    // whatever cadence this user actually gets paid on.
-    let threshold = FALLBACK_MIN_GAP_DAYS
-    if (anchors.length >= 2) {
-      const gaps: number[] = []
-      for (let i = 1; i < anchors.length; i++) gaps.push(dayMs(anchors[i], anchors[i - 1]))
-      gaps.sort((a, b) => a - b)
-      const median = gaps[Math.floor(gaps.length / 2)]
-      threshold = Math.max(14, median - 8)
-    }
-
-    const accepted = [...anchors]
-    for (const d of candidates) {
-      const minGapToAnchor = Math.min(...accepted.map(a => Math.abs(dayMs(d, a))))
-      if (minGapToAnchor >= threshold) accepted.push(d)
-    }
-    return accepted.sort()
-  }, [payrollByType, payrollByCategory])
+    return clustered
+  }, [payrollByCategory])
 
   /* ── 5. Build cycles array ── */
   const cycles = useMemo((): PayrollCycle[] => {

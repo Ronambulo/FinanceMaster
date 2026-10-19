@@ -95,6 +95,7 @@ export function InsightsWidget() {
             variant="ghost"
             size="icon"
             className="h-6 w-6"
+            aria-label="Actualizar insights"
             onClick={() => refreshMutation.mutate()}
             disabled={refreshMutation.isPending}
           >
