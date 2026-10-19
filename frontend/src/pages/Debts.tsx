@@ -89,10 +89,10 @@ function DebtCard({ debt, onAddPayment, onDelete, delay = 0 }: { debt: Debt; onA
                 <span className="hidden xs:inline">+ </span>Pago
               </Button>
             )}
-            <Button variant="ghost" size="icon" onClick={() => setExpanded(!expanded)}>
+            <Button variant="ghost" size="icon" aria-label={expanded ? 'Contraer' : 'Expandir'} onClick={() => setExpanded(!expanded)}>
               {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => onDelete(debt.id)}>
+            <Button variant="ghost" size="icon" aria-label="Eliminar deuda" onClick={() => onDelete(debt.id)}>
               <Trash2 className="h-4 w-4 text-destructive" />
             </Button>
           </div>

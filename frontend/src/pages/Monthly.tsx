@@ -19,7 +19,7 @@ import { useToast } from '@/components/ui/toast'
 import {
   ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Loader2,
   TrendingUp, TrendingDown, Eye, EyeOff, RefreshCw, Calendar, Search,
-  FileText, FileSpreadsheet, Repeat2, PiggyBank, Archive,
+  FileText, FileSpreadsheet, Repeat2, PiggyBank, Archive, AlertTriangle,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
@@ -204,6 +204,7 @@ export function Monthly() {
   const [txTypeGroup, setTxTypeGroup] = useState('')  // '' | 'income' | 'expense'
   const [cycleCategory, setCycleCategory] = useState<number | null>(null) // category driving cycle detection
   const [showInactiveRecurring, setShowInactiveRecurring] = useState(false)
+  const [confirmDeleteRecurring, setConfirmDeleteRecurring] = useState<number | null>(null)
 
   /* ── Categories (still needed for the budget dialog) ── */
   const { data: categories } = useQuery({
@@ -311,6 +312,7 @@ export function Monthly() {
       qc.invalidateQueries({ queryKey: ['recurring'] })
       qc.invalidateQueries({ queryKey: ['monthly-detail'] })
       toast('Grupo recurrente eliminado', 'success')
+      setConfirmDeleteRecurring(null)
     },
   })
   const toggleRecurringMutation = useMutation({
@@ -444,8 +446,8 @@ export function Monthly() {
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="outline" size="icon" onClick={goPrevCycle} disabled={selectedCycleIdx <= 0}><ChevronLeft className="h-4 w-4" /></Button>
-          <Button variant="outline" size="icon" onClick={goNextCycle} disabled={isLatestCycle}>
+          <Button variant="outline" size="icon" aria-label="Periodo anterior" onClick={goPrevCycle} disabled={selectedCycleIdx <= 0}><ChevronLeft className="h-4 w-4" /></Button>
+          <Button variant="outline" size="icon" aria-label="Periodo siguiente" onClick={goNextCycle} disabled={isLatestCycle}>
             <ChevronRight className="h-4 w-4" />
           </Button>
           <Select
@@ -686,7 +688,7 @@ export function Monthly() {
                       </button>
                       {row.recurring_group_id ? (
                         <button
-                          onClick={() => deleteRecurringMutation.mutate(row.recurring_group_id!)}
+                          onClick={() => setConfirmDeleteRecurring(row.recurring_group_id!)}
                           className="text-primary hover:text-negative transition-colors"
                           title="Quitar grupo recurrente"
                         >
@@ -759,7 +761,7 @@ export function Monthly() {
                         <td className="px-4 py-2.5 text-center">
                           {row.recurring_group_id ? (
                             <button
-                              onClick={() => deleteRecurringMutation.mutate(row.recurring_group_id!)}
+                              onClick={() => setConfirmDeleteRecurring(row.recurring_group_id!)}
                               className="text-primary hover:text-negative transition-colors"
                               title="Quitar grupo recurrente"
                             >
@@ -885,13 +887,14 @@ export function Monthly() {
                       <p className="font-semibold tabular-nums text-negative text-sm">-{formatCurrency(g.avg_amount || 0)}</p>
                       <Button
                         variant="ghost" size="icon" className="h-7 w-7"
+                        aria-label={g.is_active ? 'Desactivar' : 'Activar'}
                         onClick={() => toggleRecurringMutation.mutate({ id: g.id, is_active: !g.is_active })}
                         title={g.is_active ? 'Desactivar' : 'Activar'}
                       >
                         <RefreshCw className={cn('h-3.5 w-3.5', g.is_active ? 'text-primary' : 'text-muted-foreground')} />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7"
-                        onClick={() => deleteRecurringMutation.mutate(g.id)}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Eliminar recurrente"
+                        onClick={() => setConfirmDeleteRecurring(g.id)}>
                         <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
                     </div>
@@ -947,6 +950,31 @@ export function Monthly() {
         currentMonth={monthStr}
       />
       {recurringTx && <MarkRecurringDialog tx={recurringTx} onClose={() => setRecurringTx(null)} />}
+
+      <Dialog open={confirmDeleteRecurring !== null} onOpenChange={open => !open && setConfirmDeleteRecurring(null)}>
+        <DialogContent className="max-w-[320px]">
+          <DialogHeader>
+            <DialogTitle className="text-negative flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4" />
+              Eliminar grupo recurrente
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground mt-1">
+            Se eliminará el grupo recurrente y dejará de detectarse automáticamente. Esta acción no se puede deshacer.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDeleteRecurring(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteRecurringMutation.isPending}
+              onClick={() => confirmDeleteRecurring !== null && deleteRecurringMutation.mutate(confirmDeleteRecurring)}
+            >
+              {deleteRecurringMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+              Borrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

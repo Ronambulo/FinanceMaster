@@ -651,6 +651,8 @@ export function Settings() {
     setSearchParams({ tab }, { replace: true })
   }
   const [editingCat, setEditingCat] = useState<Category | null>(null)
+  const [confirmDeleteCat, setConfirmDeleteCat] = useState<Category | null>(null)
+  const [confirmDeleteRule, setConfirmDeleteRule] = useState<number | null>(null)
   const [newRuleOpen, setNewRuleOpen] = useState(false)
   const [ruleForm, setRuleForm] = useState({ keyword: '', category_id: '', field: 'name', priority: '0' })
 
@@ -685,7 +687,7 @@ export function Settings() {
   })
   const deleteCatMutation = useMutation({
     mutationFn: catApi.delete,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); toast('Categoría eliminada', 'success') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); toast('Categoría eliminada', 'success'); setConfirmDeleteCat(null) },
     onError: (e: any) => toast(e.message, 'error'),
   })
   const createRuleMutation = useMutation({
@@ -694,7 +696,7 @@ export function Settings() {
   })
   const deleteRuleMutation = useMutation({
     mutationFn: catApi.deleteRule,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['rules'] }); toast('Regla eliminada', 'success') },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['rules'] }); toast('Regla eliminada', 'success'); setConfirmDeleteRule(null) },
   })
   const changePasswordMutation = useMutation({
     mutationFn: () => authApi.changePassword({ current_password: pwForm.current, new_password: pwForm.next }),
@@ -795,10 +797,10 @@ export function Settings() {
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 rounded-full" style={{ backgroundColor: c.color }} />
-                    <Button variant="ghost" size="icon" onClick={() => setEditingCat(c)}>
+                    <Button variant="ghost" size="icon" aria-label="Editar categoría" onClick={() => setEditingCat(c)}>
                       <Pencil className="h-4 w-4 text-muted-foreground" />
                     </Button>
-                    <Button variant="ghost" size="icon" onClick={() => deleteCatMutation.mutate(c.id)}>
+                    <Button variant="ghost" size="icon" aria-label="Eliminar categoría" onClick={() => setConfirmDeleteCat(c)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </div>
@@ -827,7 +829,7 @@ export function Settings() {
                     <span>{r.category.icon} {r.category.name}</span>
                     <Badge variant="muted" className="text-xs">campo: {r.field}</Badge>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => deleteRuleMutation.mutate(r.id)}>
+                  <Button variant="ghost" size="icon" aria-label="Eliminar regla" onClick={() => setConfirmDeleteRule(r.id)}>
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </CardContent>
@@ -854,7 +856,7 @@ export function Settings() {
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 rounded-full" style={{ backgroundColor: c.color }} />
-                    <Button variant="ghost" size="icon" onClick={() => setEditingCat(c)}>
+                    <Button variant="ghost" size="icon" aria-label="Editar categoría" onClick={() => setEditingCat(c)}>
                       <Pencil className="h-4 w-4 text-muted-foreground" />
                     </Button>
                   </div>
@@ -1070,6 +1072,56 @@ export function Settings() {
               onCancel={() => setEditingCat(null)} 
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDeleteCat !== null} onOpenChange={open => !open && setConfirmDeleteCat(null)}>
+        <DialogContent className="max-w-[320px]">
+          <DialogHeader>
+            <DialogTitle className="text-negative flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4" />
+              Eliminar categoría
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground mt-1">
+            Se eliminará la categoría "{confirmDeleteCat?.name}". Esta acción no se puede deshacer.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDeleteCat(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteCatMutation.isPending}
+              onClick={() => confirmDeleteCat && deleteCatMutation.mutate(confirmDeleteCat.id)}
+            >
+              {deleteCatMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+              Borrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDeleteRule !== null} onOpenChange={open => !open && setConfirmDeleteRule(null)}>
+        <DialogContent className="max-w-[320px]">
+          <DialogHeader>
+            <DialogTitle className="text-negative flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4" />
+              Eliminar regla
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground mt-1">
+            Se eliminará esta regla de categorización. Esta acción no se puede deshacer.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDeleteRule(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteRuleMutation.isPending}
+              onClick={() => confirmDeleteRule !== null && deleteRuleMutation.mutate(confirmDeleteRule)}
+            >
+              {deleteRuleMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+              Borrar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -66,7 +66,7 @@ function GoalCard({ goal, onDelete, onUpdate, delay = 0 }: { goal: Goal; onDelet
               </p>
             )}
           </div>
-          <Button variant="ghost" size="icon" onClick={() => onDelete(goal.id)}>
+          <Button variant="ghost" size="icon" aria-label="Eliminar objetivo" onClick={() => onDelete(goal.id)}>
             <Trash2 className="h-4 w-4 text-destructive" />
           </Button>
         </div>
