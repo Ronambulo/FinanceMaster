@@ -13,7 +13,7 @@ import { MetricCard } from '@/components/MetricCard'
 import {
   TrendingDown, Wallet, PiggyBank, Target,
   ArrowRight, Calendar, ArrowUpRight, ArrowDownRight,
-  Activity, GripVertical, EyeOff, Eye, Settings2, X,
+  Activity, GripVertical, EyeOff, Eye, Settings2, X, Loader2,
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -417,7 +417,7 @@ export function Dashboard() {
   const layout = useDashboardLayout()
   const features = useFeaturesStore(s => s.features)
 
-  const { data: overview  } = useQuery({ queryKey: ['overview'],  queryFn: () => dashApi.overview() })
+  const { data: overview, isLoading: overviewLoading } = useQuery({ queryKey: ['overview'],  queryFn: () => dashApi.overview() })
   const { data: cycleDetail } = useQuery({
     queryKey: ['monthly-detail', periodStart, periodEnd],
     queryFn: () => dashApi.monthlyDetail({ date_from: periodStart, date_to: periodEnd }),
@@ -532,6 +532,14 @@ export function Dashboard() {
       const newIdx = layout.order.indexOf(over.id as WidgetId)
       layout.setOrder(arrayMove(layout.order, oldIdx, newIdx))
     }
+  }
+
+  if (overviewLoading) {
+    return (
+      <div className="flex justify-center py-24">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   /* ── Widget render map ── */

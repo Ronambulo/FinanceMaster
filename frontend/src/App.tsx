@@ -7,19 +7,20 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { Login } from '@/pages/Login'
 import { Register } from '@/pages/Register'
 import { Dashboard } from '@/pages/Dashboard'
-import { Transactions } from '@/pages/Transactions'
-import { Portfolio } from '@/pages/Portfolio'
-import { Recurring } from '@/pages/Recurring'
-import { Debts } from '@/pages/Debts'
-import { Goals } from '@/pages/Goals'
-import { Monthly } from '@/pages/Monthly'
-import { Settings } from '@/pages/Settings'
-import { Admin } from '@/pages/Admin'
-import { AchievementsPage } from '@/pages/Achievements'
 import { CommandPalette } from '@/components/CommandPalette'
 import { OnboardingWizard } from '@/components/OnboardingWizard'
 import { AiChat } from '@/components/AiChat'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, Suspense, lazy } from 'react'
+
+const Transactions = lazy(() => import('@/pages/Transactions').then(m => ({ default: m.Transactions })))
+const Portfolio = lazy(() => import('@/pages/Portfolio').then(m => ({ default: m.Portfolio })))
+const Recurring = lazy(() => import('@/pages/Recurring').then(m => ({ default: m.Recurring })))
+const Debts = lazy(() => import('@/pages/Debts').then(m => ({ default: m.Debts })))
+const Goals = lazy(() => import('@/pages/Goals').then(m => ({ default: m.Goals })))
+const Monthly = lazy(() => import('@/pages/Monthly').then(m => ({ default: m.Monthly })))
+const Settings = lazy(() => import('@/pages/Settings').then(m => ({ default: m.Settings })))
+const Admin = lazy(() => import('@/pages/Admin').then(m => ({ default: m.Admin })))
+const AchievementsPage = lazy(() => import('@/pages/Achievements').then(m => ({ default: m.AchievementsPage })))
 import { applyTheme, THEME_KEY, ACCENT_KEY, getCompact } from '@/lib/theme'
 import { useFeaturesStore } from '@/store/features'
 import type { FeatureId } from '@/lib/features'

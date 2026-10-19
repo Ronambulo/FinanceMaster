@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react'
+import { Suspense, useRef, useState } from 'react'
 import type { TouchEvent } from 'react'
 import { Outlet, NavLink, Link } from 'react-router-dom'
 import {
   LayoutDashboard, ArrowLeftRight, TrendingUp,
-  CreditCard, Target, Settings, LogOut, CalendarDays, Sparkles, Trophy, RefreshCw, Search, ShieldCheck,
+  CreditCard, Target, Settings, LogOut, CalendarDays, Sparkles, Trophy, RefreshCw, Search, ShieldCheck, Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Sidebar } from './Sidebar'
@@ -236,7 +236,9 @@ export function AppLayout() {
               </div>
             </div>
           )}
-          <Outlet />
+          <Suspense fallback={<div className="flex justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
 

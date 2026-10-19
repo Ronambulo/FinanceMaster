@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
@@ -9,6 +10,8 @@ from ..database import get_db
 from ..services.csv_parser import parse_csv
 from ..services.categorizer import auto_categorize
 from ..services.recurring_detector import detect_recurring
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
@@ -382,6 +385,10 @@ async def import_csv(
         except Exception:
             db.rollback()
             errors += 1
+            log.exception(
+                "CSV import: fila descartada (user_id=%s, external_id=%s)",
+                current_user.id, row.get("external_id"),
+            )
 
     db.commit()
 
@@ -389,6 +396,6 @@ async def import_csv(
     try:
         detect_recurring(db, current_user.id)
     except Exception:
-        pass
+        log.exception("CSV import: fallo la detección de recurrentes (user_id=%s)", current_user.id)
 
     return {**schemas.ImportResult(imported=imported, skipped_duplicates=skipped, errors=errors).model_dump(), "updated": updated, "detected_bank": detected_bank}

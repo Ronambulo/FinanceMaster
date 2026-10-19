@@ -2,7 +2,7 @@ from datetime import datetime as _dt, date
 from typing import Optional
 from sqlalchemy import (
     Boolean, Column, DateTime, Date, Float, ForeignKey,
-    Integer, String, Text, UniqueConstraint, Enum as SAEnum
+    Index, Integer, String, Text, UniqueConstraint, Enum as SAEnum
 )
 from sqlalchemy.orm import relationship
 import enum
@@ -90,11 +90,11 @@ class CategoryRule(Base):
 class Transaction(Base):
     __tablename__ = "transactions"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     external_id = Column(String, nullable=True)
     datetime = Column(DateTime, nullable=True)
-    date = Column(Date, nullable=False)
-    account_category = Column(String, nullable=True)
+    date = Column(Date, nullable=False, index=True)
+    account_category = Column(String, nullable=True, index=True)
     type = Column(String, nullable=False)
     asset_class = Column(String, nullable=True)
     name = Column(String, nullable=True)
@@ -109,19 +109,22 @@ class Transaction(Base):
     counterparty_name = Column(String, nullable=True)
     counterparty_iban = Column(String, nullable=True)
     mcc_code = Column(String, nullable=True)
-    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True, index=True)
     is_auto_categorized = Column(Boolean, default=False)
     is_ai_categorized = Column(Boolean, default=False)
     is_internal_transfer = Column(Boolean, default=False)
     exclude_from_stats = Column(Boolean, default=False)
     is_pending = Column(Boolean, nullable=True, default=False)
-    recurring_group_id = Column(Integer, ForeignKey("recurring_groups.id"), nullable=True)
-    link_group_id = Column(Integer, ForeignKey("transaction_links.id"), nullable=True)
+    recurring_group_id = Column(Integer, ForeignKey("recurring_groups.id"), nullable=True, index=True)
+    link_group_id = Column(Integer, ForeignKey("transaction_links.id"), nullable=True, index=True)
     is_link_primary = Column(Boolean, default=False)
     effective_amount = Column(Float, nullable=True)
     created_at = Column(DateTime, default=_dt.utcnow)
 
-    __table_args__ = (UniqueConstraint("user_id", "external_id", name="uq_user_external_id"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "external_id", name="uq_user_external_id"),
+        Index("ix_transactions_user_date", "user_id", "date"),
+    )
 
     user = relationship("User", back_populates="transactions")
     category = relationship("Category", back_populates="transactions")
@@ -161,7 +164,7 @@ class RecurringGroup(Base):
 class Debt(Base):
     __tablename__ = "debts"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     total_amount = Column(Float, nullable=False)
@@ -190,7 +193,7 @@ class DebtPayment(Base):
 class Goal(Base):
     __tablename__ = "goals"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String, nullable=False)
     type = Column(SAEnum(GoalType), nullable=False)
     target_amount = Column(Float, nullable=True)
@@ -207,7 +210,7 @@ class Goal(Base):
 class Budget(Base):
     __tablename__ = "budgets"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     amount = Column(Float, nullable=False)
     # month = "2024-01" for a specific month, NULL when is_recurring=True

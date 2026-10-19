@@ -56,6 +56,27 @@ async def lifespan(app: FastAPI):
             except Exception:
                 pass
 
+        # Indexes on frequently-filtered columns, added after the initial
+        # schema — IF NOT EXISTS makes this a no-op on DBs that already have
+        # them (new installs get them via models.Base.metadata.create_all).
+        for stmt in [
+            "CREATE INDEX IF NOT EXISTS ix_transactions_user_id ON transactions (user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_transactions_date ON transactions (date)",
+            "CREATE INDEX IF NOT EXISTS ix_transactions_user_date ON transactions (user_id, date)",
+            "CREATE INDEX IF NOT EXISTS ix_transactions_category_id ON transactions (category_id)",
+            "CREATE INDEX IF NOT EXISTS ix_transactions_account_category ON transactions (account_category)",
+            "CREATE INDEX IF NOT EXISTS ix_transactions_recurring_group_id ON transactions (recurring_group_id)",
+            "CREATE INDEX IF NOT EXISTS ix_transactions_link_group_id ON transactions (link_group_id)",
+            "CREATE INDEX IF NOT EXISTS ix_debts_user_id ON debts (user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_goals_user_id ON goals (user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_budgets_user_id ON budgets (user_id)",
+        ]:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass
+
     db = SessionLocal()
     try:
         seed_system_categories(db)
