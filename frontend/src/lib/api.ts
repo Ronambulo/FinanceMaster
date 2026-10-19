@@ -129,10 +129,20 @@ export const catApi = {
     request<Category>('/categories', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: number, data: Partial<Category>) =>
     request<Category>(`/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  delete: (id: number) => request<void>(`/categories/${id}`, { method: 'DELETE' }),
+  delete: (id: number) =>
+    request<{ ok: boolean; moved: number; rules_deleted: number }>(`/categories/${id}`, { method: 'DELETE' }),
+  usage: () => request<Record<string, number>>('/categories/usage'),
   listRules: () => request<CategoryRule[]>('/categories/rules'),
   createRule: (data: Partial<CategoryRule>) =>
     request<CategoryRule>('/categories/rules', { method: 'POST', body: JSON.stringify(data) }),
+  updateRule: (id: number, data: Partial<CategoryRule>) =>
+    request<CategoryRule>(`/categories/rules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  previewRule: (params: { keyword: string; field: string; category_id?: number }) => {
+    const q = new URLSearchParams({ keyword: params.keyword, field: params.field })
+    if (params.category_id) q.set('category_id', String(params.category_id))
+    return request<{ matches: number; applicable: number; samples: string[] }>(`/categories/rules/preview?${q}`)
+  },
+  applyRule: (id: number) => request<{ updated: number }>(`/categories/rules/${id}/apply`, { method: 'POST' }),
   deleteRule: (id: number) => request<void>(`/categories/rules/${id}`, { method: 'DELETE' }),
 }
 

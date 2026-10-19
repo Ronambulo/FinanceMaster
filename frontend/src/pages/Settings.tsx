@@ -2,16 +2,14 @@ import { useEffect, useState, type ComponentType, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { catApi, trApi } from '@/lib/api'
-import type { Category } from '@/lib/api'
+import type { Category, CategoryRule } from '@/lib/api'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/toast'
 import {
-  Plus, Lock, Palette, Loader2, Plug, LayoutGrid, AlertTriangle, Sparkles,
+  Plus, Lock, Palette, Plug, LayoutGrid, Sparkles,
   Tags, ListFilter, Layers, Wrench, ChevronLeft, ChevronRight, Search,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
@@ -20,8 +18,10 @@ import { THEMES, ACCENT_COLORS, getTheme } from '@/lib/theme'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { cn } from '@/lib/utils'
 import { CategoryForm } from '@/components/CategoryForm'
-import { CategoriesSection } from '@/components/CategoriesSection'
-import { RulesSection, RULE_FIELDS } from '@/components/RulesSection'
+import { CategoriesSection, movementsLabel } from '@/components/CategoriesSection'
+import { RulesSection } from '@/components/RulesSection'
+import { RuleDialog } from '@/components/RuleDialog'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { SystemCategoriesSection } from '@/components/SystemCategoriesSection'
 import { AppearanceSection, getAccentId } from '@/components/AppearanceSection'
 import { FeaturesSection } from '@/components/FeaturesSection'
@@ -51,9 +51,9 @@ const GROUPS: { label: string; sections: SectionMeta[] }[] = [
       { id: 'categories', label: 'Categorías', icon: Tags, keywords: 'categoria emoji color gasto ingreso personalizada',
         desc: 'Tus categorías personalizadas para clasificar movimientos.' },
       { id: 'rules', label: 'Reglas', icon: ListFilter, keywords: 'regla palabra clave importacion automatica categorizacion',
-        desc: 'Se aplican al importar: si el campo contiene la palabra clave, se asigna la categoría.' },
+        desc: 'Si un movimiento contiene la palabra clave, se le asigna la categoría. Se aplican al importar y, si quieres, a lo ya importado.' },
       { id: 'system', label: 'Sistema', icon: Layers, keywords: 'sistema categorias predeterminadas',
-        desc: 'Categorías predefinidas. Puedes cambiar su icono, color y tipo.' },
+        desc: 'Categorías predefinidas. Puedes cambiar su icono y su color.' },
     ],
   },
   {
@@ -98,40 +98,54 @@ export function Settings() {
   const [newCatOpen, setNewCatOpen] = useState(false)
   const [editingCat, setEditingCat] = useState<Category | null>(null)
   const [confirmDeleteCat, setConfirmDeleteCat] = useState<Category | null>(null)
-  const [confirmDeleteRule, setConfirmDeleteRule] = useState<number | null>(null)
-  const [newRuleOpen, setNewRuleOpen] = useState(false)
-  const [ruleForm, setRuleForm] = useState({ keyword: '', category_id: '', field: 'name', priority: '0' })
+  const [confirmDeleteRule, setConfirmDeleteRule] = useState<CategoryRule | null>(null)
+  const [ruleDialog, setRuleDialog] = useState<{ open: boolean; rule: CategoryRule | null }>({ open: false, rule: null })
 
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const { data: rules } = useQuery({ queryKey: ['rules'], queryFn: catApi.listRules })
+  const { data: usage } = useQuery({ queryKey: ['category-usage'], queryFn: catApi.usage })
   const { data: trStatus } = useQuery({ queryKey: ['tr-status'], queryFn: trApi.status, retry: false })
   const features = useFeaturesStore(s => s.features)
 
   const createCatMutation = useMutation({
     mutationFn: catApi.create,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); setNewCatOpen(false); toast('Categoría creada', 'success') },
+    onError: (e: any) => toast(e.message, 'error'),
   })
   const updateCatMutation = useMutation({
     mutationFn: (data: Partial<Category> & { id: number }) => catApi.update(data.id, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); setEditingCat(null); toast('Categoría actualizada', 'success') },
+    onSuccess: () => {
+      // El icono/color/tipo se muestra en movimientos, reglas y gráficas
+      qc.invalidateQueries()
+      setEditingCat(null)
+      toast('Categoría actualizada', 'success')
+    },
     onError: (e: any) => toast(e.message, 'error'),
   })
   const deleteCatMutation = useMutation({
     mutationFn: catApi.delete,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['categories'] }); toast('Categoría eliminada', 'success'); setConfirmDeleteCat(null) },
+    onSuccess: res => {
+      qc.invalidateQueries()
+      const extra = [
+        res.moved > 0 && `${movementsLabel(res.moved)} a "Sin categorizar"`,
+        res.rules_deleted > 0 && `${res.rules_deleted} ${res.rules_deleted === 1 ? 'regla borrada' : 'reglas borradas'}`,
+      ].filter(Boolean).join(', ')
+      toast(extra ? `Categoría eliminada: ${extra}` : 'Categoría eliminada', 'success')
+      setConfirmDeleteCat(null)
+    },
     onError: (e: any) => toast(e.message, 'error'),
-  })
-  const createRuleMutation = useMutation({
-    mutationFn: catApi.createRule,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['rules'] }); setNewRuleOpen(false); toast('Regla creada', 'success') },
   })
   const deleteRuleMutation = useMutation({
     mutationFn: catApi.deleteRule,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['rules'] }); toast('Regla eliminada', 'success'); setConfirmDeleteRule(null) },
+    onError: (e: any) => toast(e.message, 'error'),
   })
 
   const userCats = categories?.filter(c => !c.is_system) || []
   const systemCats = categories?.filter(c => c.is_system) || []
+  const deleteCatUsage = confirmDeleteCat ? usage?.[String(confirmDeleteCat.id)] ?? 0 : 0
+  const deleteCatRules = confirmDeleteCat ? (rules || []).filter(r => r.category_id === confirmDeleteCat.id).length : 0
+  const openNewRule = () => setRuleDialog({ open: true, rule: null })
 
   // ── Secciones visibles y sección activa (?tab=) ──
   const canSeeAi = !!(user?.ai_enabled || user?.is_admin)
@@ -174,19 +188,35 @@ export function Settings() {
     appearance: [themeName, accentName].filter(Boolean).join(' · '),
     features: `${enabledFeatures} de ${totalFeatures} activas`,
     integrations: trStatus?.connected ? 'Conectado' : 'No conectado',
+    diagnostics: trStatus && !trStatus.connected ? 'Requiere Trade Republic' : undefined,
   }
   const hintFor = (id: SectionId) => counts[id] !== undefined ? String(counts[id]) : hints[id]
 
   const headerAction = (id: SectionId): ReactNode => {
     if (id === 'categories') return <Button size="sm" onClick={() => setNewCatOpen(true)}><Plus className="h-4 w-4 mr-1.5" />Nueva categoría</Button>
-    if (id === 'rules') return <Button size="sm" onClick={() => setNewRuleOpen(true)}><Plus className="h-4 w-4 mr-1.5" />Nueva regla</Button>
+    if (id === 'rules') return <Button size="sm" onClick={openNewRule}><Plus className="h-4 w-4 mr-1.5" />Nueva regla</Button>
     return null
   }
 
   const renderSection = (id: SectionId) => {
     switch (id) {
-      case 'categories': return <CategoriesSection categories={userCats} onEdit={setEditingCat} onDelete={setConfirmDeleteCat} />
-      case 'rules': return <RulesSection rules={rules || []} onDelete={setConfirmDeleteRule} />
+      case 'categories': return (
+        <CategoriesSection
+          categories={userCats}
+          usage={usage}
+          onEdit={setEditingCat}
+          onDelete={setConfirmDeleteCat}
+          onCreate={() => setNewCatOpen(true)}
+        />
+      )
+      case 'rules': return (
+        <RulesSection
+          rules={rules || []}
+          onEdit={r => setRuleDialog({ open: true, rule: r })}
+          onDelete={setConfirmDeleteRule}
+          onCreate={openNewRule}
+        />
+      )
       case 'system': return <SystemCategoriesSection categories={systemCats} onEdit={setEditingCat} />
       case 'appearance': return <AppearanceSection />
       case 'features': return <FeaturesSection />
@@ -337,7 +367,13 @@ export function Settings() {
       <Dialog open={newCatOpen} onOpenChange={setNewCatOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Nueva categoría</DialogTitle></DialogHeader>
-          <CategoryForm onSave={d => createCatMutation.mutate(d)} onCancel={() => setNewCatOpen(false)} />
+          {newCatOpen && (
+            <CategoryForm
+              pending={createCatMutation.isPending}
+              onSave={d => createCatMutation.mutate(d)}
+              onCancel={() => setNewCatOpen(false)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 
@@ -347,101 +383,57 @@ export function Settings() {
           <DialogHeader><DialogTitle>Editar categoría</DialogTitle></DialogHeader>
           {editingCat && (
             <CategoryForm
+              key={editingCat.id}
               initial={editingCat}
               isSystem={editingCat.is_system}
+              pending={updateCatMutation.isPending}
               onSave={d => updateCatMutation.mutate({ ...d, id: editingCat.id })}
               onCancel={() => setEditingCat(null)}
             />
           )}
+          {editingCat?.is_system && (
+            <p className="text-xs text-muted-foreground">
+              Las categorías del sistema son compartidas: el icono y el color que elijas se verán en todas las cuentas de esta instalación.
+            </p>
+          )}
         </DialogContent>
       </Dialog>
 
-      <Dialog open={confirmDeleteCat !== null} onOpenChange={open => !open && setConfirmDeleteCat(null)}>
-        <DialogContent className="max-w-[320px]">
-          <DialogHeader>
-            <DialogTitle className="text-negative flex items-center gap-2 text-base">
-              <AlertTriangle className="h-4 w-4" />
-              Eliminar categoría
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground mt-1">
-            Se eliminará la categoría "{confirmDeleteCat?.name}". Esta acción no se puede deshacer.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDeleteCat(null)}>Cancelar</Button>
-            <Button
-              variant="destructive"
-              disabled={deleteCatMutation.isPending}
-              onClick={() => confirmDeleteCat && deleteCatMutation.mutate(confirmDeleteCat.id)}
-            >
-              {deleteCatMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
-              Borrar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={confirmDeleteCat !== null}
+        title="Eliminar categoría"
+        pending={deleteCatMutation.isPending}
+        onConfirm={() => confirmDeleteCat && deleteCatMutation.mutate(confirmDeleteCat.id)}
+        onCancel={() => setConfirmDeleteCat(null)}
+      >
+        <p>Se eliminará la categoría "{confirmDeleteCat?.name}". Esta acción no se puede deshacer.</p>
+        {(deleteCatUsage > 0 || deleteCatRules > 0) && (
+          <ul className="list-disc space-y-1 pl-5">
+            {deleteCatUsage > 0 && <li>{movementsLabel(deleteCatUsage)} pasarán a "Sin categorizar".</li>}
+            {deleteCatRules > 0 && <li>Se borrarán {deleteCatRules} {deleteCatRules === 1 ? 'regla asociada' : 'reglas asociadas'}.</li>}
+          </ul>
+        )}
+      </ConfirmDialog>
 
-      <Dialog open={confirmDeleteRule !== null} onOpenChange={open => !open && setConfirmDeleteRule(null)}>
-        <DialogContent className="max-w-[320px]">
-          <DialogHeader>
-            <DialogTitle className="text-negative flex items-center gap-2 text-base">
-              <AlertTriangle className="h-4 w-4" />
-              Eliminar regla
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground mt-1">
-            Se eliminará esta regla de categorización. Esta acción no se puede deshacer.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDeleteRule(null)}>Cancelar</Button>
-            <Button
-              variant="destructive"
-              disabled={deleteRuleMutation.isPending}
-              onClick={() => confirmDeleteRule !== null && deleteRuleMutation.mutate(confirmDeleteRule)}
-            >
-              {deleteRuleMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
-              Borrar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={confirmDeleteRule !== null}
+        title="Eliminar regla"
+        pending={deleteRuleMutation.isPending}
+        onConfirm={() => confirmDeleteRule && deleteRuleMutation.mutate(confirmDeleteRule.id)}
+        onCancel={() => setConfirmDeleteRule(null)}
+      >
+        <p>
+          Se eliminará la regla "{confirmDeleteRule?.keyword}" → {confirmDeleteRule?.category.name}.
+          Los movimientos ya categorizados no cambian.
+        </p>
+      </ConfirmDialog>
 
-      {/* New rule dialog */}
-      <Dialog open={newRuleOpen} onOpenChange={setNewRuleOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Nueva regla de categorización</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Palabra clave (contiene)</Label>
-              <Input placeholder="Ej: netflix" value={ruleForm.keyword} onChange={e => setRuleForm(f => ({ ...f, keyword: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Categoría a asignar</Label>
-              <Select value={ruleForm.category_id} onValueChange={v => setRuleForm(f => ({ ...f, category_id: v }))}>
-                <SelectTrigger><SelectValue placeholder="Seleccionar categoría..." /></SelectTrigger>
-                <SelectContent>
-                  {categories?.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.icon} {c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Campo a buscar</Label>
-              <Select value={ruleForm.field} onValueChange={v => setRuleForm(f => ({ ...f, field: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {RULE_FIELDS.map(f => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setNewRuleOpen(false)}>Cancelar</Button>
-              <Button onClick={() => ruleForm.keyword && ruleForm.category_id && createRuleMutation.mutate({ ...ruleForm, category_id: Number(ruleForm.category_id), priority: Number(ruleForm.priority) })}>
-                Guardar regla
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <RuleDialog
+        open={ruleDialog.open}
+        rule={ruleDialog.rule}
+        categories={categories || []}
+        onClose={() => setRuleDialog(d => ({ ...d, open: false }))}
+      />
     </div>
   )
 }

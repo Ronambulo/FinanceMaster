@@ -53,6 +53,7 @@ class CategoryUpdate(BaseModel):
     name: Optional[str] = None
     icon: Optional[str] = None
     color: Optional[str] = None
+    type: Optional[CategoryType] = None
 
 class CategoryOut(BaseModel):
     id: int
@@ -69,6 +70,12 @@ class CategoryRuleCreate(BaseModel):
     category_id: int
     field: str = "name"
     priority: int = 0
+
+class CategoryRuleUpdate(BaseModel):
+    keyword: Optional[str] = None
+    category_id: Optional[int] = None
+    field: Optional[str] = None
+    priority: Optional[int] = None
 
 class CategoryRuleOut(BaseModel):
     id: int

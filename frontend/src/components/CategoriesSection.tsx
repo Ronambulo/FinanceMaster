@@ -26,13 +26,29 @@ function CategoryIconTile({ category, className }: { category: Category; classNa
   )
 }
 
-export function CategoriesSection({ categories, onEdit, onDelete }: {
+export const movementsLabel = (n: number) => `${n} ${n === 1 ? 'movimiento' : 'movimientos'}`
+
+export function CategoriesSection({ categories, usage, onEdit, onDelete, onCreate }: {
   categories: Category[]
+  usage?: Record<string, number>
   onEdit: (c: Category) => void
   onDelete: (c: Category) => void
+  onCreate: () => void
 }) {
   const [filter, setFilter] = useState<Filter>('all')
   const visible = filter === 'all' ? categories : categories.filter(c => c.type === filter)
+
+  if (categories.length === 0) {
+    return (
+      <Card className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+        <p className="text-sm font-medium">Aún no tienes categorías propias</p>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Crea las tuyas para clasificar movimientos que no encajan en las categorías del sistema.
+        </p>
+        <Button size="sm" onClick={onCreate}>Crear categoría</Button>
+      </Card>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -56,33 +72,37 @@ export function CategoriesSection({ categories, onEdit, onDelete }: {
 
       {visible.length > 0 ? (
         <Card className="divide-y divide-border overflow-hidden">
-          {visible.map(c => (
-            <div key={c.id} className="flex items-center gap-1 pr-2">
-              <button
-                type="button"
-                onClick={() => onEdit(c)}
-                className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/60"
-              >
-                <CategoryIconTile category={c} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{c.name}</span>
-                  <Badge variant="muted" className="mt-1 text-[11px]">{categoryTypeLabel(c.type)}</Badge>
-                </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground lg:hidden" />
-              </button>
-              <Button variant="ghost" size="icon" aria-label="Editar categoría" className="hidden h-11 w-11 lg:inline-flex" onClick={() => onEdit(c)}>
-                <Pencil className="h-4 w-4 text-muted-foreground" />
-              </Button>
-              <Button variant="ghost" size="icon" aria-label="Eliminar categoría" className="h-11 w-11" onClick={() => onDelete(c)}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </div>
-          ))}
+          {visible.map(c => {
+            const count = usage?.[String(c.id)] ?? 0
+            return (
+              <div key={c.id} className="flex items-center gap-1 pr-2">
+                <button
+                  type="button"
+                  onClick={() => onEdit(c)}
+                  className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/60"
+                >
+                  <CategoryIconTile category={c} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{c.name}</span>
+                    <span className="mt-1 flex flex-wrap items-center gap-2">
+                      <Badge variant="muted" className="text-[11px]">{categoryTypeLabel(c.type)}</Badge>
+                      {usage && <span className="text-xs tabular-nums text-muted-foreground">{movementsLabel(count)}</span>}
+                    </span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground lg:hidden" />
+                </button>
+                <Button variant="ghost" size="icon" aria-label="Editar categoría" className="hidden h-11 w-11 lg:inline-flex" onClick={() => onEdit(c)}>
+                  <Pencil className="h-4 w-4 text-muted-foreground" />
+                </Button>
+                <Button variant="ghost" size="icon" aria-label="Eliminar categoría" className="h-11 w-11" onClick={() => onDelete(c)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            )
+          })}
         </Card>
       ) : (
-        <p className="text-center py-10 text-sm text-muted-foreground">
-          {categories.length === 0 ? 'No tienes categorías personalizadas' : 'No hay categorías de este tipo'}
-        </p>
+        <p className="text-center py-10 text-sm text-muted-foreground">No hay categorías de este tipo</p>
       )}
     </div>
   )

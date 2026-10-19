@@ -252,6 +252,16 @@ def _get_system_cat_by_name(db: Session, name: str) -> Optional[models.Category]
     ).first()
 
 
+def rule_matches(keyword: str, field: Optional[str], check_text: str, mcc_code: Optional[str]) -> bool:
+    """Shared by import-time categorization and the rule preview/apply endpoints.
+    check_text is the lowercased "name description" of the transaction; name and
+    description rules both search it, and MCC rules also match the exact MCC code."""
+    kw = keyword.lower()
+    if field == "mcc" and mcc_code == kw:
+        return True
+    return kw in check_text
+
+
 def auto_categorize(
     db: Session,
     user_id: int,
@@ -277,10 +287,7 @@ def auto_categorize(
     )
     check_text = " ".join(filter(None, [tx_name, tx_description])).lower()
     for rule in rules:
-        kw = rule.keyword.lower()
-        if rule.field == "mcc" and mcc_code == kw:
-            return rule.category_id, True, False
-        elif kw in check_text:
+        if rule_matches(rule.keyword, rule.field, check_text, mcc_code):
             return rule.category_id, True, False
 
     # 1.5 Check default system keyword rules (keyword match)

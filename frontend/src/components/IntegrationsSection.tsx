@@ -4,7 +4,9 @@ import { catApi, webhookApi, trApi, integrationsApi } from '@/lib/api'
 import type { Category, Webhook as WebhookType, ApiToken } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/toast'
 import { Loader2, Copy, Trash, Smartphone } from 'lucide-react'
@@ -32,22 +34,49 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
+// navigator.clipboard solo existe en contextos seguros (HTTPS o localhost); en la
+// red local por HTTP se recurre a execCommand.
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* se intenta el método antiguo */ }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.setAttribute('readonly', '')
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  let ok = false
+  try { ok = document.execCommand('copy') } catch { ok = false }
+  document.body.removeChild(ta)
+  return ok
+}
+
+const isValidUrl = (s: string) => {
+  try {
+    const u = new URL(s)
+    return u.protocol === 'http:' || u.protocol === 'https:'
+  } catch { return false }
+}
+
 function CopyBox({ text, onCopy, multiline }: { text: string; onCopy: (t: string) => void; multiline?: boolean }) {
   return (
     <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/50 p-2">
       {multiline
         ? <pre className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-xs">{text}</pre>
         : <code className="min-w-0 flex-1 break-all font-mono text-xs">{text}</code>}
-      <button onClick={() => onCopy(text)} className="shrink-0 text-muted-foreground hover:text-foreground">
-        <Copy className="h-3.5 w-3.5" />
-      </button>
+      <CopyChip text={text} onCopy={onCopy} />
     </div>
   )
 }
 
 function CopyChip({ text, onCopy }: { text: string; onCopy: (t: string) => void }) {
   return (
-    <button onClick={() => onCopy(text)} className="shrink-0 text-muted-foreground hover:text-foreground">
+    <button type="button" aria-label="Copiar" onClick={() => onCopy(text)} className="shrink-0 text-muted-foreground hover:text-foreground">
       <Copy className="h-3.5 w-3.5" />
     </button>
   )
@@ -81,37 +110,74 @@ export function IntegrationsSection() {
   const [newTokenName, setNewTokenName] = useState('Atajo de iOS')
   const [justCreatedToken, setJustCreatedToken] = useState<string | null>(null)
   const createTokenMutation = useMutation({
-    mutationFn: () => integrationsApi.create(newTokenName || 'Token sin nombre'),
+    mutationFn: () => integrationsApi.create(newTokenName.trim() || 'Token sin nombre'),
     onSuccess: (r) => { qc.invalidateQueries({ queryKey: ['api-tokens'] }); setJustCreatedToken(r.token); setNewTokenName('Atajo de iOS') },
+    onError: (e: any) => toast(e.message, 'error'),
   })
+  const [confirmRevoke, setConfirmRevoke] = useState<ApiToken | null>(null)
   const revokeTokenMutation = useMutation({
     mutationFn: (id: number) => integrationsApi.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['api-tokens'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['api-tokens'] }); setConfirmRevoke(null); toast('Token revocado', 'success') },
+    onError: (e: any) => toast(e.message, 'error'),
   })
   const { data: categories = [] } = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const expenseCategoryNames = (categories as Category[]).filter(c => c.type === 'expense').map(c => c.name)
   const quickUrl = `${window.location.origin}/api/transactions/quick`
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
-  const copyText = (text: string, label = 'Copiado') => { navigator.clipboard.writeText(text); toast(label, 'success') }
+  const copyText = async (text: string) => {
+    const ok = await copyToClipboard(text)
+    toast(ok ? 'Copiado' : 'No se pudo copiar; selecciónalo y cópialo a mano', ok ? 'success' : 'error')
+  }
   const [newWh, setNewWh] = useState({ url: '', events: [] as string[] })
+  const whUrl = newWh.url.trim()
+  const whUrlInvalid = whUrl.length > 0 && !isValidUrl(whUrl)
   const [trPhone, setTrPhone] = useState('')
   const [trPin, setTrPin] = useState('')
   const [trCode, setTrCode] = useState('')
   const [trPhase, setTrPhase] = useState<'idle' | 'awaiting_2fa' | 'connected'>('idle')
   const [trLoading, setTrLoading] = useState(false)
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false)
 
   const createWh = useMutation({
-    mutationFn: () => webhookApi.create(newWh),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['webhooks'] }); setNewWh({ url: '', events: [] }) },
+    mutationFn: () => webhookApi.create({ ...newWh, url: whUrl }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['webhooks'] }); setNewWh({ url: '', events: [] }); toast('Webhook añadido', 'success') },
+    onError: (e: any) => toast(e.message, 'error'),
   })
+  const [confirmDeleteWh, setConfirmDeleteWh] = useState<WebhookType | null>(null)
   const deleteWh = useMutation({
     mutationFn: (id: number) => webhookApi.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['webhooks'] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['webhooks'] }); setConfirmDeleteWh(null); toast('Webhook eliminado', 'success') },
+    onError: (e: any) => toast(e.message, 'error'),
   })
   const toggleWh = useMutation({
     mutationFn: (id: number) => webhookApi.toggle(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['webhooks'] }),
+    onError: (e: any) => toast(e.message, 'error'),
   })
+
+  const syncTr = useMutation({
+    mutationFn: trApi.sync,
+    onSuccess: r => {
+      const parts = [`${r.synced} nuevas`]
+      if (r.updated > 0) parts.push(`${r.updated} corregidas`)
+      toast(`Sincronizado: ${parts.join(', ')}`, 'success')
+      qc.invalidateQueries()
+    },
+    onError: (e: any) => toast(e.message || 'Error al sincronizar', 'error'),
+  })
+  const disconnectTr = useMutation({
+    mutationFn: trApi.disconnect,
+    onSuccess: () => {
+      setTrPhase('idle')
+      setTrPin('')
+      setTrCode('')
+      setConfirmDisconnect(false)
+      qc.invalidateQueries({ queryKey: ['tr-status'] })
+      toast('Trade Republic desconectado', 'success')
+    },
+    onError: (e: any) => toast(e.message, 'error'),
+  })
+  const trConnected = !!trStatus?.connected || trPhase === 'connected'
 
   const [trError, setTrError] = useState<string | null>(null)
 
@@ -143,23 +209,23 @@ export function IntegrationsSection() {
     <div className="space-y-4">
       {/* Trade Republic */}
       <Card>
-        <CardHeader><CardTitle className="text-sm">Trade Republic API</CardTitle></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+          <CardTitle className="text-sm">Trade Republic API</CardTitle>
+          <Badge variant={trConnected ? 'success' : 'muted'}>{trConnected ? 'Conectado' : 'No conectado'}</Badge>
+        </CardHeader>
         <CardContent className="space-y-3">
-          {trStatus?.connected || trPhase === 'connected' ? (
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-positive">Conectado</p>
-                {trStatus?.last_sync && <p className="text-xs text-muted-foreground">Última sync: {new Date(trStatus.last_sync).toLocaleString('es-ES')}</p>}
-              </div>
+          {trConnected ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                {trStatus?.last_sync
+                  ? `Última sincronización: ${new Date(trStatus.last_sync).toLocaleString('es-ES')}`
+                  : 'Aún no se ha sincronizado'}
+              </p>
               <div className="flex gap-2 flex-wrap">
-                <Button size="sm" variant="outline" onClick={() =>
-                  trApi.sync().then(r => {
-                    const parts = [`${r.synced} nuevas`]
-                    if (r.updated > 0) parts.push(`${r.updated} corregidas`)
-                    toast(`Sync: ${parts.join(', ')}`, 'success')
-                  })
-                }>Sincronizar</Button>
-                <Button size="sm" variant="destructive" onClick={() => { trApi.disconnect(); qc.invalidateQueries({ queryKey: ['tr-status'] }) }}>Desconectar</Button>
+                <Button size="sm" variant="outline" disabled={syncTr.isPending} onClick={() => syncTr.mutate()}>
+                  {syncTr.isPending ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Sincronizando…</> : 'Sincronizar'}
+                </Button>
+                <Button size="sm" variant="destructive" onClick={() => setConfirmDisconnect(true)}>Desconectar</Button>
               </div>
             </div>
           ) : trPhase === 'awaiting_2fa' ? (
@@ -204,13 +270,22 @@ export function IntegrationsSection() {
                   <p className="text-muted-foreground/60 mt-0.5">{wh.events.join(', ')}</p>
                 </div>
                 <button onClick={() => toggleWh.mutate(wh.id)} aria-label={wh.is_active ? 'Pausar webhook' : 'Activar webhook'} className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${wh.is_active ? 'bg-positive/15 text-positive' : 'bg-muted text-muted-foreground'}`}>{wh.is_active ? 'activo' : 'pausado'}</button>
-                <button onClick={() => deleteWh.mutate(wh.id)} aria-label="Eliminar webhook" className="text-muted-foreground hover:text-negative"><Trash className="h-3.5 w-3.5" /></button>
+                <button onClick={() => setConfirmDeleteWh(wh)} aria-label="Eliminar webhook" className="flex h-8 w-8 items-center justify-center text-muted-foreground hover:text-negative"><Trash className="h-3.5 w-3.5" /></button>
               </div>
             ))}
             {webhooks.length === 0 && <p className="text-xs text-muted-foreground">No hay webhooks configurados.</p>}
           </div>
           <div className="space-y-2 border-t border-border pt-3">
-            <Input placeholder="https://mi-app.com/webhook" value={newWh.url} onChange={e => setNewWh(p => ({ ...p, url: e.target.value }))} className="text-xs" />
+            <Input
+              type="url"
+              placeholder="https://mi-app.com/webhook"
+              value={newWh.url}
+              aria-invalid={whUrlInvalid}
+              onChange={e => setNewWh(p => ({ ...p, url: e.target.value }))}
+              className={whUrlInvalid ? 'text-xs border-destructive' : 'text-xs'}
+            />
+            {whUrlInvalid && <p className="text-xs text-negative">Introduce una URL que empiece por http:// o https://</p>}
+            <p className="text-xs text-muted-foreground">Eventos que se enviarán:</p>
             <div className="flex flex-wrap gap-1.5">
               {WEBHOOK_EVENTS.map(ev => (
                 <button key={ev} onClick={() => setNewWh(p => ({ ...p, events: p.events.includes(ev) ? p.events.filter(e => e !== ev) : [...p.events, ev] }))}
@@ -219,7 +294,10 @@ export function IntegrationsSection() {
                 </button>
               ))}
             </div>
-            <Button size="sm" disabled={!newWh.url || newWh.events.length === 0} onClick={() => createWh.mutate()}>Añadir webhook</Button>
+            <Button size="sm" disabled={!whUrl || whUrlInvalid || newWh.events.length === 0 || createWh.isPending} onClick={() => createWh.mutate()}>
+              {createWh.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+              Añadir webhook
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -238,7 +316,9 @@ export function IntegrationsSection() {
               <div className="flex items-center gap-2">
                 <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-xs font-mono">{justCreatedToken}</code>
                 <button
-                  onClick={() => { navigator.clipboard.writeText(justCreatedToken); toast('Copiado', 'success') }}
+                  type="button"
+                  aria-label="Copiar token"
+                  onClick={() => copyText(justCreatedToken)}
                   className="text-muted-foreground hover:text-foreground shrink-0"
                 >
                   <Copy className="h-4 w-4" />
@@ -258,7 +338,7 @@ export function IntegrationsSection() {
                     {t.last_used_at ? `Último uso: ${new Date(t.last_used_at).toLocaleString('es-ES')}` : 'Sin uso todavía'}
                   </p>
                 </div>
-                <button onClick={() => revokeTokenMutation.mutate(t.id)} className="text-muted-foreground hover:text-negative shrink-0"><Trash className="h-3.5 w-3.5" /></button>
+                <button onClick={() => setConfirmRevoke(t)} aria-label="Revocar token" className="flex h-8 w-8 shrink-0 items-center justify-center text-muted-foreground hover:text-negative"><Trash className="h-3.5 w-3.5" /></button>
               </div>
             ))}
             {apiTokens.length === 0 && <p className="text-xs text-muted-foreground">No hay tokens generados.</p>}
@@ -349,6 +429,38 @@ export function IntegrationsSection() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirmDisconnect}
+        title="Desconectar Trade Republic"
+        confirmLabel="Desconectar"
+        pending={disconnectTr.isPending}
+        onConfirm={() => disconnectTr.mutate()}
+        onCancel={() => setConfirmDisconnect(false)}
+      >
+        <p>Se cerrará la sesión con Trade Republic. Los movimientos ya importados se conservan; para volver a sincronizar tendrás que iniciar sesión de nuevo con el código 2FA.</p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={confirmDeleteWh !== null}
+        title="Eliminar webhook"
+        pending={deleteWh.isPending}
+        onConfirm={() => confirmDeleteWh && deleteWh.mutate(confirmDeleteWh.id)}
+        onCancel={() => setConfirmDeleteWh(null)}
+      >
+        <p className="break-all">Se dejarán de enviar eventos a {confirmDeleteWh?.url}.</p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={confirmRevoke !== null}
+        title="Revocar token"
+        confirmLabel="Revocar"
+        pending={revokeTokenMutation.isPending}
+        onConfirm={() => confirmRevoke && revokeTokenMutation.mutate(confirmRevoke.id)}
+        onCancel={() => setConfirmRevoke(null)}
+      >
+        <p>El token "{confirmRevoke?.name}" dejará de funcionar inmediatamente. Cualquier atajo o cliente que lo use fallará.</p>
+      </ConfirmDialog>
     </div>
   )
 }
