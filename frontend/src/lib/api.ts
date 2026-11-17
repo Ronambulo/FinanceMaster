@@ -78,6 +78,12 @@ export const txApi = {
     fd.append('bank_format', bankFormat)
     return request<ImportResult>('/transactions/import', { method: 'POST', body: fd })
   },
+  previewImport: (file: File, bankFormat = 'auto') => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('bank_format', bankFormat)
+    return request<ImportPreview>('/transactions/import/preview', { method: 'POST', body: fd })
+  },
   link: (transactionIds: number[]) =>
     request<Transaction>('/transactions/link', { method: 'POST', body: JSON.stringify({ transaction_ids: transactionIds }) }),
   unlink: (linkGroupId: number) =>
@@ -244,7 +250,17 @@ export interface Transaction {
   link_group_id: number | null; is_link_primary: boolean; effective_amount: number | null; linked_transactions: Transaction[] | null
 }
 export interface TransactionListResponse { items: Transaction[]; total: number; page: number; page_size: number; income_sum: number; expense_sum: number }
-export interface ImportResult { imported: number; skipped_duplicates: number; errors: number }
+export interface ImportResult { imported: number; skipped_duplicates: number; errors: number; updated?: number; detected_bank?: string }
+export interface ImportPreviewRow { date: string | null; type: string; name: string | null; symbol: string | null; shares: number | null; amount: number; currency: string; will_update?: boolean }
+export interface ImportPreview {
+  detected_bank: string
+  bank_label: string | null
+  total: number
+  new: ImportPreviewRow[]
+  duplicates: ImportPreviewRow[]
+  errors: string[]
+  skipped: string[]
+}
 export interface AmountOption { amount: number; count: number; last_date: string }
 export interface RecurringGroup { id: number; normalized_name: string; display_name: string; avg_amount: number | null; amount_is_manual: boolean; period_days: number | null; category_id: number | null; category: Category | null; next_expected_date: string | null; is_active: boolean; transaction_count: number; amount_options: AmountOption[] }
 export interface Debt { id: number; name: string; description: string | null; total_amount: number; direction: 'I_OWE' | 'OWED_TO_ME'; due_date: string | null; is_settled: boolean; paid_amount: number; remaining_amount: number; payments: DebtPayment[] }
@@ -272,7 +288,15 @@ export interface Insight { id: number; type: string; title: string; message: str
 export interface Webhook { id: number; url: string; events: string[]; is_active: boolean; created_at: string }
 export interface ApiToken { id: number; name: string; token_prefix: string; created_at: string; last_used_at: string | null }
 export interface ApiTokenCreated { id: number; name: string; token: string; created_at: string }
-export interface TRStatus { connected: boolean; needs_2fa: boolean; last_sync: string | null }
+// 'app' = confirmar en la app de Trade Republic; 'authenticator' = código de la app de autenticación
+export type TRLoginMethod = 'app' | 'authenticator'
+export interface TRStatus {
+  connected: boolean
+  needs_2fa: boolean
+  login_method: TRLoginMethod | null
+  login_error: string | null
+  last_sync: string | null
+}
 export interface TRPosition {
   instrumentId: string
   netSize: string
@@ -309,9 +333,9 @@ export const integrationsApi = {
 // Trade Republic
 export const trApi = {
   status: () => request<TRStatus>('/tr/status'),
-  autoConnect: () => request<{ status: string; message?: string }>('/tr/auto-connect', { method: 'POST' }),
+  autoConnect: () => request<{ status: string; message?: string; method?: TRLoginMethod }>('/tr/auto-connect', { method: 'POST' }),
   connect: (phone: string, pin: string) =>
-    request<{ status: string }>('/tr/connect', { method: 'POST', body: JSON.stringify({ phone, pin }) }),
+    request<{ status: string; method?: TRLoginMethod }>('/tr/connect', { method: 'POST', body: JSON.stringify({ phone, pin }) }),
   verify: (code: string) =>
     request<{ ok: boolean }>('/tr/verify', { method: 'POST', body: JSON.stringify({ code }) }),
   sync: () => request<{ synced: number; updated: number; skipped: number; errors: number; total_events: number }>('/tr/sync'),

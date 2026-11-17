@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from .. import models, auth
 from ..database import get_db
+from ..services.external_brokers import affects_cash_clause
 from ..services.trade_republic_api import (
     TradeRepublicAPI,
     TRConnectionError,
@@ -72,6 +73,7 @@ def _dedupe_transactions(db: Session, user_id: int) -> int:
     result = db.execute(text("""
         DELETE FROM transactions
         WHERE user_id = :uid
+          AND (external_id IS NULL OR external_id NOT LIKE 'myinvestor-%')
           AND id NOT IN (
             SELECT MIN(id)
             FROM transactions
@@ -91,6 +93,7 @@ def _already_exists(db: Session, user_id: int, row: dict) -> bool:
             models.Transaction.date == row["date"],
             models.Transaction.amount == row["amount"],
             models.Transaction.type == row["type"],
+            affects_cash_clause(),
         )
     ).first() is not None
 
@@ -113,6 +116,8 @@ def tr_status(current_user: models.User = Depends(auth.get_current_user)):
     return {
         "connected": client is not None and client.is_connected(),
         "needs_2fa": client is not None and client.is_awaiting_2fa(),
+        "login_method": client.login_method() if client else None,
+        "login_error": client.login_error() if client and not client.is_connected() else None,
         "last_sync": client.last_sync().isoformat() if client and client.last_sync() else None,
     }
 
@@ -132,7 +137,7 @@ async def tr_auto_connect(
     # connect() again (that would send a brand-new SMS code). Just tell
     # the caller a code is awaiting verification so it can reopen the modal.
     if client and client.is_awaiting_2fa():
-        return {"status": "needs_2fa"}
+        return {"status": "needs_2fa", "method": client.login_method()}
 
     # Load encrypted credentials from DB
     conn = db.query(models.BankConnection).filter(
@@ -157,9 +162,9 @@ async def tr_auto_connect(
             db.commit()
             return {"status": "connected"}
         else:
-            # SMS sent — keep client in memory so /tr/verify can complete the flow
+            # Login pendiente de confirmar — se guarda el cliente para /tr/status y /tr/verify
             set_client(current_user.id, client)
-            return {"status": "needs_2fa", "countdown": result.get("countdown")}
+            return {"status": "needs_2fa", "countdown": result.get("countdown"), "method": result.get("method")}
     except TRConnectionError as e:
         return {"status": "error", "message": str(e)}
 
@@ -1059,7 +1064,8 @@ async def tr_debug_balance(
 
     # Get all DB transactions for this user
     db_rows = db.query(models.Transaction).filter(
-        models.Transaction.user_id == current_user.id
+        models.Transaction.user_id == current_user.id,
+        affects_cash_clause(),
     ).all()
 
     db_sum = round(sum(r.amount for r in db_rows), 2)
@@ -1148,9 +1154,11 @@ async def tr_fix_orphans(
         else:
             tr_event_ids.add(eid)
 
+    # Las órdenes de brokers externos (MyInvestor) nunca están en el timeline de TR
     db_rows = db.query(models.Transaction).filter(
         models.Transaction.user_id == current_user.id,
         models.Transaction.external_id.isnot(None),
+        affects_cash_clause(),
     ).all()
 
     deleted_cancelled = []

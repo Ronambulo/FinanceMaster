@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { queryClient } from '@/lib/queryClient'
 import { ToastProvider } from '@/components/ui/toast'
 import { useAuthStore } from '@/store/auth'
@@ -10,7 +10,7 @@ import { Dashboard } from '@/pages/Dashboard'
 import { CommandPalette } from '@/components/CommandPalette'
 import { OnboardingWizard } from '@/components/OnboardingWizard'
 import { AiChat } from '@/components/AiChat'
-import { useEffect, useState, useRef, Suspense, lazy } from 'react'
+import { useCallback, useEffect, useState, Suspense, lazy } from 'react'
 
 const Transactions = lazy(() => import('@/pages/Transactions').then(m => ({ default: m.Transactions })))
 const Portfolio = lazy(() => import('@/pages/Portfolio').then(m => ({ default: m.Portfolio })))
@@ -24,12 +24,11 @@ const AchievementsPage = lazy(() => import('@/pages/Achievements').then(m => ({ 
 import { applyTheme, THEME_KEY, ACCENT_KEY, getCompact } from '@/lib/theme'
 import { useFeaturesStore } from '@/store/features'
 import type { FeatureId } from '@/lib/features'
-import { WifiOff, Loader2 } from 'lucide-react'
+import { WifiOff, Loader2, Smartphone } from 'lucide-react'
 import { trApi } from '@/lib/api'
 import { useToast } from '@/components/ui/toast'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
+import { TRLoginStep } from '@/components/TRLoginStep'
 import { useTR2FAStore } from '@/store/tr2fa'
 
 function OfflineBanner() {
@@ -53,68 +52,51 @@ function OfflineBanner() {
   )
 }
 
-/* ── 2FA modal — shown when auto-connect finds a pending SMS code ──
-   `onClose` just hides the dialog (the pending code, if any, is untouched
-   and can be resumed later — see `onVerified`). `onVerified` fires only
-   once the code has actually been confirmed, so callers can clear any
-   "pending 2FA" state they're tracking without confusing "dismissed" with
-   "done". */
+/* ── Modal de login de Trade Republic — se muestra cuando el auto-connect deja
+   un inicio de sesión pendiente (confirmar en la app o código del autenticador).
+   `onClose` solo oculta el diálogo (el login pendiente sigue y se puede retomar);
+   `onVerified` se dispara únicamente cuando la sesión queda conectada. */
 export function TwoFAModal({ open, onClose, onVerified }: { open: boolean; onClose: () => void; onVerified?: () => void }) {
   const { toast } = useToast()
-  const [code, setCode] = useState('')
-  const [loading, setLoading] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const qc = useQueryClient()
+  const [attempt, setAttempt] = useState(0)
+  const [restarting, setRestarting] = useState(false)
 
-  useEffect(() => {
-    if (open) {
-      setCode('')
-      setTimeout(() => inputRef.current?.focus(), 150)
-    }
-  }, [open])
+  const handleConnected = useCallback(() => {
+    toast('Trade Republic conectado', 'success')
+    qc.invalidateQueries({ queryKey: ['tr-status'] })
+    onVerified?.()
+    onClose()
+  }, [toast, qc, onVerified, onClose])
 
-  async function handleVerify() {
-    if (code.length < 4 || loading) return
-    setLoading(true)
+  async function handleRestart() {
+    setRestarting(true)
     try {
-      await trApi.verify(code)
-      toast('Trade Republic conectado', 'success')
-      onVerified?.()
-      onClose()
+      const r = await trApi.autoConnect()
+      if (r.status === 'connected') handleConnected()
+      else if (r.status === 'error') toast(`Trade Republic: ${r.message ?? 'error al conectar'}`, 'error')
+      setAttempt(a => a + 1)
     } catch (e: any) {
-      toast(e.message || 'Código incorrecto o expirado', 'error')
+      toast(e.message || 'Error al conectar', 'error')
     } finally {
-      setLoading(false)
+      setRestarting(false)
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose() }}>
-      <DialogContent className="max-w-xs">
+      <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <span className="text-xl">📱</span> Verificación Trade Republic
-          </DialogTitle>
+          <DialogTitle>Inicio de sesión en Trade Republic</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 pt-1">
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            Se ha enviado un código de 4 dígitos a tu teléfono. Introdúcelo para reconectar.
-          </p>
-          <Input
-            ref={inputRef}
-            placeholder="0000"
-            value={code}
-            onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
-            onKeyDown={e => e.key === 'Enter' && handleVerify()}
-            inputMode="numeric"
-            className="text-center text-2xl tracking-[0.5em] font-mono"
-            maxLength={4}
-          />
-          <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={onClose}>Cancelar</Button>
-            <Button className="flex-1" onClick={handleVerify} disabled={code.length < 4 || loading}>
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verificar'}
-            </Button>
-          </div>
+        <div className="pt-1">
+          {restarting ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Conectando…
+            </p>
+          ) : open && (
+            <TRLoginStep key={attempt} onConnected={handleConnected} onRestart={handleRestart} onCancel={onClose} />
+          )}
         </div>
       </DialogContent>
     </Dialog>
@@ -134,8 +116,8 @@ function PendingTwoFABanner() {
       onClick={open}
       className="fixed right-4 z-[150] flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/25 bottom-[calc(5rem_+_var(--safe-bottom))] md:bottom-6"
     >
-      <span className="text-base">📱</span>
-      Código de Trade Republic pendiente
+      <Smartphone className="h-4 w-4" />
+      Inicio de sesión de Trade Republic pendiente
     </button>
   )
 }

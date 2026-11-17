@@ -1,13 +1,12 @@
 import logging
 from datetime import date
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from .. import models, schemas, auth
 from ..database import get_db
-from ..services.csv_parser import parse_csv
 from ..services.categorizer import auto_categorize
 from ..services.recurring_detector import detect_recurring
 
@@ -310,53 +309,110 @@ def delete_transaction(
     return {"ok": True}
 
 
-@router.post("/import")
-async def import_csv(
+def _parse_upload(content: bytes, bank_format: str) -> dict:
+    from ..services.bank_connectors import parse_file
+    return parse_file(content, bank_format)
+
+
+def _missing_fields(existing: models.Transaction, row: dict) -> list[str]:
+    """Campos que el CSV aporta y la transacción ya guardada no tiene."""
+    return [
+        f for f in ("shares", "price", "symbol")
+        if row.get(f) not in (None, "") and getattr(existing, f) in (None, "")
+    ]
+
+
+def _classify_rows(db: Session, user_id: int, rows: list[dict]) -> list[tuple[str, dict, Optional[models.Transaction]]]:
+    """Clasifica cada fila: 'new', 'update' (ya existe pero el CSV completa datos) o 'duplicate'."""
+    ids = [r["external_id"] for r in rows if r.get("external_id")]
+    existing_by_id: dict = {}
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        for tx in db.query(models.Transaction).filter(
+            models.Transaction.user_id == user_id,
+            models.Transaction.external_id.in_(chunk),
+        ):
+            existing_by_id[tx.external_id] = tx
+
+    seen: set = set()
+    result = []
+    for row in rows:
+        eid = row.get("external_id")
+        existing = existing_by_id.get(eid) if eid else None
+        if existing is not None:
+            result.append(("update" if _missing_fields(existing, row) else "duplicate", row, existing))
+        elif eid and eid in seen:
+            result.append(("duplicate", row, None))  # repetida dentro del propio archivo
+        else:
+            result.append(("new", row, None))
+        if eid:
+            seen.add(eid)
+    return result
+
+
+def _preview_item(row: dict) -> dict:
+    return {
+        "date": row["date"].isoformat() if row.get("date") else None,
+        "type": row.get("type"),
+        "name": row.get("name") or row.get("counterparty_name") or row.get("description"),
+        "symbol": row.get("symbol"),
+        "shares": row.get("shares"),
+        "amount": row.get("amount"),
+        "currency": row.get("currency") or "EUR",
+    }
+
+
+@router.post("/import/preview")
+async def import_preview(
     file: UploadFile = File(...),
-    bank_format: str = "auto",
+    bank_format: str = Form("auto"),
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
-    content = await file.read()
-    detected_bank = "trade_republic"
-    try:
-        from ..services.bank_connectors import parse_with_autodetect
-        rows, parse_errors, detected_bank = parse_with_autodetect(content, bank_format)
-    except ImportError:
-        rows, parse_errors = parse_csv(content)
+    """Analiza el CSV sin guardar nada: qué se importaría, qué se omite y qué falla."""
+    from ..services.bank_connectors import BANK_LABELS
+    parsed = _parse_upload(await file.read(), bank_format)
+    classified = _classify_rows(db, current_user.id, parsed["rows"])
+
+    new = [_preview_item(r) for status, r, _ in classified if status == "new"]
+    duplicates = [
+        {**_preview_item(r), "will_update": status == "update"}
+        for status, r, _ in classified if status in ("duplicate", "update")
+    ]
+    return {
+        "detected_bank": parsed["detected"],
+        "bank_label": BANK_LABELS.get(parsed["detected"]),
+        "total": len(parsed["rows"]) + len(parsed["errors"]) + len(parsed["skipped"]),
+        "new": new,
+        "duplicates": duplicates,
+        "errors": parsed["errors"],
+        "skipped": parsed["skipped"],
+    }
+
+
+@router.post("/import")
+async def import_csv(
+    file: UploadFile = File(...),
+    bank_format: str = Form("auto"),
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    parsed = _parse_upload(await file.read(), bank_format)
+    detected_bank = parsed["detected"]
 
     imported = 0
     skipped = 0
-    errors = len(parse_errors)
-
     updated = 0
-    for row in rows:
-        # If we have an external_id, try to update existing transaction first
-        existing = None
-        if row.get("external_id"):
-            from sqlalchemy import and_
-            existing = db.query(models.Transaction).filter(
-                and_(
-                    models.Transaction.user_id == current_user.id,
-                    models.Transaction.external_id == row["external_id"],
-                )
-            ).first()
+    errors = len(parsed["errors"])
 
-        if existing:
-            changed = False
-            if row.get("shares") is not None and existing.shares is None:
-                existing.shares = row["shares"]
-                changed = True
-            if row.get("price") is not None and existing.price is None:
-                existing.price = row["price"]
-                changed = True
-            if row.get("symbol") and not existing.symbol:
-                existing.symbol = row["symbol"]
-                changed = True
-            if changed:
-                updated += 1
-            else:
-                skipped += 1
+    for status, row, existing in _classify_rows(db, current_user.id, parsed["rows"]):
+        if status == "duplicate":
+            skipped += 1
+            continue
+        if status == "update":
+            for field in _missing_fields(existing, row):
+                setattr(existing, field, row[field])
+            updated += 1
             continue
 
         category_id, is_auto, is_internal = auto_categorize(
@@ -378,15 +434,14 @@ async def import_csv(
             is_internal_transfer=is_internal,
             **row,
         )
+        # Savepoint por fila: un fallo descarta solo esa fila, no todo lo anterior
         try:
-            db.add(tx)
-            db.flush()
+            with db.begin_nested():
+                db.add(tx)
             imported += 1
         except IntegrityError:
-            db.rollback()
             skipped += 1
         except Exception:
-            db.rollback()
             errors += 1
             log.exception(
                 "CSV import: fila descartada (user_id=%s, external_id=%s)",

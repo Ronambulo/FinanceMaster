@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { TransactionIcon } from '@/components/TransactionIcon'
+import { ImportCsvDialog } from '@/components/ImportCsvDialog'
 import { TwoFAModal } from '@/App'
 
 import { cn } from '@/lib/utils'
@@ -76,88 +77,6 @@ function CategoryPicker({ categories, value, onChange }: { categories: Category[
         ))}
       </SelectContent>
     </Select>
-  )
-}
-
-const BANK_FORMATS = [
-  { value: 'auto', label: '🔍 Auto-detectar' },
-  { value: 'trade_republic', label: 'Trade Republic' },
-  { value: 'revolut', label: 'Revolut' },
-  { value: 'n26', label: 'N26' },
-  { value: 'wise', label: 'Wise' },
-]
-
-function ImportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { toast } = useToast()
-  const qc = useQueryClient()
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [result, setResult] = useState<{ imported: number; skipped_duplicates: number; errors: number } | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [bankFormat, setBankFormat] = useState('auto')
-  const [detectedBank, setDetectedBank] = useState<string | null>(null)
-
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setLoading(true)
-    setResult(null)
-    setDetectedBank(null)
-    try {
-      const res = await txApi.importCsv(file, bankFormat) as any
-      setResult(res)
-      if (res.detected_bank) setDetectedBank(res.detected_bank)
-      qc.invalidateQueries()
-      toast(`Importadas ${res.imported} transacciones`, 'success')
-    } catch (err: any) {
-      toast(err.message || 'Error al importar', 'error')
-    } finally {
-      setLoading(false)
-      if (fileRef.current) fileRef.current.value = ''
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Importar CSV</DialogTitle></DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Formato del banco</label>
-            <select
-              value={bankFormat}
-              onChange={e => setBankFormat(e.target.value)}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-            >
-              {BANK_FORMATS.map(f => (
-                <option key={f.value} value={f.value}>{f.label}</option>
-              ))}
-            </select>
-          </div>
-          <div
-            className="border-2 border-dashed border-border rounded-xl p-8 text-center cursor-pointer hover:border-primary transition-colors"
-            onClick={() => fileRef.current?.click()}
-          >
-            <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-            <p className="text-sm font-medium">Haz clic para seleccionar el CSV</p>
-            <p className="text-xs text-muted-foreground mt-1">.csv — cualquier banco soportado</p>
-            <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleFile} />
-          </div>
-          {loading && (
-            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Procesando...
-            </div>
-          )}
-          {result && (
-            <div className="rounded-xl bg-muted p-4 space-y-1 text-sm">
-              {detectedBank && <p className="text-xs text-muted-foreground mb-1">Banco detectado: <span className="font-medium text-foreground">{detectedBank}</span></p>}
-              <p className="text-primary">✓ {result.imported} transacciones importadas</p>
-              {result.skipped_duplicates > 0 && <p className="text-muted-foreground">↷ {result.skipped_duplicates} duplicadas omitidas</p>}
-              {result.errors > 0 && <p className="text-negative">✗ {result.errors} errores</p>}
-            </div>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
   )
 }
 
@@ -1552,7 +1471,7 @@ export function Transactions() {
         onSelect={categoryId => { if (catPickerTxId !== null) updateMutation.mutate({ id: catPickerTxId, data: { category_id: categoryId } }) }}
       />
 
-      <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} />
+      <ImportCsvDialog open={importOpen} onClose={() => setImportOpen(false)} />
       <AddTransactionDialog open={addOpen} onClose={() => setAddOpen(false)} categories={categories || []} />
       <DeleteTxDataDialog open={deleteTxDataOpen} onClose={() => setDeleteTxDataOpen(false)} />
       <DeleteAllDialog open={deleteAllOpen} onClose={() => setDeleteAllOpen(false)} />

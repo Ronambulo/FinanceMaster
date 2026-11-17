@@ -1,12 +1,13 @@
-import { useState, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { catApi, webhookApi, trApi, integrationsApi } from '@/lib/api'
-import type { Category, Webhook as WebhookType, ApiToken } from '@/lib/api'
+import type { Category, Webhook as WebhookType, ApiToken, TRLoginMethod } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { TRLoginStep } from '@/components/TRLoginStep'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/toast'
 import { Loader2, Copy, Trash, Smartphone } from 'lucide-react'
@@ -133,8 +134,8 @@ export function IntegrationsSection() {
   const whUrlInvalid = whUrl.length > 0 && !isValidUrl(whUrl)
   const [trPhone, setTrPhone] = useState('')
   const [trPin, setTrPin] = useState('')
-  const [trCode, setTrCode] = useState('')
   const [trPhase, setTrPhase] = useState<'idle' | 'awaiting_2fa' | 'connected'>('idle')
+  const [trMethod, setTrMethod] = useState<TRLoginMethod | null>(null)
   const [trLoading, setTrLoading] = useState(false)
   const [confirmDisconnect, setConfirmDisconnect] = useState(false)
 
@@ -170,7 +171,6 @@ export function IntegrationsSection() {
     onSuccess: () => {
       setTrPhase('idle')
       setTrPin('')
-      setTrCode('')
       setConfirmDisconnect(false)
       qc.invalidateQueries({ queryKey: ['tr-status'] })
       toast('Trade Republic desconectado', 'success')
@@ -186,24 +186,20 @@ export function IntegrationsSection() {
     setTrError(null)
     try {
       const res = await trApi.connect(trPhone, trPin)
+      setTrMethod(res.method ?? null)
       setTrPhase(res.status === 'connected' ? 'connected' : 'awaiting_2fa')
+      if (res.status === 'connected') qc.invalidateQueries({ queryKey: ['tr-status'] })
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Error al conectar'
       setTrError(msg)
     } finally { setTrLoading(false) }
   }
-  const handleTrVerify = async () => {
-    setTrLoading(true)
-    setTrError(null)
-    try {
-      await trApi.verify(trCode)
-      setTrPhase('connected')
-      qc.invalidateQueries({ queryKey: ['tr-status'] })
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Código incorrecto'
-      setTrError(msg)
-    } finally { setTrLoading(false) }
-  }
+  const handleTrLoginDone = useCallback(() => {
+    setTrPhase('connected')
+    setTrPin('')
+    toast('Trade Republic conectado', 'success')
+  }, [toast])
+  const handleTrLoginReset = () => { setTrPhase('idle'); setTrMethod(null); setTrError(null) }
 
   return (
     <div className="space-y-4">
@@ -229,22 +225,10 @@ export function IntegrationsSection() {
               </div>
             </div>
           ) : trPhase === 'awaiting_2fa' ? (
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">Introduce el código de 4 dígitos de la app de Trade Republic:</p>
-              <div className="flex gap-2">
-                <Input placeholder="0000" value={trCode} onChange={e => setTrCode(e.target.value)} className="w-24" maxLength={4} inputMode="numeric" />
-                <Button size="sm" onClick={handleTrVerify} disabled={trLoading || trCode.length < 4}>
-                  {trLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Verificar'}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => { setTrPhase('idle'); setTrCode(''); setTrError(null) }} className="text-muted-foreground">
-                  Cancelar
-                </Button>
-              </div>
-              {trError && <p className="text-xs text-negative rounded-lg bg-negative/10 px-2 py-1.5">{trError}</p>}
-            </div>
+            <TRLoginStep method={trMethod} onConnected={handleTrLoginDone} onRestart={handleTrLoginReset} onCancel={handleTrLoginReset} />
           ) : (
             <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">API no oficial vía WebSocket. El primer inicio de sesión puede tardar ~30 segundos.</p>
+              <p className="text-xs text-muted-foreground">API no oficial vía WebSocket. Al conectar tendrás que confirmar el inicio de sesión en la app de Trade Republic.</p>
               <div className="grid grid-cols-1 xs:grid-cols-2 gap-2">
                 <Input placeholder="+34612345678" value={trPhone} onChange={e => setTrPhone(e.target.value)} />
                 <Input placeholder="PIN (4 dígitos)" type="password" value={trPin} onChange={e => setTrPin(e.target.value)} maxLength={4} />
