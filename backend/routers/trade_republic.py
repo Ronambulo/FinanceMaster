@@ -113,6 +113,8 @@ def tr_status(current_user: models.User = Depends(auth.get_current_user)):
     return {
         "connected": client is not None and client.is_connected(),
         "needs_2fa": client is not None and client.is_awaiting_2fa(),
+        "login_method": client.login_method() if client else None,
+        "login_error": client.login_error() if client and not client.is_connected() else None,
         "last_sync": client.last_sync().isoformat() if client and client.last_sync() else None,
     }
 
@@ -132,7 +134,7 @@ async def tr_auto_connect(
     # connect() again (that would send a brand-new SMS code). Just tell
     # the caller a code is awaiting verification so it can reopen the modal.
     if client and client.is_awaiting_2fa():
-        return {"status": "needs_2fa"}
+        return {"status": "needs_2fa", "method": client.login_method()}
 
     # Load encrypted credentials from DB
     conn = db.query(models.BankConnection).filter(
@@ -157,9 +159,9 @@ async def tr_auto_connect(
             db.commit()
             return {"status": "connected"}
         else:
-            # SMS sent — keep client in memory so /tr/verify can complete the flow
+            # Login pendiente de confirmar — se guarda el cliente para /tr/status y /tr/verify
             set_client(current_user.id, client)
-            return {"status": "needs_2fa", "countdown": result.get("countdown")}
+            return {"status": "needs_2fa", "countdown": result.get("countdown"), "method": result.get("method")}
     except TRConnectionError as e:
         return {"status": "error", "message": str(e)}
 

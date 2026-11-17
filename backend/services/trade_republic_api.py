@@ -1,13 +1,16 @@
 """
 Trade Republic API client using pytr (unofficial WebSocket protocol).
-Login flow:
-  1. connect(phone, pin) → {"status": "awaiting_2fa", "countdown": N}
+Login flow (v2 web login):
+  1. connect(phone, pin) → {"status": "awaiting_2fa", "countdown": N, "method": "app" | "authenticator"}
                OR → {"status": "connected"}  (if saved session exists)
-  2. verify_2fa(code)    → {"status": "connected"}
+  2a. method "app": the user confirms in the TR mobile app; a background thread
+      waits and flips is_connected() — poll /tr/status.
+  2b. method "authenticator": verify_2fa(code) → {"status": "connected"}
   3. get_timeline() / get_portfolio() for data
 """
 import asyncio
 import logging
+import threading
 from typing import Optional
 from datetime import datetime
 
@@ -121,6 +124,41 @@ class TRConnectionError(Exception):
     pass
 
 
+# errorCodes del login v2 de Trade Republic → mensaje para el usuario
+_LOGIN_ERROR_ES = {
+    "PROCESS_GONE": "La solicitud de inicio de sesión ha caducado. Vuelve a conectar.",
+    "ALREADY_PROCESSED": "El inicio de sesión se rechazó o ya se usó. Vuelve a conectar.",
+    "NOT_FOUND": "Trade Republic no reconoce esta solicitud de inicio de sesión. Vuelve a conectar.",
+    "TOO_MANY_REQUESTS": "Demasiados intentos. Espera un poco e inténtalo de nuevo.",
+    "VALIDATION_CODE_INVALID": "El código del autenticador no es correcto.",
+    "VALIDATION_CODE_ALREADY_USED": "Ese código del autenticador ya se ha usado. Espera al siguiente.",
+    "INVALID_CREDENTIALS": "Teléfono o PIN incorrectos.",
+    "MISSING_REQUIRED_HEADER": "Trade Republic ha cambiado su inicio de sesión. Actualiza pytr (pip install -U pytr).",
+}
+
+
+def _format_wait(seconds: int) -> str:
+    if seconds < 90:
+        return f"{seconds} segundos"
+    if seconds < 5400:
+        return f"{round(seconds / 60)} minutos"
+    if seconds < 172800:
+        return f"{round(seconds / 3600)} horas"
+    return f"{round(seconds / 86400)} días"
+
+
+def _translate_login_error(e: Exception) -> str:
+    """pytr lanza ValueError con los textos en inglés de pytr.api.LOGIN_ERRORS; se traducen."""
+    try:
+        from pytr.api import LOGIN_ERRORS
+        for code, text in LOGIN_ERRORS.items():
+            if str(e) == text:
+                return _LOGIN_ERROR_ES.get(code, text)
+    except ImportError:
+        pass
+    return str(e)
+
+
 class TradeRepublicAPI:
     def __init__(self, phone: str, pin: str):
         self.phone = phone
@@ -128,54 +166,55 @@ class TradeRepublicAPI:
         self._client = None
         self._connected = False
         self._awaiting_2fa = False
+        # 'app' = confirmar en la app de TR (push); 'authenticator' = código TOTP
+        self._login_method: Optional[str] = None
+        self._login_error: Optional[str] = None
         self._last_sync: Optional[datetime] = None
 
     def _build_client(self):
         from pytr.api import TradeRepublicApi, BASE_DIR
         BASE_DIR.mkdir(parents=True, exist_ok=True)
+        # Trade Republic retiró el login web v1 (responde MISSING_REQUIRED_HEADER).
+        # El v2 no necesita token WAF ni Playwright.
         return TradeRepublicApi(
             phone_no=self.phone,
             pin=self.pin,
             locale="es",
             save_cookies=True,
+            use_v2_login=True,
         )
 
     def connect(self) -> dict:
         """
         Synchronous — run in executor from async context.
-        Tries saved session first; falls back to full web login (Playwright WAF bypass).
-        Returns {"status": "connected"} or {"status": "awaiting_2fa", "countdown": N}.
+        Tries saved session first; falls back to the v2 web login.
+        Returns {"status": "connected"} or
+                {"status": "awaiting_2fa", "countdown": N, "method": "app" | "authenticator"}.
         """
         try:
             self._client = self._build_client()
 
-            # Try to resume an existing session (fast, no Playwright)
             if self._client.resume_websession():
                 self._connected = True
                 log.info("TR: resumed saved session")
                 return {"status": "connected"}
 
-            # Full login: Playwright gets AWS WAF token, then POSTs credentials
-            log.info("TR: initiating web login (Playwright WAF bypass)…")
+            log.info("TR: initiating web login (v2)…")
             countdown = self._client.initiate_weblogin()
-
-            # pytr no lanza excepción si Playwright no consigue el token WAF a
-            # tiempo (p.ej. /dev/shm insuficiente o CPU lenta en el servidor) —
-            # simplemente continúa sin él. Trade Republic entonces acepta la
-            # petición (countdown válido) pero no llega a enviar el SMS/push
-            # real, dejando al usuario esperando un código que nunca llega.
-            if not getattr(self._client, "_waf_token", None):
-                log.error("TR: no se obtuvo el token WAF — el código de verificación probablemente NO llegará")
-                raise TRConnectionError(
-                    "No se pudo verificar la conexión con Trade Republic (token "
-                    "anti-bot no disponible). El código no llegará. Vuelve a "
-                    "intentarlo en unos segundos; si persiste, es probable que "
-                    "Chromium no tenga suficientes recursos en el servidor."
-                )
-
-            log.info(f"TR: 2FA SMS sent, countdown={countdown}s")
             self._awaiting_2fa = True
-            return {"status": "awaiting_2fa", "countdown": countdown}
+            self._login_error = None
+
+            if self._client.weblogin_needs_authenticator:
+                self._login_method = "authenticator"
+                log.info("TR: login pendiente de código del autenticador")
+            else:
+                # El usuario confirma en la app del móvil; se espera en segundo plano
+                # y el frontend consulta /tr/status hasta que quede conectado.
+                self._login_method = "app"
+                log.info("TR: login pendiente de confirmación en la app (%ss)", countdown)
+                threading.Thread(target=self._await_app_confirmation, daemon=True).start()
+
+            return {"status": "awaiting_2fa", "countdown": countdown, "method": self._login_method}
 
         except ImportError:
             raise TRConnectionError("pytr no instalado. Ejecuta: pip install pytr")
@@ -189,21 +228,43 @@ class TradeRepublicAPI:
                         err = errors[0]
                         code = err.get("errorCode", "")
                         if code == "TOO_MANY_REQUESTS":
-                            wait = err.get("meta", {}).get("nextAttemptInSeconds", 30)
-                            raise TRConnectionError(f"Demasiados intentos. Espera {wait} segundos e inténtalo de nuevo.")
-                        if code == "INVALID_CREDENTIALS":
-                            raise TRConnectionError("Teléfono o PIN incorrectos.")
+                            wait = int((err.get("meta") or {}).get("nextAttemptInSeconds", 30))
+                            raise TRConnectionError(f"Demasiados intentos. Espera {_format_wait(wait)} e inténtalo de nuevo.")
+                        if code in _LOGIN_ERROR_ES:
+                            raise TRConnectionError(_LOGIN_ERROR_ES[code])
                         raise TRConnectionError(f"Error de Trade Republic: {code}")
                 except TRConnectionError:
                     raise
                 except Exception:
                     pass
-            raise TRConnectionError(f"Error al conectar: {e}")
+            raise TRConnectionError(f"Error al conectar: {_translate_login_error(e)}")
+
+    def _await_app_confirmation(self):
+        """Hilo: bloquea hasta que el usuario confirma en la app de TR o caduca la solicitud."""
+        client = self._client
+        try:
+            client.complete_weblogin()
+            if client is not self._client:
+                return  # se reemplazó o desconectó mientras esperaba
+            self._connected = True
+            self._awaiting_2fa = False
+            log.info("TR: login confirmado en la app, sesión activa")
+        except TimeoutError:
+            self._awaiting_2fa = False
+            self._login_error = "No se confirmó el inicio de sesión a tiempo. Vuelve a conectar."
+        except Exception as e:
+            log.warning("TR: confirmación en la app fallida: %s", e)
+            self._awaiting_2fa = False
+            self._login_error = _translate_login_error(e)
 
     def verify_2fa(self, code: str) -> dict:
-        """Synchronous — run in executor."""
+        """Synchronous — run in executor. Solo para cuentas con autenticador."""
         if not self._client:
             raise TRConnectionError("No hay sesión activa. Llama a connect() primero.")
+        if self._connected:
+            return {"status": "connected"}
+        if self._login_method == "app":
+            raise TRConnectionError("Confirma el inicio de sesión en la app de Trade Republic.")
         try:
             self._client.complete_weblogin(code)
             self._connected = True
@@ -211,9 +272,13 @@ class TradeRepublicAPI:
             log.info("TR: 2FA verificado, sesión activa")
             return {"status": "connected"}
         except Exception as e:
-            if "400" in str(e):
-                raise TRConnectionError("Código incorrecto o expirado.")
-            raise TRConnectionError(f"Error al verificar: {e}")
+            raise TRConnectionError(_translate_login_error(e))
+
+    def login_method(self) -> Optional[str]:
+        return self._login_method
+
+    def login_error(self) -> Optional[str]:
+        return self._login_error
 
     async def _recv(self, sub_id: int, timeout: float = 30.0):
         """Receive a single WebSocket response for a subscription."""

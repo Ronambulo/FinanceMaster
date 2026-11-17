@@ -272,7 +272,15 @@ export interface Insight { id: number; type: string; title: string; message: str
 export interface Webhook { id: number; url: string; events: string[]; is_active: boolean; created_at: string }
 export interface ApiToken { id: number; name: string; token_prefix: string; created_at: string; last_used_at: string | null }
 export interface ApiTokenCreated { id: number; name: string; token: string; created_at: string }
-export interface TRStatus { connected: boolean; needs_2fa: boolean; last_sync: string | null }
+// 'app' = confirmar en la app de Trade Republic; 'authenticator' = código de la app de autenticación
+export type TRLoginMethod = 'app' | 'authenticator'
+export interface TRStatus {
+  connected: boolean
+  needs_2fa: boolean
+  login_method: TRLoginMethod | null
+  login_error: string | null
+  last_sync: string | null
+}
 export interface TRPosition {
   instrumentId: string
   netSize: string
@@ -309,9 +317,9 @@ export const integrationsApi = {
 // Trade Republic
 export const trApi = {
   status: () => request<TRStatus>('/tr/status'),
-  autoConnect: () => request<{ status: string; message?: string }>('/tr/auto-connect', { method: 'POST' }),
+  autoConnect: () => request<{ status: string; message?: string; method?: TRLoginMethod }>('/tr/auto-connect', { method: 'POST' }),
   connect: (phone: string, pin: string) =>
-    request<{ status: string }>('/tr/connect', { method: 'POST', body: JSON.stringify({ phone, pin }) }),
+    request<{ status: string; method?: TRLoginMethod }>('/tr/connect', { method: 'POST', body: JSON.stringify({ phone, pin }) }),
   verify: (code: string) =>
     request<{ ok: boolean }>('/tr/verify', { method: 'POST', body: JSON.stringify({ code }) }),
   sync: () => request<{ synced: number; updated: number; skipped: number; errors: number; total_events: number }>('/tr/sync'),
