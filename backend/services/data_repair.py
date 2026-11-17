@@ -209,6 +209,7 @@ def ensure_saveback_credits(db: Session, user_id: int | None = None) -> int:
             amount=target,
             currency=tx.currency,
             description="Saveback (abono reconstruido: TR no lo expone por API)",
+            source="trade_republic",
         )
         db.add(credit)
         credits.append(credit)

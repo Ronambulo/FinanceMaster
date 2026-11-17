@@ -5,8 +5,10 @@ import {
   LayoutDashboard, ArrowLeftRight, TrendingUp, CalendarDays,
   RefreshCw, CreditCard, Target, Settings, Upload,
   Plus, Palette, Trophy, Moon, Sun, Minimize2, Maximize2,
-  PiggyBank, FileText, FileSpreadsheet, Wallet,
+  PiggyBank, FileText, FileSpreadsheet, Wallet, Download, Braces, CalendarRange, Landmark, DatabaseBackup,
 } from 'lucide-react'
+import { useToast } from '@/components/ui/toast'
+import { ExportDialog, runExport, type ExportPreset, type ExportRequest } from '@/components/ExportDialog'
 import { cn } from '@/lib/utils'
 import { getCompact, setCompact, getTheme, applyTheme, ACCENT_KEY } from '@/lib/theme'
 import { useFeaturesStore } from '@/store/features'
@@ -30,7 +32,28 @@ export function CommandPalette() {
   const navigate = useNavigate()
   const features = useFeaturesStore(s => s.features)
 
+  const { toast } = useToast()
+  const [exportDialog, setExportDialog] = useState<{ open: boolean; preset?: ExportPreset }>({ open: false })
+
   const go = useCallback((path: string) => { navigate(path); setOpen(false) }, [navigate])
+
+  function openExport(preset?: ExportPreset) {
+    setOpen(false)
+    setExportDialog({ open: true, preset })
+  }
+
+  function quickExport(req: ExportRequest) {
+    setOpen(false)
+    toast('Preparando la exportación…', 'info')
+    runExport(req)
+      .then(name => toast(`Descargado ${name}`, 'success'))
+      .catch(e => toast(e instanceof Error ? e.message : 'No se pudo exportar', 'error'))
+  }
+
+  function thisMonth() {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  }
 
   function toggleTheme() {
     const next = isDark ? 'light' : 'trade-republic'
@@ -64,9 +87,18 @@ export function CommandPalette() {
     { id: 'import',       group: 'Acciones',   icon: <Upload          className="h-4 w-4" />, label: 'Importar CSV',      desc: 'Subir extracto de Trade Republic, MyInvestor u otro banco',    action: () => { navigate('/transacciones?import=1'); setOpen(false) }, keywords: 'trade republic myinvestor csv subir importar' },
     { id: 'add-tx',       group: 'Acciones',   icon: <Plus            className="h-4 w-4" />, label: 'Nueva transacción', desc: 'Añadir movimiento manual',            action: () => { navigate('/transacciones?add=1'); setOpen(false) },    keywords: 'crear transaccion manual nueva' },
     { id: 'add-goal',     group: 'Acciones',   icon: <PiggyBank       className="h-4 w-4" />, label: 'Nuevo objetivo',    desc: 'Crear meta de ahorro',                action: () => { navigate('/objetivos?add=1'); setOpen(false) },         keywords: 'crear objetivo meta ahorro nuevo', feature: 'goals' },
-    { id: 'export-pdf',   group: 'Acciones',   icon: <FileText        className="h-4 w-4" />, label: 'Exportar PDF',      desc: 'Descargar resumen del mes actual',    action: () => { navigate('/monthly?export=pdf'); setOpen(false) },     keywords: 'pdf descargar exportar' },
-    { id: 'export-xlsx',  group: 'Acciones',   icon: <FileSpreadsheet className="h-4 w-4" />, label: 'Exportar Excel',    desc: 'Descargar Excel del mes actual',      action: () => { navigate('/monthly?export=xlsx'); setOpen(false) },    keywords: 'excel xlsx descargar exportar' },
+    { id: 'export-pdf',   group: 'Acciones',   icon: <FileText        className="h-4 w-4" />, label: 'PDF del tramo actual',   desc: 'Resumen del tramo de nómina en curso',  action: () => { navigate('/monthly?export=pdf'); setOpen(false) },     keywords: 'pdf descargar exportar mensual nomina' },
+    { id: 'export-xlsx',  group: 'Acciones',   icon: <FileSpreadsheet className="h-4 w-4" />, label: 'Excel del tramo actual', desc: 'Movimientos del tramo de nómina en curso', action: () => { navigate('/monthly?export=xlsx'); setOpen(false) },    keywords: 'excel xlsx descargar exportar mensual nomina' },
 
+    // Exportar
+    { id: 'export',          group: 'Exportar', icon: <Download        className="h-4 w-4" />, label: 'Exportar datos…',            desc: 'Elegir formato, periodo, bancos y secciones', action: () => openExport(),                                  keywords: 'exportar descargar excel csv pdf json ofx personalizar' },
+    { id: 'export-backup',   group: 'Exportar', icon: <Braces          className="h-4 w-4" />, label: 'Copia de seguridad (JSON)',  desc: 'Todos tus datos en un archivo JSON',          action: () => quickExport({ format: 'json' }),                   keywords: 'backup copia seguridad json todo' },
+    { id: 'export-all-xlsx', group: 'Exportar', icon: <FileSpreadsheet className="h-4 w-4" />, label: 'Exportar todo a Excel',      desc: 'Una hoja por sección',                        action: () => quickExport({ format: 'xlsx' }),                   keywords: 'excel xlsx todo completo' },
+    { id: 'export-month',    group: 'Exportar', icon: <CalendarDays    className="h-4 w-4" />, label: 'Exportar este mes',          desc: 'Mes natural en curso, a Excel',               action: () => quickExport({ format: 'xlsx', period: 'month', month: thisMonth() }), keywords: 'mes actual excel' },
+    { id: 'export-by-month', group: 'Exportar', icon: <CalendarRange   className="h-4 w-4" />, label: 'Exportar mes a mes',         desc: 'Excel con una hoja por mes',                  action: () => quickExport({ format: 'xlsx', split: true }),      keywords: 'meses mensual separar excel' },
+    { id: 'export-by-bank',  group: 'Exportar', icon: <Landmark        className="h-4 w-4" />, label: 'Exportar por banco',         desc: 'Trade Republic, MyInvestor… cada uno en su hoja', action: () => quickExport({ format: 'xlsx', split_bank: true }), keywords: 'banco trade republic myinvestor separar broker' },
+    { id: 'export-pdf-all',  group: 'Exportar', icon: <FileText        className="h-4 w-4" />, label: 'Informe PDF completo',       desc: 'Resumen mensual, por banco y movimientos',    action: () => quickExport({ format: 'pdf', sections: ['monthly', 'banks', 'transactions'] }), keywords: 'pdf informe imprimir' },
+    { id: 'account-backup',  group: 'Exportar', icon: <DatabaseBackup  className="h-4 w-4" />, label: 'Copia de la cuenta',         desc: 'Exportar o restaurar la cuenta entera',       action: () => go('/ajustes?tab=backup'),                         keywords: 'restaurar importar migrar servidor local backup cuenta' },
     // Apariencia
     { id: 'theme',        group: 'Apariencia', icon: isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />, label: isDark ? 'Modo claro' : 'Modo oscuro', desc: 'Cambiar entre tema claro y oscuro', action: toggleTheme,  keywords: 'tema oscuro claro color' },
     { id: 'compact',      group: 'Apariencia', icon: isCompact ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />, label: isCompact ? 'Desactivar modo compacto' : 'Activar modo compacto', desc: 'Reduce el espaciado de la interfaz', action: toggleCompact, keywords: 'compacto denso espaciado ui' },
@@ -90,9 +122,19 @@ export function CommandPalette() {
 
   const groups = [...new Set(items.map(i => i.group))]
 
-  if (!open) return null
+  const dialog = (
+    <ExportDialog
+      open={exportDialog.open}
+      preset={exportDialog.preset}
+      onOpenChange={o => setExportDialog(d => ({ ...d, open: o }))}
+    />
+  )
+
+  if (!open) return dialog
 
   return (
+    <>
+    {dialog}
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh]" onClick={() => setOpen(false)}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
@@ -165,5 +207,6 @@ export function CommandPalette() {
         </Command>
       </div>
     </div>
+    </>
   )
 }

@@ -1,7 +1,102 @@
 import { Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { cn, formatCurrency, symbolColor } from '@/lib/utils'
+import { BANK_NAMES, cn, formatCurrency, symbolColor } from '@/lib/utils'
 import type { PortfolioPosition } from '@/lib/api'
+
+// Orden de los grupos; los brokers que no estén aquí van detrás, por nombre
+const BROKER_ORDER = ['trade_republic', 'myinvestor', 'revolut', 'n26', 'wise', 'other', 'manual']
+
+const positionValue = (p: PortfolioPosition) =>
+  p.shares > 0.0001 && p.market_value != null ? p.market_value : p.total_invested
+
+const brokerOf = (p: PortfolioPosition) => p.broker || (p.is_manual ? 'manual' : 'other')
+
+function groupByBroker(positions: PortfolioPosition[]) {
+  const groups = new Map<string, PortfolioPosition[]>()
+  for (const p of positions) {
+    const key = brokerOf(p)
+    groups.set(key, [...(groups.get(key) ?? []), p])
+  }
+  const rank = (k: string) => {
+    const i = BROKER_ORDER.indexOf(k)
+    return i === -1 ? BROKER_ORDER.length - 1 : i // desconocidos antes de «manual»
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+    .map(([key, items]) => ({
+      key,
+      label: BANK_NAMES[key] ?? key.replace(/_/g, ' '),
+      items,
+      value: items.reduce((s, p) => s + positionValue(p), 0),
+      pnl: items.reduce((s, p) => s + (p.shares > 0.0001 ? p.unrealized_pnl ?? 0 : 0), 0),
+    }))
+}
+
+function PositionRow({ p, totalMarketValue, onDeleteManual }: {
+  p: PortfolioPosition
+  totalMarketValue: number
+  onDeleteManual: (id: number, symbol: string) => void
+}) {
+  const sharesKnown = p.shares > 0.0001
+  const value = positionValue(p)
+  const weightPct = totalMarketValue > 0 ? Math.min(100, Math.max(0, (value / totalMarketValue) * 100)) : 0
+  const gain = sharesKnown ? (p.unrealized_pnl ?? 0) >= 0 : true
+  const badgeColor = symbolColor(p.symbol)
+  return (
+    <div className="px-4 py-3 flex items-center gap-3">
+      <div
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-display text-[11px] font-bold tracking-tight"
+        style={{ backgroundColor: `${badgeColor}22`, color: badgeColor }}
+      >
+        {p.symbol.slice(0, 4)}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-medium truncate">{p.name}</p>
+          {p.is_manual && (
+            <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wider text-primary/70 border border-primary/20 rounded px-1 py-0.5">manual</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {sharesKnown ? `${p.shares.toFixed(6)} acc.` : '? acc.'}
+          </span>
+          {!sharesKnown && !p.is_manual && (
+            <span className="text-xs text-warning/80" title="Reconecta TR para ver acciones">sync pendiente</span>
+          )}
+        </div>
+      </div>
+      <div className="text-right shrink-0">
+        <p className="text-sm font-semibold tabular-nums">{formatCurrency(value)}</p>
+        {sharesKnown && p.unrealized_pnl != null && (
+          <p className={`text-xs font-medium tabular-nums ${p.unrealized_pnl >= 0 ? 'text-positive' : 'text-negative'}`}>
+            {p.unrealized_pnl >= 0 ? '+' : ''}{formatCurrency(p.unrealized_pnl)}
+            {p.unrealized_pnl_pct != null && (
+              <span className="opacity-70 ml-1">({p.unrealized_pnl_pct >= 0 ? '+' : ''}{p.unrealized_pnl_pct.toFixed(1)}%)</span>
+            )}
+          </p>
+        )}
+      </div>
+      <div className="hidden w-14 shrink-0 sm:block" title={`${weightPct.toFixed(0)}% del total`}>
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+          <div
+            className={cn('h-full rounded-full', gain ? 'bg-positive' : 'bg-negative')}
+            style={{ width: `${Math.max(4, weightPct)}%` }}
+          />
+        </div>
+      </div>
+      {p.is_manual && p.manual_id != null && (
+        <button
+          onClick={() => onDeleteManual(p.manual_id!, p.symbol)}
+          className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-negative hover:bg-negative/10 transition-colors"
+          aria-label="Eliminar posición manual"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  )
+}
 
 export function OpenPositionsList({
   positions,
@@ -14,6 +109,10 @@ export function OpenPositionsList({
   totalUnrealized: number
   onDeleteManual: (id: number, symbol: string) => void
 }) {
+  const groups = groupByBroker(positions)
+  // Con un solo broker los encabezados no aportan nada
+  const showHeaders = groups.length > 1
+
   return (
     <Card className="relative overflow-hidden rounded-2xl card-hover">
       <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-primary/[0.04] blur-3xl" />
@@ -23,72 +122,39 @@ export function OpenPositionsList({
         </CardTitle>
       </CardHeader>
       <CardContent className="relative z-10 p-0">
-        <div className="divide-y divide-border/50">
-          {positions.map(p => {
-            const sharesKnown = p.shares > 0.0001
-            const value = sharesKnown && p.market_value != null ? p.market_value : p.total_invested
-            const weightPct = totalMarketValue > 0 ? Math.min(100, Math.max(0, (value / totalMarketValue) * 100)) : 0
-            const gain = sharesKnown ? (p.unrealized_pnl ?? 0) >= 0 : true
-            const badgeColor = symbolColor(p.symbol)
-            return (
-              <div key={p.symbol} className="px-4 py-3 flex items-center gap-3">
-                <div
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-display text-[11px] font-bold tracking-tight"
-                  style={{ backgroundColor: `${badgeColor}22`, color: badgeColor }}
-                >
-                  {p.symbol.slice(0, 4)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-sm font-medium truncate">{p.name}</p>
-                    {p.is_manual && (
-                      <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wider text-primary/70 border border-primary/20 rounded px-1 py-0.5">manual</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {sharesKnown ? `${p.shares.toFixed(6)} acc.` : '? acc.'}
+        {groups.map(g => {
+          const share = totalMarketValue > 0 ? (g.value / totalMarketValue) * 100 : 0
+          return (
+            <section key={g.key} aria-label={g.label}>
+              {showHeaders && (
+                <div className="flex items-center justify-between gap-3 border-y border-border/60 bg-muted/30 px-4 py-1.5 first:border-t-0">
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{g.label}</span>
+                    <span className="text-[11px] text-muted-foreground/70 tabular-nums">
+                      {g.items.length} {g.items.length === 1 ? 'posición' : 'posiciones'} · {share.toFixed(0)}%
                     </span>
-                    {!sharesKnown && !p.is_manual && (
-                      <span className="text-xs text-warning/80" title="Reconecta TR para ver acciones">sync pendiente</span>
+                  </div>
+                  <div className="flex shrink-0 items-baseline gap-2 tabular-nums">
+                    <span className="text-xs font-semibold">{formatCurrency(g.value)}</span>
+                    {g.pnl !== 0 && (
+                      <span className={cn('text-[11px] font-medium', g.pnl >= 0 ? 'text-positive' : 'text-negative')}>
+                        {g.pnl >= 0 ? '+' : ''}{formatCurrency(g.pnl)}
+                      </span>
                     )}
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-semibold tabular-nums">{formatCurrency(value)}</p>
-                  {sharesKnown && p.unrealized_pnl != null && (
-                    <p className={`text-xs font-medium tabular-nums ${p.unrealized_pnl >= 0 ? 'text-positive' : 'text-negative'}`}>
-                      {p.unrealized_pnl >= 0 ? '+' : ''}{formatCurrency(p.unrealized_pnl)}
-                      {p.unrealized_pnl_pct != null && (
-                        <span className="opacity-70 ml-1">({p.unrealized_pnl_pct >= 0 ? '+' : ''}{p.unrealized_pnl_pct.toFixed(1)}%)</span>
-                      )}
-                    </p>
-                  )}
-                </div>
-                <div className="hidden w-14 shrink-0 sm:block" title={`${weightPct.toFixed(0)}% del total`}>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-                    <div
-                      className={cn('h-full rounded-full', gain ? 'bg-positive' : 'bg-negative')}
-                      style={{ width: `${Math.max(4, weightPct)}%` }}
-                    />
-                  </div>
-                </div>
-                {p.is_manual && p.manual_id != null && (
-                  <button
-                    onClick={() => onDeleteManual(p.manual_id!, p.symbol)}
-                    className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-negative hover:bg-negative/10 transition-colors"
-                    aria-label="Eliminar posición manual"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
+              )}
+              <div className="divide-y divide-border/50">
+                {g.items.map(p => (
+                  <PositionRow key={p.symbol} p={p} totalMarketValue={totalMarketValue} onDeleteManual={onDeleteManual} />
+                ))}
               </div>
-            )
-          })}
-          {positions.length === 0 && (
-            <p className="px-4 py-8 text-center text-sm text-muted-foreground">Sin posiciones abiertas</p>
-          )}
-        </div>
+            </section>
+          )
+        })}
+        {positions.length === 0 && (
+          <p className="px-4 py-8 text-center text-sm text-muted-foreground">Sin posiciones abiertas</p>
+        )}
 
         {/* Totales */}
         {positions.length > 0 && (

@@ -844,6 +844,7 @@ async def tr_sync(
             category_id=category_id,
             is_auto_categorized=is_auto,
             is_internal_transfer=is_internal,
+            source="trade_republic",
             **row,
         )
         try:
@@ -1245,6 +1246,7 @@ async def tr_import_missing(
             category_id=category_id,
             is_auto_categorized=is_auto,
             is_internal_transfer=is_internal,
+            source="trade_republic",
             **row,
         )
         try:
