@@ -273,7 +273,7 @@ export interface MonthlyTrend { month: string; income: number; expenses: number;
 export interface UpcomingRecurring { id: number; display_name: string; avg_amount: number; next_expected_date: string | null; days_until: number | null; category: Category | null }
 export interface PendingRecurring { group_id: number; display_name: string; avg_amount: number; category_name: string; category_color: string; category_icon: string; next_expected_date: string | null }
 export interface TradeEvent { date: string; shares: number; price_eur: number; total_eur: number }
-export interface PortfolioPosition { symbol: string; name: string; asset_class: string; shares: number; avg_buy_price: number; total_invested: number; realized_pnl: number; dividends_received: number; first_purchase_date: string | null; buy_dates: string[]; sell_dates: string[]; buy_events: TradeEvent[]; sell_events: TradeEvent[]; current_price: number | null; market_value: number | null; unrealized_pnl: number | null; unrealized_pnl_pct: number | null; is_manual?: boolean; manual_id?: number | null }
+export interface PortfolioPosition { symbol: string; name: string; asset_class: string; shares: number; avg_buy_price: number; total_invested: number; realized_pnl: number; dividends_received: number; first_purchase_date: string | null; buy_dates: string[]; sell_dates: string[]; buy_events: TradeEvent[]; sell_events: TradeEvent[]; current_price: number | null; market_value: number | null; unrealized_pnl: number | null; unrealized_pnl_pct: number | null; is_manual?: boolean; manual_id?: number | null; broker?: string | null }
 export interface StockSearchResult { ticker: string; name: string; exchange: string; currency: string; type_disp: string }
 export interface ManualPosition { id: number; ticker: string; name: string; shares: number; avg_price_eur: number; currency: string; created_at: string }
 export interface PortfolioPerformance { total_invested: number; total_realized_pnl: number; total_fees: number; total_dividends: number; total_market_value: number; total_unrealized_pnl: number; positions: PortfolioPosition[]; dividends_by_asset: { symbol: string; name: string; total: number; count: number }[] }
@@ -492,6 +492,158 @@ export const miApi = {
   accounts: () => request<{ checking: MICheckingAccount[]; savings: MISavingsAccount[] }>('/mi/accounts'),
   portfolioHistory: (period = 'DESDE_INICIO') => request<unknown[]>(`/mi/portfolio-history?period=${period}`),
   disconnect: () => request<{ ok: boolean }>('/mi/disconnect', { method: 'POST' }),
+}
+
+// Exportación de datos
+export type ExportFormat = 'xlsx' | 'csv' | 'json' | 'ofx'
+export type ExportPeriod = 'all' | 'month' | 'year' | 'range'
+export type ExportSectionKey =
+  | 'transactions' | 'banks' | 'monthly' | 'categories_by_month'
+  | 'portfolio' | 'budgets' | 'recurring' | 'debts' | 'goals' | 'categories' | 'rules'
+
+export interface ExportMonth {
+  month: string
+  label: string
+  count: number
+  income: number
+  expenses: number
+}
+export interface ExportBank {
+  key: string
+  label: string
+  count: number
+  first_date: string | null
+  last_date: string | null
+}
+export interface ExportSummary {
+  first_date: string | null
+  last_date: string | null
+  months: ExportMonth[]
+  banks: ExportBank[]
+  years: number[]
+  counts: Record<string, number>
+}
+export interface ExportParams {
+  format: ExportFormat
+  period?: ExportPeriod
+  month?: string
+  year?: number
+  date_from?: string
+  date_to?: string
+  sections?: ExportSectionKey[]
+  banks?: string[]
+  split?: boolean
+  split_bank?: boolean
+}
+
+function exportQuery(p: ExportParams): string {
+  const q = new URLSearchParams({ format: p.format, period: p.period ?? 'all' })
+  if (p.month) q.set('month', p.month)
+  if (p.year) q.set('year', String(p.year))
+  if (p.date_from) q.set('date_from', p.date_from)
+  if (p.date_to) q.set('date_to', p.date_to)
+  if (p.sections?.length) q.set('sections', p.sections.join(','))
+  if (p.banks?.length) q.set('banks', p.banks.join(','))
+  if (p.split) q.set('split', 'true')
+  if (p.split_bank) q.set('split_bank', 'true')
+  return q.toString()
+}
+
+function filenameFrom(disposition: string | null, fallback: string): string {
+  if (!disposition) return fallback
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition)
+  if (star) {
+    try { return decodeURIComponent(star[1].trim()) } catch { /* sigue con filename= */ }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(disposition)
+  return plain ? plain[1].trim() : fallback
+}
+
+/** Pide el archivo al backend y devuelve el blob con el nombre que propone. */
+async function fetchExport(p: ExportParams): Promise<{ blob: Blob; filename: string }> {
+  const token = getToken()
+  const res = await fetch(`${BASE}/export?${exportQuery(p)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (res.status === 401) {
+    localStorage.removeItem('fm_token')
+    localStorage.removeItem('fm-auth')
+    window.location.replace('/login')
+    throw new Error('Sesión caducada. Inicia sesión de nuevo.')
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'No se pudo exportar')
+  }
+  const blob = await res.blob()
+  return { blob, filename: filenameFrom(res.headers.get('Content-Disposition'), `financemaster.${p.format}`) }
+}
+
+export function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+export const exportApi = {
+  summary: () => request<ExportSummary>('/export/summary'),
+  fetch: fetchExport,
+  /** Descarga directa; devuelve el nombre del archivo guardado. */
+  download: async (p: ExportParams): Promise<string> => {
+    const { blob, filename } = await fetchExport(p)
+    saveBlob(blob, filename)
+    return filename
+  },
+}
+
+// Copia completa de la cuenta (para llevarla a otra instalación)
+export type BackupCounts = Record<string, number>
+export interface BackupPreview {
+  exported_at: string | null
+  user: { username?: string; email?: string; created_at?: string | null }
+  counts: BackupCounts
+  labels: Record<string, string>
+  first_date: string | null
+  last_date: string | null
+  sources: Record<string, number>
+  current: BackupCounts
+}
+
+function backupForm(file: File): FormData {
+  const fd = new FormData()
+  fd.append('file', file)
+  return fd
+}
+
+export const accountApi = {
+  backupSummary: () => request<{ counts: BackupCounts; labels: Record<string, string> }>('/account/backup/summary'),
+  /** Descarga la copia; devuelve el nombre del archivo guardado. */
+  downloadBackup: async (): Promise<string> => {
+    const token = getToken()
+    const res = await fetch(`${BASE}/account/backup`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    if (res.status === 401) {
+      localStorage.removeItem('fm_token')
+      localStorage.removeItem('fm-auth')
+      window.location.replace('/login')
+      throw new Error('Sesión caducada. Inicia sesión de nuevo.')
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(err.detail || 'No se pudo descargar la copia')
+    }
+    const filename = filenameFrom(res.headers.get('Content-Disposition'), 'financemaster-cuenta.json')
+    saveBlob(await res.blob(), filename)
+    return filename
+  },
+  previewRestore: (file: File) =>
+    request<BackupPreview>('/account/restore/preview', { method: 'POST', body: backupForm(file) }),
+  restore: (file: File) =>
+    request<{ ok: boolean; restored: BackupCounts }>('/account/restore', { method: 'POST', body: backupForm(file) }),
 }
 
 // API token

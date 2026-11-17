@@ -158,6 +158,7 @@ class TransactionOut(BaseModel):
     link_group_id: Optional[int] = None
     is_link_primary: bool = False
     effective_amount: Optional[float] = None
+    source: Optional[str] = None
     linked_transactions: Optional[List["TransactionOut"]] = None
     model_config = {"from_attributes": True}
 
@@ -321,6 +322,8 @@ class PortfolioPosition(BaseModel):
     unrealized_pnl_pct: Optional[float] = None
     is_manual: bool = False
     manual_id: Optional[int] = None
+    # Banco/broker donde está la posición (trade_republic, myinvestor, manual…)
+    broker: Optional[str] = None
 
 
 class StockSearchResult(BaseModel):

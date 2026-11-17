@@ -13,6 +13,16 @@ from ..services.portfolio_calculator import calculate_portfolio, _get_yahoo_pric
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
 
+def _with_brokers(db: Session, user_id: int, perf: schemas.PortfolioPerformance) -> schemas.PortfolioPerformance:
+    """Marca en cada posición el banco/broker donde se compró (el más frecuente en sus movimientos)."""
+    from ..services.data_export import symbol_banks
+    banks = symbol_banks(db, user_id)
+    for p in perf.positions:
+        if p.broker is None:
+            p.broker = "manual" if p.is_manual else banks.get(p.symbol, "other")
+    return perf
+
+
 @router.get("/live", response_model=schemas.PortfolioPerformance)
 async def get_live_portfolio(
     current_user: models.User = Depends(auth.get_current_user),
@@ -126,6 +136,7 @@ async def get_live_portfolio(
             market_value=round(market_value, 2) if market_value else None,
             unrealized_pnl=unrealized_pnl,
             unrealized_pnl_pct=unrealized_pnl_pct,
+            broker="trade_republic",
         ))
 
         total_invested += invested
@@ -133,13 +144,36 @@ async def get_live_portfolio(
             total_market_value += market_value
             total_unrealized_pnl += unrealized_pnl or 0
 
+    # TR solo conoce lo suyo: las posiciones de otros brokers (MyInvestor…) y las
+    # manuales salen de los movimientos importados.
+    total_realized = total_fees = total_dividends = 0.0
+    try:
+        calc = _with_brokers(db, current_user.id, calculate_portfolio(db, current_user.id))
+    except Exception:
+        log.exception("No se pudieron calcular las posiciones de otros brokers")
+        calc = None
+    if calc:
+        tr_symbols = {p.symbol for p in positions_out}
+        for p in calc.positions:
+            if p.broker == "trade_republic" or p.symbol in tr_symbols:
+                continue
+            if p.shares <= 0.0001 and not p.is_manual:
+                continue
+            positions_out.append(p)
+            total_invested += p.total_invested
+            total_realized += p.realized_pnl
+            total_dividends += p.dividends_received
+            if p.market_value:
+                total_market_value += p.market_value
+                total_unrealized_pnl += p.unrealized_pnl or 0
+
     positions_out.sort(key=lambda p: p.total_invested, reverse=True)
 
     return schemas.PortfolioPerformance(
         total_invested=round(total_invested, 2),
-        total_realized_pnl=0.0,
-        total_fees=0.0,
-        total_dividends=0.0,
+        total_realized_pnl=round(total_realized, 2),
+        total_fees=round(total_fees, 2),
+        total_dividends=round(total_dividends, 2),
         total_market_value=round(total_market_value, 2),
         total_unrealized_pnl=round(total_unrealized_pnl, 2),
         positions=positions_out,
@@ -379,7 +413,7 @@ def get_performance(
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
-    return calculate_portfolio(db, current_user.id)
+    return _with_brokers(db, current_user.id, calculate_portfolio(db, current_user.id))
 
 
 @router.get("/history", response_model=schemas.TransactionListResponse)

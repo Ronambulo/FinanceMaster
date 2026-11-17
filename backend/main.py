@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from .database import engine
 from . import models
-from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic, myinvestor, integrations, admin
+from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic, myinvestor, integrations, admin, export, account
 from .services.categorizer import seed_system_categories
 from .database import SessionLocal
 from sqlalchemy import text
@@ -49,6 +49,22 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT FALSE",
             "ALTER TABLE users ADD COLUMN ai_enabled BOOLEAN DEFAULT FALSE",
             "ALTER TABLE users ADD COLUMN ai_model VARCHAR",
+            "ALTER TABLE transactions ADD COLUMN source VARCHAR",
+        ]:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass
+
+        # Rellena el banco de los movimientos anteriores a la columna `source`
+        # a partir del formato de su external_id (idempotente: solo toca NULL).
+        for stmt in [
+            "UPDATE transactions SET source = 'myinvestor' WHERE source IS NULL AND external_id LIKE 'myinvestor-%'",
+            "UPDATE transactions SET source = 'wise' WHERE source IS NULL AND external_id LIKE 'wise^_%' ESCAPE '^'",
+            "UPDATE transactions SET source = 'trade_republic' WHERE source IS NULL "
+            "AND external_id LIKE '________-____-____-____-____________%'",
+            "UPDATE transactions SET source = 'manual' WHERE source IS NULL AND external_id IS NULL",
         ]:
             try:
                 conn.execute(text(stmt))
@@ -137,6 +153,8 @@ app.include_router(trade_republic.router)
 app.include_router(myinvestor.router)
 app.include_router(integrations.router)
 app.include_router(admin.router)
+app.include_router(export.router)
+app.include_router(account.router)
 
 
 # Serve React frontend

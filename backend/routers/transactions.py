@@ -195,6 +195,7 @@ def create_transaction(
         user_id=current_user.id,
         account_category="CASH",
         is_auto_categorized=False,
+        source="manual",
         **data.model_dump(),
     )
     db.add(tx)
@@ -254,6 +255,7 @@ def create_quick_transaction(
         category_id=category_id,
         is_auto_categorized=is_auto,
         is_internal_transfer=False,
+        source="manual",
     )
     db.add(tx)
     db.commit()
@@ -432,6 +434,7 @@ async def import_csv(
             category_id=category_id,
             is_auto_categorized=is_auto,
             is_internal_transfer=is_internal,
+            source=detected_bank,
             **row,
         )
         # Savepoint por fila: un fallo descarta solo esa fila, no todo lo anterior

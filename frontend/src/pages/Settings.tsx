@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useToast } from '@/components/ui/toast'
 import {
   Plus, Lock, Palette, Plug, LayoutGrid, Sparkles,
-  Tags, ListFilter, Layers, Wrench, ChevronLeft, ChevronRight, Search,
+  Tags, ListFilter, Layers, Wrench, ChevronLeft, ChevronRight, Search, Download, DatabaseBackup,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { useFeaturesStore } from '@/store/features'
@@ -29,11 +29,13 @@ import { SecuritySection } from '@/components/SecuritySection'
 import { AiUsageSection } from '@/components/AiUsageSection'
 import { IntegrationsSection } from '@/components/IntegrationsSection'
 import { DiagnosticsSection } from '@/components/DiagnosticsSection'
+import { ExportSection } from '@/components/ExportSection'
+import { AccountBackupSection } from '@/components/AccountBackupSection'
 
 type SectionId =
-  | 'categories' | 'rules' | 'system'
+  | 'categories' | 'rules' | 'system' | 'export'
   | 'appearance' | 'features'
-  | 'security' | 'ai-usage'
+  | 'security' | 'backup' | 'ai-usage'
   | 'integrations' | 'diagnostics'
 
 interface SectionMeta {
@@ -54,6 +56,8 @@ const GROUPS: { label: string; sections: SectionMeta[] }[] = [
         desc: 'Si un movimiento contiene la palabra clave, se le asigna la categoría. Se aplican al importar y, si quieres, a lo ya importado.' },
       { id: 'system', label: 'Sistema', icon: Layers, keywords: 'sistema categorias predeterminadas',
         desc: 'Categorías predefinidas. Puedes cambiar su icono y su color.' },
+      { id: 'export', label: 'Exportar', icon: Download, keywords: 'exportar descargar copia seguridad backup excel csv json pdf ofx banco mes informe',
+        desc: 'Descarga tus datos en Excel, CSV, PDF, JSON u OFX: todo, mes a mes o por banco.' },
     ],
   },
   {
@@ -70,6 +74,8 @@ const GROUPS: { label: string; sections: SectionMeta[] }[] = [
     sections: [
       { id: 'security', label: 'Seguridad', icon: Lock, keywords: 'contraseña password cuenta eliminar borrar',
         desc: 'Contraseña y gestión de la cuenta.' },
+      { id: 'backup', label: 'Copia de la cuenta', icon: DatabaseBackup, keywords: 'copia seguridad backup restaurar importar exportar cuenta migrar servidor local',
+        desc: 'Guarda toda tu cuenta en un archivo y restáurala en otra instalación (por ejemplo, del servidor a local).' },
       { id: 'ai-usage', label: 'Uso de IA', icon: Sparkles, keywords: 'ia inteligencia artificial tokens coste asistente',
         desc: 'Consumo del asistente de IA por mes.' },
     ],
@@ -220,7 +226,9 @@ export function Settings() {
       case 'system': return <SystemCategoriesSection categories={systemCats} onEdit={setEditingCat} />
       case 'appearance': return <AppearanceSection />
       case 'features': return <FeaturesSection />
+      case 'export': return <ExportSection />
       case 'security': return <SecuritySection />
+      case 'backup': return <AccountBackupSection />
       case 'ai-usage': return <AiUsageSection />
       case 'integrations': return <IntegrationsSection />
       case 'diagnostics': return <DiagnosticsSection onGoToIntegrations={() => openSection('integrations')} />

@@ -119,6 +119,9 @@ class Transaction(Base):
     link_group_id = Column(Integer, ForeignKey("transaction_links.id"), nullable=True, index=True)
     is_link_primary = Column(Boolean, default=False)
     effective_amount = Column(Float, nullable=True)
+    # Banco/origen del movimiento: trade_republic, myinvestor, revolut, n26, wise,
+    # manual… (claves de bank_connectors.BANK_LABELS). NULL = desconocido.
+    source = Column(String, nullable=True)
     created_at = Column(DateTime, default=_dt.utcnow)
 
     __table_args__ = (
