@@ -13,6 +13,7 @@ import { PriceChart } from '@/components/PriceChart'
 import { AddManualPositionModal } from '@/components/AddManualPositionModal'
 import { PortfolioAllocationDonut } from '@/components/PortfolioAllocationDonut'
 import { OpenPositionsList } from '@/components/OpenPositionsList'
+import { CsvDropZone } from '@/components/CsvDropZone'
 
 export function Portfolio() {
   const { data: trStatus } = useQuery({ queryKey: ['tr-status'], queryFn: trApi.status, staleTime: 30_000 })
@@ -120,6 +121,8 @@ export function Portfolio() {
 
   return (
     <div className="space-y-6">
+      {/* Atajo oculto: soltar el CSV de órdenes de MyInvestor en cualquier parte */}
+      <CsvDropZone />
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

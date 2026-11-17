@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from .. import models, auth
 from ..database import get_db
+from ..services.external_brokers import affects_cash_clause
 from ..services.trade_republic_api import (
     TradeRepublicAPI,
     TRConnectionError,
@@ -72,6 +73,7 @@ def _dedupe_transactions(db: Session, user_id: int) -> int:
     result = db.execute(text("""
         DELETE FROM transactions
         WHERE user_id = :uid
+          AND (external_id IS NULL OR external_id NOT LIKE 'myinvestor-%')
           AND id NOT IN (
             SELECT MIN(id)
             FROM transactions
@@ -91,6 +93,7 @@ def _already_exists(db: Session, user_id: int, row: dict) -> bool:
             models.Transaction.date == row["date"],
             models.Transaction.amount == row["amount"],
             models.Transaction.type == row["type"],
+            affects_cash_clause(),
         )
     ).first() is not None
 
@@ -1061,7 +1064,8 @@ async def tr_debug_balance(
 
     # Get all DB transactions for this user
     db_rows = db.query(models.Transaction).filter(
-        models.Transaction.user_id == current_user.id
+        models.Transaction.user_id == current_user.id,
+        affects_cash_clause(),
     ).all()
 
     db_sum = round(sum(r.amount for r in db_rows), 2)
@@ -1150,9 +1154,11 @@ async def tr_fix_orphans(
         else:
             tr_event_ids.add(eid)
 
+    # Las órdenes de brokers externos (MyInvestor) nunca están en el timeline de TR
     db_rows = db.query(models.Transaction).filter(
         models.Transaction.user_id == current_user.id,
         models.Transaction.external_id.isnot(None),
+        affects_cash_clause(),
     ).all()
 
     deleted_cancelled = []

@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from .. import models, auth
 from ..database import get_db
 from ..services import ai_usage
+from ..services.external_brokers import affects_cash_clause
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -694,7 +695,7 @@ def execute_tool(tool_name: str, tool_input: dict, db: Session, user_id: int) ->
                 + func.coalesce(models.Transaction.fee, 0.0)
                 + func.coalesce(models.Transaction.tax, 0.0)
             )
-        ).filter(models.Transaction.user_id == user_id).scalar()
+        ).filter(models.Transaction.user_id == user_id, affects_cash_clause()).scalar()
         cash_balance = round(balance_raw or 0.0, 2)
 
         portfolio_val = 0.0

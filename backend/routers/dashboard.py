@@ -5,6 +5,7 @@ from sqlalchemy import func, extract, or_
 from sqlalchemy.orm import Session, joinedload
 from .. import models, schemas, auth
 from ..database import get_db
+from ..services.external_brokers import affects_cash_clause
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -75,7 +76,10 @@ def overview(
             + func.coalesce(models.Transaction.fee, 0.0)
             + func.coalesce(models.Transaction.tax, 0.0)
         )
-    ).filter(models.Transaction.user_id == current_user.id).scalar()
+    ).filter(
+        models.Transaction.user_id == current_user.id,
+        affects_cash_clause(),
+    ).scalar()
     balance = round(balance_raw or 0.0, 2)
 
     return schemas.DashboardOverview(
@@ -347,7 +351,7 @@ def net_worth_history(
     # worth. Fees and taxes are added for the same reason as in /overview.
     cash_txs = (
         db.query(models.Transaction)
-        .filter(models.Transaction.user_id == current_user.id)
+        .filter(models.Transaction.user_id == current_user.id, affects_cash_clause())
         .order_by(models.Transaction.date)
         .all()
     )
