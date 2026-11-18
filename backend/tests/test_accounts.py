@@ -30,3 +30,30 @@ def test_accounts_groups_by_source(user_client, db):
 def test_accounts_is_per_user(user_client, db):
     client, uid = user_client
     assert client.get("/api/dashboard/accounts").json() == []
+
+
+def test_manual_account_list_matches_balance(user_client, db):
+    """Los movimientos que suman en el saldo de "Manual" salen al filtrar por esa cuenta."""
+    client, uid = user_client
+    add_tx(db, uid, source="", external_id=None, amount=1500.0, type="CUSTOMER_INPAYMENT", name="Vacío")
+    add_tx(db, uid, source=None, external_id=None, amount=-5.0, name="Nulo")
+    add_tx(db, uid, source="manual", amount=-15.0, name="Manual")
+    # Fusionado con un principal de otra cuenta: suma en Manual y también debe verse.
+    bank = add_tx(db, uid, source="bbva", amount=-30.0, name="Banco", link_group_id=7, is_link_primary=True)
+    add_tx(db, uid, source="manual", amount=-30.0, name="Copia", link_group_id=7, is_link_primary=False)
+    add_tx(db, uid, source="bbva", amount=-1.0, name="Otro")
+
+    by = {a["source"]: a for a in client.get("/api/dashboard/accounts").json()}
+    r = client.get("/api/transactions", params={"source": "manual", "page_size": 100})
+    assert r.status_code == 200, r.text
+    names = sorted(t["name"] for t in r.json()["items"])
+    assert names == ["Copia", "Manual", "Nulo", "Vacío"]
+    assert by["manual"]["count"] == 4
+
+    # Sin filtro de cuenta la fusión sigue saliendo una sola vez (su principal).
+    all_names = [t["name"] for t in client.get("/api/transactions", params={"page_size": 100}).json()["items"]]
+    assert "Copia" not in all_names and "Banco" in all_names
+    # Filtrando por el banco se ve el principal.
+    bnames = sorted(t["name"] for t in client.get("/api/transactions", params={"source": "bbva"}).json()["items"])
+    assert bnames == ["Banco", "Otro"]
+    assert bank.id

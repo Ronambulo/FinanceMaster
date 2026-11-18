@@ -43,6 +43,7 @@ TABLES: List[Tuple[str, Type[models.Base]]] = [
     ("goals", models.Goal),
     ("savings_allocations", models.SavingsAllocation),
     ("manual_positions", models.ManualPosition),
+    ("asset_type_overrides", models.AssetTypeOverride),
 ]
 
 LABELS = {
@@ -57,6 +58,7 @@ LABELS = {
     "goals": "Objetivos",
     "savings_allocations": "Reparto de ahorro",
     "manual_positions": "Posiciones manuales",
+    "asset_type_overrides": "Tipos de activo",
 }
 
 # Columna -> tabla a la que apunta (para reescribir ids al restaurar)
@@ -192,7 +194,7 @@ def _wipe(db: Session, uid: int) -> None:
     """Borra todo lo que la copia va a reemplazar, en orden inverso de dependencias."""
     debt_ids = select(models.Debt.id).where(models.Debt.user_id == uid)
     db.query(models.DebtPayment).filter(models.DebtPayment.debt_id.in_(debt_ids)).delete(synchronize_session=False)
-    for model in (models.Debt, models.Goal, models.SavingsAllocation, models.ManualPosition,
+    for model in (models.Debt, models.Goal, models.SavingsAllocation, models.ManualPosition, models.AssetTypeOverride,
                   models.Budget, models.CategoryRule, models.Transaction, models.TransactionLink,
                   models.RecurringGroup, models.Insight):
         db.query(model).filter(model.user_id == uid).delete(synchronize_session=False)

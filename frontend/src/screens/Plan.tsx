@@ -5,7 +5,8 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  budgetApi, catApi, dashApi, debtApi, goalApi, recurringApi, txApi,
+  budgetApi, catApi, dashApi, debtApi, exportApi, goalApi, recurringApi, txApi,
+  type MonthlyDetailRow,
   type BudgetStatus, type Category, type Debt, type Goal, type MonthlyTrend, type RecurringGroup,
 } from '@/lib/api'
 import { isModuleOn, type ModuleId } from '@/lib/preferences'
@@ -15,11 +16,12 @@ import { categoriesFor, monthKey, parseAmount, shortDate } from '@/lib/movements
 import {
   TONE_COLORS, badges, bestMonth, budgetTone, budgetTotals, budgetsSummary, daysLeftInMonth, debtTotals, debtsSummary,
   goalSub, goalTarget, goalsReserved, goalsSummary, lastGreenMonth, linePoints, longMonth, longestStreak, monthlySummary,
-  recurringMonthly, recurringSummary, recurringWhen, savingsAverage, spendBars, spendChange, streakDays,
+  periodText, recurringMonthDays, recurringMonthly, recurringSummary, recurringWhen, savingsAverage, spendBars, spendChange, streakDays,
 } from '@/lib/plan'
 import { PCHeader, useIsPC } from '@/app/Shell'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
-import { bestCycle, calendarCycles, cycleAverage, cycleRows, previousSpendAligned } from '@/lib/cycles'
+import { usePeriodWords } from '@/hooks/usePeriodWords'
+import { bestCycle, calendarCycles, cycleAverage, cycleDaysLeft, cycleEstimatedEnd, cycleMonth, cycleRows, previousSpendAligned } from '@/lib/cycles'
 import { CatPickSheet } from '@/ui/CatPick'
 import { confirm } from '@/ui/Confirm'
 import { Icon, catTone, toneColors, toneIcon, CatGlyph, CatTile, type AnyIcon } from '@/ui/Icon'
@@ -35,9 +37,74 @@ const errText = (e: unknown) => (e instanceof Error && e.message ? e.message : '
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
 /** En PC las subpantallas van en una columna de 680 px. */
-function Page({ children }: { children: ReactNode }) {
+function Page({ children, wide }: { children: ReactNode; wide?: boolean }) {
   const pc = useIsPC()
-  return <div style={pc ? { maxWidth: 680 } : { paddingBottom: 40 }}>{children}</div>
+  return <div style={pc ? { maxWidth: wide ? 1400 : 680, paddingBottom: wide ? 32 : 0 } : { paddingBottom: 40 }}>{children}</div>
+}
+
+/** Cifra de resumen en PC. */
+function StatCard({ label, value, color }: { label: string; value: ReactNode; color?: string }) {
+  return (
+    <section style={{ ...card, padding: '16px 20px', minWidth: 0 }}>
+      <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>{label}</p>
+      <p style={{ margin: '2px 0 0', fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</p>
+    </section>
+  )
+}
+const pcLabel: CSSProperties = { margin: '18px 4px 8px' }
+const thStyle: CSSProperties = { fontSize: 12, fontWeight: 700, color: C.muted, whiteSpace: 'nowrap' }
+const numCell: CSSProperties = { textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+const cellText: CSSProperties = { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+function TableHead({ cols, labels, right = [] }: { cols: string; labels: string[]; right?: number[] }) {
+  return (
+    <div aria-hidden="true" style={{ display: 'grid', gridTemplateColumns: cols, gap: 14, padding: '10px 0 8px' }}>
+      {labels.map((l, i) => <span key={i} style={{ ...thStyle, textAlign: right.includes(i) ? 'right' : 'left' }}>{l}</span>)}
+    </div>
+  )
+}
+const dayMonth = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })
+
+/** Calendario del mes con los cargos fijos de cada día. */
+function RecurringCalendar({ groups, today }: { groups: RecurringGroup[]; today: Date }) {
+  const money = useMoney()
+  const y = today.getFullYear()
+  const m = today.getMonth()
+  const days = useMemo(() => recurringMonthDays(groups, y, m), [groups, y, m])
+  const n = new Date(y, m + 1, 0).getDate()
+  const lead = (new Date(y, m, 1).getDay() + 6) % 7
+  const title = new Date(y, m, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
+  const amt = (gs: RecurringGroup[]) => gs.reduce((a, g) => a + Math.abs(g.avg_amount ?? 0), 0)
+  const total = [...days.values()].reduce((a, gs) => a + amt(gs), 0)
+  const left = [...days.entries()].filter(([d]) => d >= today.getDate()).reduce((a, [, gs]) => a + amt(gs), 0)
+  return (
+    <section style={{ ...card, padding: '18px 20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+        <span style={{ fontWeight: 800, fontSize: 17, textTransform: 'capitalize' }}>{title}</span>
+        <span style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}>{money(total, { euro: true, decimals: 0 })}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4, marginTop: 14 }}>
+        {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(d => <span key={d} style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: C.muted, paddingBottom: 4 }}>{d}</span>)}
+        {Array.from({ length: lead }, (_, i) => <span key={`e${i}`} />)}
+        {Array.from({ length: n }, (_, i) => {
+          const d = i + 1
+          const hits = days.get(d) ?? []
+          const isToday = d === today.getDate()
+          const past = d < today.getDate()
+          return (
+            <div key={d} title={hits.length ? hits.map(g => `${g.display_name} ${money(-Math.abs(g.avg_amount ?? 0))}`).join('\n') : undefined}
+              style={{ height: 46, borderRadius: 12, background: hits.length ? C.field : 'transparent', boxShadow: isToday ? `inset 0 0 0 2px ${C.accent}` : undefined, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, opacity: past ? 0.45 : 1 }}>
+              <span style={{ fontSize: 13, fontWeight: hits.length || isToday ? 800 : 600, color: hits.length || isToday ? C.text : C.muted }}>{d}</span>
+              {hits.length > 0 && <span style={{ fontSize: 10, fontWeight: 800, color: C.red, lineHeight: 1 }}>{fmt0(amt(hits))}</span>}
+            </div>
+          )
+        })}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.line}` }}>
+        <span style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>Queda por pagar este mes</span>
+        <span style={{ fontSize: 14, fontWeight: 800 }}>{money(left, { euro: true })}</span>
+      </div>
+    </section>
+  )
 }
 
 function useModule(id: ModuleId) {
@@ -54,22 +121,65 @@ function useInvalidate() {
 
 interface Tile { id: ModuleId; to: string; icon: AnyIcon; title: string; sub: string }
 
+/** Ingresos y gastos de los últimos `n` ciclos de nómina (como Inicio y Mes a mes),
+ *  con la forma de la tendencia mensual: `month` es el mes al que pertenece cada ciclo. */
+function useCycleTrend(n: number, enabled = true) {
+  const payroll = usePayrollCycle(0)
+  const today = useMemo(() => new Date(), [])
+  const cycles = useMemo(
+    () => (payroll.cycles.length ? payroll.cycles.slice(-n) : calendarCycles(today, n)),
+    [payroll.cycles, n, today],
+  )
+  const range = cycles.length ? { date_from: cycles[0].start, date_to: cycles[cycles.length - 1].end } : null
+  const detail = useQuery({
+    queryKey: ['cycles-detail', range],
+    queryFn: () => dashApi.monthlyDetail(range!),
+    enabled: enabled && !payroll.loading && !!range,
+  })
+  const data = useMemo<MonthlyTrend[] | undefined>(
+    () => detail.data && cycleRows(cycles, detail.data).map(r => ({ month: cycleMonth(r), income: r.income, expenses: r.expenses, savings: r.savings })),
+    [detail.data, cycles],
+  )
+  return { data, isLoading: payroll.loading || detail.isLoading }
+}
+
+/** Estado de los presupuestos del ciclo de nómina actual. */
+function useBudgetStatus(enabled = true) {
+  const payroll = usePayrollCycle(0)
+  // El ciclo abierto acaba en hoy + 45 días; para prorratear el límite se usa su fin estimado.
+  const from = payroll.periodStart
+  // Si la nómina se retrasa, hoy ya pasó el fin estimado: no dejar fuera los últimos movimientos.
+  const est = payroll.cycles.length ? cycleEstimatedEnd(payroll.cycles, payroll.selectedCycleIdx) : payroll.periodEnd
+  const today = new Date().toLocaleDateString('sv')
+  const to = payroll.isLatestCycle && est && est < today ? today : est
+  return useQuery({
+    queryKey: ['budgets', 'status', from, to],
+    queryFn: () => budgetApi.status(undefined, from, to),
+    enabled: enabled && !payroll.loading && !!from && !!to,
+  })
+}
+
 function usePlanData(months: number) {
   const prefs = usePreferencesStore(s => s.prefs)
   const on = (id: ModuleId) => isModuleOn(prefs, id)
-  const trend = useQuery({ queryKey: ['monthly-trend', months], queryFn: () => dashApi.monthlyTrend(months) })
-  const budgets = useQuery({ queryKey: ['budgets', 'status', monthKey(new Date())], queryFn: () => budgetApi.status(monthKey(new Date())), enabled: on('budgets') })
+  // Hasta un año, por ciclos; la vista por años sigue usando meses naturales.
+  const byYear = months > 12
+  const cycleTrend = useCycleTrend(Math.min(months, 12), !byYear)
+  const yearTrend = useQuery({ queryKey: ['monthly-trend', months], queryFn: () => dashApi.monthlyTrend(months), enabled: byYear })
+  const trend = byYear ? yearTrend : cycleTrend
+  const budgets = useBudgetStatus(on('budgets'))
   const upcoming = useQuery({ queryKey: ['upcoming', 30], queryFn: () => dashApi.upcoming(30), enabled: on('recurring') })
   const goals = useQuery({ queryKey: ['goals'], queryFn: goalApi.list, enabled: on('goals') })
   const debts = useQuery({ queryKey: ['debts'], queryFn: debtApi.list, enabled: on('debts') })
   const streak = useStreak(on('achievements'))
+  const w = usePeriodWords()
   const today = new Date()
   const tiles: Tile[] = [
     { id: 'budgets' as const, to: '/presupuestos', icon: 'pie' as const, title: 'Presupuestos', sub: budgets.data ? budgetsSummary(budgets.data) : '' },
     { id: 'recurring' as const, to: '/recurrentes', icon: 'repeat' as const, title: 'Recurrentes', sub: upcoming.data ? recurringSummary(upcoming.data, today) : '' },
     { id: 'goals' as const, to: '/objetivos', icon: 'safe-open' as const, title: 'Objetivos', sub: goals.data ? goalsSummary(goals.data) : '' },
     { id: 'debts' as const, to: '/deudas', icon: 'receipt' as const, title: 'Deudas', sub: debts.data ? debtsSummary(debts.data) : '' },
-    { id: 'monthly' as const, to: '/monthly', icon: 'calendar' as const, title: 'Mes a mes', sub: trend.data ? monthlySummary(trend.data) : '' },
+    { id: 'monthly' as const, to: '/monthly', icon: 'calendar' as const, title: w.each, sub: trend.data ? monthlySummary(trend.data) : '' },
     { id: 'achievements' as const, to: '/logros', icon: 'trophy' as const, title: 'Logros', sub: streak.current > 0 ? `Racha de ${streak.current} ${streak.current === 1 ? 'día' : 'días'}` : 'Empieza tu racha' },
   ].filter(t => on(t.id))
   return { trend, budgets, tiles, on }
@@ -80,8 +190,8 @@ function Bars({ trend, height, radius, gap }: { trend: MonthlyTrend[]; height: n
   const bars = spendBars(trend)
   return (
     <div style={{ display: 'flex', gap, marginTop: height > 100 ? 16 : 14 }}>
-      {bars.map(b => (
-        <span key={b.month} title={`${b.label}: ${money(b.value, { euro: true })}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+      {bars.map((b, i) => (
+        <span key={`${b.month}-${i}`} title={`${b.label}: ${money(b.value, { euro: true })}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
           <span style={{ width: '100%', height, display: 'flex', alignItems: 'flex-end' }}>
             <span style={{ display: 'block', width: '100%', height: `${Math.max(4, Math.round(b.ratio * 100))}%`, borderRadius: radius, background: b.current ? 'var(--c-8b85ff)' : 'var(--track)' }} />
           </span>
@@ -92,7 +202,9 @@ function Bars({ trend, height, radius, gap }: { trend: MonthlyTrend[]; height: n
   )
 }
 
-function SpendCard({ trend, pc, title = 'Gasto por mes' }: { trend: MonthlyTrend[]; pc?: boolean; title?: string }) {
+function SpendCard({ trend, pc, title }: { trend: MonthlyTrend[]; pc?: boolean; title?: string }) {
+  const w = usePeriodWords()
+  title ??= `Gasto por ${w.unit}`
   const change = spendChange(trend)
   return (
     <>
@@ -131,7 +243,9 @@ export default function Plan() {
   const pc = useIsPC()
   const [range, setRange] = useState<'mes' | 'ano'>('mes')
   const d = usePlanData(pc ? (range === 'mes' ? 12 : 60) : 6)
-  const month = longMonth(monthKey(new Date()))
+  const payroll = usePayrollCycle(0)
+  const w = usePeriodWords()
+  const month = payroll.isPayrollCycle ? payroll.cycleRangeLabel : longMonth(monthKey(new Date()))
   const trend = d.trend.data ?? []
 
   if (pc) {
@@ -140,10 +254,10 @@ export default function Plan() {
     return (
       <>
         <PCHeader title="Plan" sub={month} search={false} add={false}
-          actions={<Segmented label="Periodo" value={range} onChange={setRange} options={[['mes', 'Mes'], ['ano', 'Año']]} style={{ margin: 0 }} />} />
+          actions={<Segmented label="Periodo" value={range} onChange={setRange} options={[['mes', w.Unit], ['ano', 'Año']]} style={{ margin: 0 }} />} />
         <div style={{ display: 'grid', gridTemplateColumns: budgetsOn ? '1.4fr 1fr' : '1fr', gap: 16 }}>
           <section style={{ ...card, borderRadius: 22, padding: '20px 24px' }}>
-            {d.trend.isLoading ? <Skeleton h={180} r={16} /> : <SpendCard trend={shown} pc title={range === 'mes' ? 'Gasto por mes' : 'Gasto por año'} />}
+            {d.trend.isLoading ? <Skeleton h={180} r={16} /> : <SpendCard trend={shown} pc title={range === 'mes' ? `Gasto por ${w.unit}` : 'Gasto por año'} />}
           </section>
           {budgetsOn && (
             <Link to="/presupuestos" style={{ ...card, borderRadius: 22, padding: '20px 24px', color: C.text, display: 'block' }}>
@@ -223,13 +337,13 @@ const fmtAuto = (n: number) => (Number.isInteger(Math.round(n * 100) / 100) ? fm
 
 export function Presupuestos() {
   const money = useMoney()
-  const month = monthKey(new Date())
-  const status = useQuery({ queryKey: ['budgets', 'status', month], queryFn: () => budgetApi.status(month) })
+  const payroll = usePayrollCycle(0)
+  const status = useBudgetStatus()
   const [edit, setEdit] = useState<BudgetStatus | 'new' | null>(null)
   const list = status.data ?? []
   const tot = budgetTotals(list)
   const pct = Math.round(tot.ratio * 100)
-  const left = daysLeftInMonth(new Date())
+  const left = payroll.cycles.length ? cycleDaysLeft(payroll.cycles, new Date()) : daysLeftInMonth(new Date())
 
   return (
     <Page>
@@ -338,6 +452,16 @@ export function Recurrentes() {
   const active = useMemo(() => all.filter(g => g.is_active).sort((a, b) => (a.next_expected_date ?? '9999').localeCompare(b.next_expected_date ?? '9999')), [all])
   // Sugerencias: detectados que aún no se han añadido ni descartado.
   const suggested = all.filter(g => !g.is_active && !g.is_dismissed)
+  const dismissed = all.filter(g => !g.is_active && g.is_dismissed)
+  const [showDismissed, setShowDismissed] = useState(false)
+  const restore = async (g: RecurringGroup) => {
+    try { await recurringApi.update(g.id, { is_dismissed: false }); invalidate(); toast(`${g.display_name} vuelve a sugerencias`) } catch (e) { toast(errText(e), { error: true }) }
+  }
+  const remove = async (g: RecurringGroup) => {
+    const ok = await confirm({ title: 'Eliminar recurrente', text: `Se eliminará ${g.display_name}. Sus movimientos no cambian.`, action: 'Eliminar', danger: true })
+    if (!ok) return
+    try { await recurringApi.delete(g.id); setOpen(null); invalidate(); toast('Recurrente eliminado') } catch (e) { toast(errText(e), { error: true }) }
+  }
   const detect = useMutation({
     mutationFn: recurringApi.detect,
     onSuccess: () => { invalidate(); toast('Recurrentes actualizados') },
@@ -355,57 +479,120 @@ export function Recurrentes() {
     } catch (e) { toast(errText(e), { error: true }) }
   }
 
+  const pc = useIsPC()
+  const monthly = recurringMonthly(all)
+  const activeList = (
+    <Section style={pc ? { margin: 0 } : undefined}>
+      {active.map((g, i) => (
+        <div key={g.id}>
+          {i > 0 && <Divider margin="0" />}
+          <a role="button" tabIndex={0} onClick={() => setOpen(g)} onKeyDown={e => e.key === 'Enter' && setOpen(g)} style={{ display: 'grid', gridTemplateColumns: pc ? '40px minmax(0, 1fr) minmax(0, 200px) 110px' : '40px minmax(0, 1fr) auto', gap: 12, alignItems: 'center', padding: '10px 0', color: C.text, cursor: 'pointer' }}>
+            <MerchantTile name={g.display_name} category={g.category?.name} type={g.category?.type ?? 'expense'} />
+            {pc ? (
+              <>
+                <span style={{ minWidth: 0, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.display_name}</span>
+                <span style={{ minWidth: 0, fontSize: 13, color: C.muted, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{recurringWhen(g.next_expected_date, g.period_days, today)}</span>
+              </>
+            ) : (
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.display_name}</span>
+                <span style={{ display: 'block', fontSize: 12, color: C.muted, fontWeight: 600 }}>{recurringWhen(g.next_expected_date, g.period_days, today)}</span>
+              </span>
+            )}
+            <span style={{ fontWeight: 700, whiteSpace: 'nowrap', textAlign: 'right' }}>{g.avg_amount != null ? money(-Math.abs(g.avg_amount)) : ''}</span>
+          </a>
+        </div>
+      ))}
+    </Section>
+  )
+  const suggestCard = (g: RecurringGroup) => (
+    <section key={g.id} style={{ ...card, margin: pc ? '0 0 10px' : '0 16px 10px', padding: '14px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ width: 40, height: 40, borderRadius: 14, background: C.soft, color: C.accentText, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name="sparkle" size={20} /></span>
+        <span role="button" tabIndex={0} onClick={() => setOpen(g)} onKeyDown={e => e.key === 'Enter' && setOpen(g)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
+          <span style={{ display: 'block', fontWeight: 700 }}>¿{g.display_name} es recurrente?</span>
+          <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>{g.avg_amount != null ? `${fmt2(Math.abs(g.avg_amount))} ${curSym()} ` : ''}{recurringWhen(null, g.period_days, today).toLowerCase()}</span>
+        </span>
+        <button type="button" aria-label={`Descartar ${g.display_name}`} title="Descartar" onClick={() => dismiss(g)} style={{ width: 34, height: 34, flex: 'none', border: 0, borderRadius: 10, background: C.field, color: C.muted, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="close" size={16} /></button>
+        <button type="button" onClick={() => toggle(g, true)} style={{ height: 34, padding: '0 14px', border: 0, borderRadius: 10, background: C.accent, color: C.white, font: "800 13px 'Manrope', sans-serif", cursor: 'pointer' }}>Añadir</button>
+      </div>
+    </section>
+  )
+  const dismissedBlock = dismissed.length > 0 && (
+    <>
+      <button type="button" aria-expanded={showDismissed} onClick={() => setShowDismissed(s => !s)} style={{ display: 'flex', alignItems: 'center', gap: 6, margin: pc ? '18px 4px 8px' : '18px 20px 8px', padding: 0, border: 0, background: 'transparent', color: C.muted, font: "800 13px 'Manrope', sans-serif", cursor: 'pointer' }}>
+        Descartados ({dismissed.length})
+        <span style={{ display: 'flex', transform: showDismissed ? 'rotate(180deg)' : undefined }}><Icon name="chev-d" size={14} /></span>
+      </button>
+      {showDismissed && (
+        <Section style={pc ? { margin: 0 } : undefined}>
+          {dismissed.map((g, i) => (
+            <div key={g.id}>
+              {i > 0 && <Divider margin="0" />}
+              <div style={{ display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) auto', gap: 12, alignItems: 'center', padding: '10px 0' }}>
+                <MerchantTile name={g.display_name} category={g.category?.name} type={g.category?.type ?? 'expense'} />
+                <span style={{ minWidth: 0, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.muted }}>{g.display_name}</span>
+                <button type="button" onClick={() => restore(g)} style={{ height: 34, padding: '0 14px', border: 0, borderRadius: 10, background: C.field, color: C.text, font: "800 13px 'Manrope', sans-serif", cursor: 'pointer' }}>Restaurar</button>
+              </div>
+            </div>
+          ))}
+        </Section>
+      )}
+    </>
+  )
+  const RCOLS = '40px minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 110px'
+  const activeTable = (
+    <Section style={{ margin: 0 }} pad="6px 18px">
+      <TableHead cols={RCOLS} labels={['', 'Recurrente', 'Próximo cargo', 'Frecuencia', 'Categoría', 'Importe']} right={[5]} />
+      {active.map(g => (
+        <div key={g.id}>
+          <Divider margin="0" />
+          <a role="button" tabIndex={0} onClick={() => setOpen(g)} onKeyDown={e => e.key === 'Enter' && setOpen(g)}
+            style={{ display: 'grid', gridTemplateColumns: RCOLS, gap: 14, alignItems: 'center', padding: '10px 0', color: C.text, cursor: 'pointer' }}>
+            <MerchantTile name={g.display_name} category={g.category?.name} type={g.category?.type ?? 'expense'} />
+            <span style={{ ...cellText, fontWeight: 700 }}>{g.display_name}</span>
+            <span style={{ ...cellText, fontWeight: 600, textTransform: 'capitalize' }}>{g.next_expected_date ? dayMonth(g.next_expected_date) : '—'}</span>
+            <span style={{ ...cellText, color: C.muted, fontWeight: 600 }}>{periodText(g.period_days).replace(/^c/, 'C')}</span>
+            <span style={{ ...cellText, color: C.muted, fontWeight: 600 }}>{g.category?.name ?? '—'}</span>
+            <span style={{ ...numCell, fontWeight: 800 }}>{g.avg_amount != null ? money(-Math.abs(g.avg_amount)) : ''}</span>
+          </a>
+        </div>
+      ))}
+    </Section>
+  )
+
   return (
-    <Page>
+    <Page wide>
       <SubHeader title="Recurrentes" back="/plan" actions={<RoundBtn icon="plus" label="Nuevo recurrente" onClick={() => setAdd(true)} />} />
       {groups.isLoading ? (
         <div style={{ margin: '16px 16px 0' }}><Skeleton h={90} /></div>
       ) : all.length === 0 ? (
         <Empty icon="repeat" title="Sin recurrentes" text="Busca suscripciones y pagos fijos en tus movimientos." action={<Btn icon="search" disabled={detect.isPending} onClick={() => detect.mutate()}>{detect.isPending ? 'Buscando' : 'Buscar recurrentes'}</Btn>} />
+      ) : pc ? (
+        <div style={{ margin: '16px 16px 0', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 380px', gap: 16, alignItems: 'start' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
+              <StatCard label="Al mes en fijos" value={money(monthly, { euro: true })} />
+              <StatCard label="Al año" value={money(monthly * 12, { euro: true })} />
+              <StatCard label="Activos" value={active.length} />
+            </div>
+            {active.length > 0 && <><Label style={pcLabel}>Próximos</Label>{activeTable}</>}
+          </div>
+          <div style={{ display: 'grid', gap: 0, position: 'sticky', top: 16 }}>
+            <RecurringCalendar groups={active} today={today} />
+            {suggested.length > 0 && <><Label style={pcLabel}>Detectado</Label>{suggested.slice(0, 8).map(suggestCard)}</>}
+            {dismissedBlock}
+          </div>
+        </div>
       ) : (
         <>
           <section style={{ ...card, margin: '16px 16px 0', padding: '16px 20px' }}>
             <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>Al mes en fijos</p>
-            <p style={{ margin: 0, fontSize: 30, fontWeight: 800 }}>{money(recurringMonthly(all), { euro: true })}</p>
+            <p style={{ margin: 0, fontSize: 30, fontWeight: 800 }}>{money(monthly, { euro: true })}</p>
           </section>
-          {active.length > 0 && (
-            <>
-              <Label>Próximos</Label>
-              <Section>
-                {active.map((g, i) => (
-                  <div key={g.id}>
-                    {i > 0 && <Divider margin="0" />}
-                    <a role="button" tabIndex={0} onClick={() => setOpen(g)} onKeyDown={e => e.key === 'Enter' && setOpen(g)} style={{ display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) auto', gap: 12, alignItems: 'center', padding: '10px 0', color: C.text, cursor: 'pointer' }}>
-                      <MerchantTile name={g.display_name} category={g.category?.name} type={g.category?.type ?? 'expense'} />
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ display: 'block', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.display_name}</span>
-                        <span style={{ display: 'block', fontSize: 12, color: C.muted, fontWeight: 600 }}>{recurringWhen(g.next_expected_date, g.period_days, today)}</span>
-                      </span>
-                      <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{g.avg_amount != null ? money(-Math.abs(g.avg_amount)) : ''}</span>
-                    </a>
-                  </div>
-                ))}
-              </Section>
-            </>
-          )}
-          {suggested.length > 0 && (
-            <>
-              <Label>Detectado</Label>
-              {suggested.slice(0, 3).map(g => (
-                <section key={g.id} style={{ ...card, margin: '0 16px 10px', padding: '14px 16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={{ width: 40, height: 40, borderRadius: 14, background: C.soft, color: C.accentText, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name="sparkle" size={20} /></span>
-                    <span role="button" tabIndex={0} onClick={() => setOpen(g)} onKeyDown={e => e.key === 'Enter' && setOpen(g)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
-                      <span style={{ display: 'block', fontWeight: 700 }}>¿{g.display_name} es recurrente?</span>
-                      <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>{g.avg_amount != null ? `${fmt2(Math.abs(g.avg_amount))} ${curSym()} ` : ''}{recurringWhen(null, g.period_days, today).toLowerCase()}</span>
-                    </span>
-                    <button type="button" aria-label={`Descartar ${g.display_name}`} title="Descartar" onClick={() => dismiss(g)} style={{ width: 34, height: 34, flex: 'none', border: 0, borderRadius: 10, background: C.field, color: C.muted, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="close" size={16} /></button>
-                    <button type="button" onClick={() => toggle(g, true)} style={{ height: 34, padding: '0 14px', border: 0, borderRadius: 10, background: C.accent, color: C.white, font: "800 13px 'Manrope', sans-serif", cursor: 'pointer' }}>Añadir</button>
-                  </div>
-                </section>
-              ))}
-            </>
-          )}
+          {active.length > 0 && <><Label>Próximos</Label>{activeList}</>}
+          {suggested.length > 0 && <><Label>Detectado</Label>{suggested.slice(0, 3).map(suggestCard)}</>}
+          {dismissedBlock}
         </>
       )}
       <Sheet open={add} onClose={() => setAdd(false)} title="Nuevo recurrente">
@@ -413,20 +600,25 @@ export function Recurrentes() {
         <SheetOption icon="text-unordered" title="Desde un movimiento" sub="Abre uno y márcalo como recurrente" onClick={() => { setAdd(false); nav('/transacciones') }} />
       </Sheet>
       {open && <RecurringSheet group={all.find(g => g.id === open.id) ?? open} onClose={() => setOpen(null)}
-        onAdd={g => { setOpen(null); toggle(g, true) }} onDismiss={g => { setOpen(null); dismiss(g) }} />}
+        onAdd={g => { setOpen(null); toggle(g, true) }} onDismiss={g => { setOpen(null); dismiss(g) }} onDelete={remove} />}
     </Page>
   )
 }
 
-function RecurringSheet({ group: g, onClose, onAdd, onDismiss }: {
-  group: RecurringGroup; onClose: () => void; onAdd: (g: RecurringGroup) => void; onDismiss: (g: RecurringGroup) => void
+function RecurringSheet({ group: g, onClose, onAdd, onDismiss, onDelete }: {
+  group: RecurringGroup; onClose: () => void; onAdd: (g: RecurringGroup) => void; onDismiss: (g: RecurringGroup) => void; onDelete: (g: RecurringGroup) => void
 }) {
   const nav = useNavigate()
   const invalidate = useInvalidate()
   const options = g.amount_options ?? []
   const current = g.avg_amount != null ? Math.round(Math.abs(g.avg_amount) * 100) / 100 : null
+  const manual = !!g.amount_is_manual
+  const auto = async () => {
+    if (!manual) return
+    try { await recurringApi.update(g.id, { amount_is_manual: false }); invalidate(); toast('Importe automático') } catch (e) { toast(errText(e), { error: true }) }
+  }
   const pick = async (amount: number) => {
-    if (amount === current) return
+    if (manual && amount === current) return
     try { await recurringApi.update(g.id, { avg_amount: amount }); invalidate(); toast(`Importe: ${fmt2(amount)} ${curSym()}`) } catch (e) { toast(errText(e), { error: true }) }
   }
   return (
@@ -435,18 +627,17 @@ function RecurringSheet({ group: g, onClose, onAdd, onDismiss }: {
         <>
           <p style={{ margin: '0 0 2px', fontSize: 13, color: C.muted, fontWeight: 700 }}>Importe</p>
           {options.slice(0, 6).map(o => (
-            <SheetOption key={o.amount} selected={o.amount === current} title={`${fmt2(o.amount)} ${curSym()}`}
+            <SheetOption key={o.amount} selected={manual && o.amount === current} title={`${fmt2(o.amount)} ${curSym()}`}
               sub={o.count === 1 ? `1 vez · ${shortDate(o.last_date)}` : `${o.count} veces · último ${shortDate(o.last_date)}`} onClick={() => pick(o.amount)} />
           ))}
-          {current != null && !options.some(o => o.amount === current) && (
-            <SheetOption selected title={`${fmt2(current)} ${curSym()}`} sub="Media" onClick={() => {}} />
-          )}
+          <SheetOption selected={!manual} title="Automático" sub={!manual && current != null ? `Media: ${fmt2(current)} ${curSym()}` : 'Media de sus movimientos'} onClick={auto} />
           <Divider margin="8px 0" />
         </>
       )}
       {!g.is_active && <SheetOption icon="plus" title="Añadir como recurrente" onClick={() => onAdd(g)} />}
       <SheetOption icon="receipt" title="Ver movimientos" onClick={() => { onClose(); nav(`/comercio/${encodeURIComponent(g.display_name)}`) }} />
       <SheetOption icon="close" title={g.is_active ? 'No es recurrente' : 'Descartar sugerencia'} onClick={() => onDismiss(g)} />
+      <SheetOption icon="delete" title="Eliminar" onClick={() => onDelete(g)} />
     </Sheet>
   )
 }
@@ -466,53 +657,97 @@ export function Objetivos() {
   const [contribute, setContribute] = useState(false)
   const list = (goals.data ?? []).filter(g => g.is_active)
   const today = new Date()
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: dashApi.accounts })
-  const cashTotal = visibleAccounts(accounts.data ?? []).reduce((a, c) => a + c.balance, 0)
-  const reserved = goalsReserved(list)
+
+  const pc = useIsPC()
+  const goalCard = (g: Goal) => {
+    const look = goalLook(g)
+    const target = goalTarget(g)
+    const pct = Math.round(g.progress_pct)
+    return (
+      <a key={g.id} role="button" tabIndex={0} onClick={() => setEdit(g)} onKeyDown={e => e.key === 'Enter' && setEdit(g)} style={{ ...card, display: 'block', margin: pc ? 0 : '12px 16px 0', padding: '16px 18px', color: C.text, cursor: 'pointer' }}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+          <span style={{ width: 44, height: 44, borderRadius: 15, background: C.field, color: look.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name={look.icon} size={22} /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontWeight: 800 }}>{g.name}</span>
+            <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>{goalSub(g, today)}</span>
+          </div>
+          <span style={{ fontWeight: 800 }}>{pct} %</span>
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <div style={{ height: 8, borderRadius: 99, background: 'var(--track)', overflow: 'hidden' }}><div style={{ width: `${Math.min(100, Math.max(0, pct))}%`, height: '100%', borderRadius: 99, background: look.color }} /></div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+          <span style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}>{fmtAuto(g.current_amount)} {curSym()}</span>
+          {target != null && <span style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>de {fmtAuto(target)} {curSym()}</span>}
+        </div>
+      </a>
+    )
+  }
+  const saved = list.reduce((a, g) => a + g.current_amount, 0)
+  const targets = list.map(goalTarget).filter((t): t is number => t != null)
+  const targetSum = targets.reduce((a, t) => a + t, 0)
+  const contributeBtn = <Btn kind="secondary" icon="plus" onClick={() => setContribute(true)} style={{ background: C.card, boxShadow: 'var(--sh-card)' }}>Aportar a un objetivo</Btn>
+  const goalCardPC = (g: Goal) => {
+    const look = goalLook(g)
+    const target = goalTarget(g)
+    const pct = Math.round(g.progress_pct)
+    return (
+      <a key={g.id} role="button" tabIndex={0} onClick={() => setEdit(g)} onKeyDown={e => e.key === 'Enter' && setEdit(g)}
+        style={{ ...card, display: 'flex', flexDirection: 'column', gap: 18, padding: '20px 22px', color: C.text, cursor: 'pointer' }}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+          <Ring ratio={pct / 100} size={60} stroke={6} color={look.color}><span style={{ color: look.color, display: 'flex' }}><Icon name={look.icon} size={22} /></span></Ring>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontWeight: 800, fontSize: 17, ...cellText }}>{g.name}</span>
+            <span style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600, ...cellText }}>{goalSub(g, today)}</span>
+          </div>
+          <span style={{ fontWeight: 800, fontSize: 18 }}>{pct} %</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, marginTop: 'auto' }}>
+          <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>{money(g.current_amount, { euro: true })}</span>
+          {target != null && <span style={{ fontSize: 14, color: C.muted, fontWeight: 600, whiteSpace: 'nowrap' }}>de {money(target, { euro: true, decimals: 0 })}</span>}
+        </div>
+      </a>
+    )
+  }
 
   return (
-    <Page>
+    <Page wide>
       <SubHeader title="Objetivos" back="/plan" actions={<RoundBtn icon="plus" label="Nuevo objetivo" onClick={() => setEdit('new')} />} />
       {goals.isLoading ? (
         <div style={{ margin: '12px 16px 0' }}><Skeleton h={120} /></div>
       ) : list.length === 0 ? (
         <Empty icon="safe-open" title="Sin objetivos" text="Ahorra para algo concreto y mira cómo avanza." action={<Btn icon="plus" onClick={() => setEdit('new')}>Nuevo objetivo</Btn>} />
+      ) : pc ? (
+        <div style={{ margin: '16px 16px 0' }}>
+          <section style={{ ...card, padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                <div>
+                  <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>Ahorrado en objetivos</p>
+                  <p style={{ margin: '2px 0 0', fontSize: 36, fontWeight: 800, letterSpacing: '-0.03em' }}>{money(saved, { euro: true })}</p>
+                </div>
+                <Btn kind="secondary" icon="plus" height={40} onClick={() => setContribute(true)} style={{ width: 'auto', padding: '0 16px 0 12px', background: C.field, boxShadow: 'none', fontSize: 14 }}>Aportar</Btn>
+              </div>
+              {targetSum > 0 && (
+                <div style={{ marginTop: 'auto', paddingTop: 16 }}>
+                  <div style={{ height: 8, borderRadius: 99, background: 'var(--track)', overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.min(100, (saved / targetSum) * 100)}%`, height: '100%', borderRadius: 99, background: C.accent }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 13, color: C.muted, fontWeight: 600 }}>
+                    <span>{list.length} {list.length === 1 ? 'objetivo' : 'objetivos'}</span>
+                    <span>de {money(targetSum, { euro: true, decimals: 0 })}</span>
+                  </div>
+                </div>
+              )}
+            </section>
+          <Label style={pcLabel}>Objetivos</Label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
+            {list.map(goalCardPC)}
+          </div>
+        </div>
       ) : (
         <>
-          {accounts.data && (
-            <section style={{ ...card, margin: '16px 16px 0', padding: '16px 20px' }}>
-              <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>Disponible</p>
-              <p style={{ margin: 0, fontSize: 30, fontWeight: 800 }}>{money(cashTotal - reserved, { euro: true })}</p>
-              <p style={{ margin: '4px 0 0', fontSize: 13, color: C.muted, fontWeight: 600 }}>{money(reserved, { euro: true })} apartados de {money(cashTotal, { euro: true })}</p>
-            </section>
-          )}
-          {list.map(g => {
-            const look = goalLook(g)
-            const target = goalTarget(g)
-            const pct = Math.round(g.progress_pct)
-            return (
-              <a key={g.id} role="button" tabIndex={0} onClick={() => setEdit(g)} onKeyDown={e => e.key === 'Enter' && setEdit(g)} style={{ ...card, display: 'block', margin: '12px 16px 0', padding: '16px 18px', color: C.text, cursor: 'pointer' }}>
-                <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-                  <span style={{ width: 44, height: 44, borderRadius: 15, background: C.field, color: look.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name={look.icon} size={22} /></span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontWeight: 800 }}>{g.name}</span>
-                    <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>{goalSub(g, today)}</span>
-                  </div>
-                  <span style={{ fontWeight: 800 }}>{pct} %</span>
-                </div>
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ height: 8, borderRadius: 99, background: 'var(--track)', overflow: 'hidden' }}><div style={{ width: `${Math.min(100, Math.max(0, pct))}%`, height: '100%', borderRadius: 99, background: look.color }} /></div>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
-                  <span style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}>{fmtAuto(g.current_amount)} {curSym()}</span>
-                  {target != null && <span style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>de {fmtAuto(target)} {curSym()}</span>}
-                </div>
-              </a>
-            )
-          })}
-          <div style={{ margin: '16px 16px 0' }}>
-            <Btn kind="secondary" icon="plus" onClick={() => setContribute(true)} style={{ background: C.card, boxShadow: 'var(--sh-card)' }}>Aportar a un objetivo</Btn>
-          </div>
+          {list.map(goalCard)}
+          <div style={{ margin: '16px 16px 0' }}>{contributeBtn}</div>
         </>
       )}
       {edit && <GoalSheet goal={edit === 'new' ? null : edit} onClose={() => setEdit(null)} />}
@@ -609,8 +844,9 @@ export function Deudas() {
   const owed = list.filter(d => d.direction === 'OWED_TO_ME')
   const owe = list.filter(d => d.direction === 'I_OWE')
 
-  const group = (items: Debt[], positive: boolean) => (
-    <Section>
+  const pc = useIsPC()
+  const group = (items: Debt[], positive: boolean, style?: CSSProperties) => (
+    <Section style={style}>
       {items.map((d, i) => (
         <div key={d.id}>
           {i > 0 && <Divider />}
@@ -630,13 +866,70 @@ export function Deudas() {
     </Section>
   )
 
+  const DCOLS = '40px minmax(0, 1.2fr) minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 18px'
+  const table = (items: Debt[], positive: boolean) => (
+    <Section style={{ margin: 0 }} pad="6px 18px">
+      <TableHead cols={DCOLS} labels={['', 'Persona', 'Concepto', 'Vence', 'Pagado', 'Pendiente', '']} right={[4, 5]} />
+      {items.map(d => (
+        <div key={d.id}>
+          <Divider margin="0" />
+          <a role="button" tabIndex={0} onClick={() => setOpen(d)} onKeyDown={e => e.key === 'Enter' && setOpen(d)}
+            style={{ display: 'grid', gridTemplateColumns: DCOLS, gap: 14, alignItems: 'center', padding: '10px 0', color: C.text, cursor: 'pointer' }}>
+            <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: '50%', background: C.field, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>{d.name.trim().charAt(0).toUpperCase()}</span>
+            <span style={{ ...cellText, fontWeight: 700 }}>{d.name}</span>
+            <span style={{ ...cellText, color: d.description ? C.text : C.muted, fontWeight: 600 }}>{d.description || '—'}</span>
+            <span style={{ ...cellText, color: C.muted, fontWeight: 600 }}>{d.due_date ? shortDate(d.due_date) : '—'}</span>
+            <span style={{ ...numCell, color: C.muted, fontWeight: 600 }}>{money(d.is_settled ? d.total_amount : d.paid_amount)}</span>
+            <span style={{ ...numCell, fontWeight: 800, color: d.is_settled ? C.muted : positive ? C.green : C.red }}>
+              {d.is_settled ? '—' : money(positive ? d.remaining_amount : -d.remaining_amount, { sign: true })}
+            </span>
+            <span style={{ color: C.muted, display: 'flex' }}><Icon name="chev-r" size={18} /></span>
+          </a>
+        </div>
+      ))}
+    </Section>
+  )
+  const net = tot.owedToMe - tot.iOwe
+  const both = tot.owedToMe + tot.iOwe
+  const debtHero = (
+    <section style={{ ...card, padding: '22px 24px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr)', gap: 24, alignItems: 'end' }}>
+        <div>
+          <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>Balance</p>
+          <p style={{ margin: '2px 0 0', fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em', color: net > 0 ? C.green : net < 0 ? C.red : C.text }}>{money(net, { euro: true, sign: net !== 0 })}</p>
+        </div>
+        <div>
+          <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>Te deben</p>
+          <p style={{ margin: '2px 0 0', fontSize: 24, fontWeight: 800, color: C.green }}>{money(tot.owedToMe, { euro: true })}</p>
+        </div>
+        <div>
+          <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>Debes</p>
+          <p style={{ margin: '2px 0 0', fontSize: 24, fontWeight: 800, color: C.red }}>{money(tot.iOwe, { euro: true })}</p>
+        </div>
+      </div>
+      {both > 0 && (
+        <div style={{ display: 'flex', gap: 4, height: 8, marginTop: 18 }}>
+          {tot.owedToMe > 0 && <div style={{ flex: tot.owedToMe, borderRadius: 99, background: C.green }} />}
+          {tot.iOwe > 0 && <div style={{ flex: tot.iOwe, borderRadius: 99, background: C.red }} />}
+        </div>
+      )}
+    </section>
+  )
+
   return (
-    <Page>
+    <Page wide={pc}>
       <SubHeader title="Deudas" back="/plan" actions={<RoundBtn icon="plus" label="Nueva deuda" onClick={() => setEdit('new')} />} />
       {debts.isLoading ? (
         <div style={{ margin: '16px 16px 0' }}><Skeleton h={80} /></div>
       ) : list.length === 0 && settled.length === 0 ? (
         <Empty icon="receipt" title="Todo al día" text="Apunta lo que te deben o lo que debes." action={<Btn icon="plus" onClick={() => setEdit('new')}>Nueva deuda</Btn>} />
+      ) : pc ? (
+        <div style={{ margin: '16px 16px 0' }}>
+          {debtHero}
+          {owed.length > 0 && <><Label style={pcLabel}>Te deben</Label>{table(owed, true)}</>}
+          {owe.length > 0 && <><Label style={pcLabel}>Debes</Label>{table(owe, false)}</>}
+          {settled.length > 0 && <><Label style={pcLabel}>Saldadas</Label>{table(settled, true)}</>}
+        </div>
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, margin: '16px 16px 0' }}>
@@ -747,27 +1040,55 @@ function DebtDetailSheet({ debt, onClose }: { debt: Debt; onClose: () => void })
 
 // ── Mes a mes ───────────────────────────────────────────────────────────────
 
-function SavingsLine({ values, id, sel }: { values: number[]; id: string; sel?: number }) {
+function SavingsLine({ values, id, sel, height = 80, labels }: { values: number[]; id: string; sel?: number; height?: number; labels?: string[] }) {
   const w = 318
-  const h = 80
+  const h = height
   const pts = linePoints(values, w, h, 6)
   if (pts.length < 2) return null
   const line = pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
   const last = pts[pts.length - 1]
   const dot = pts[sel ?? pts.length - 1] ?? last
   return (
-    <svg role="img" aria-label="Evolución" width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block', overflow: 'visible' }}>
-      <defs>
-        <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stopColor="var(--c-6fe0a5)" stopOpacity="0.32" />
-          <stop offset="1" stopColor="var(--c-6fe0a5)" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={`${line} L${last[0].toFixed(1)} ${h} L${pts[0][0].toFixed(1)} ${h} Z`} fill={`url(#${id})`} />
-      <path d={line} fill="none" stroke="var(--c-6fe0a5)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      <circle cx={dot[0]} cy={dot[1]} r="4.5" fill="var(--c-6fe0a5)" stroke="var(--c-1a1b23)" strokeWidth="2" />
-    </svg>
+    <div style={{ position: 'relative' }}>
+      <svg role="img" aria-label="Evolución" width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block', overflow: 'visible' }}>
+        <defs>
+          <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="var(--c-6fe0a5)" stopOpacity="0.32" />
+            <stop offset="1" stopColor="var(--c-6fe0a5)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={`${line} L${last[0].toFixed(1)} ${h} L${pts[0][0].toFixed(1)} ${h} Z`} fill={`url(#${id})`} />
+        <path d={line} fill="none" stroke="var(--c-6fe0a5)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <span aria-hidden="true" style={{ position: 'absolute', left: `${(dot[0] / w) * 100}%`, top: dot[1], width: 9, height: 9, borderRadius: '50%', background: 'var(--c-6fe0a5)', border: '2px solid var(--c-1a1b23)', transform: 'translate(-50%, -50%)' }} />
+      {labels && (
+        <div aria-hidden="true" style={{ position: 'relative', height: 18, marginTop: 8 }}>
+          {labels.map((l, i) => (
+            <span key={i} style={{ position: 'absolute', left: `${(pts[i][0] / w) * 100}%`, transform: 'translateX(-50%)', fontSize: 11, fontWeight: 700, color: i === (sel ?? pts.length - 1) ? C.text : C.muted, whiteSpace: 'nowrap' }}>{l}</span>
+          ))}
+        </div>
+      )}
+    </div>
   )
+}
+
+/** PDF con el resumen y los movimientos de un mes o ciclo. */
+async function exportCyclePdf(title: string, income: number, expenses: number, rows: MonthlyDetailRow[], file: string) {
+  const [{ default: JsPDF }, { default: autoTable }, { formatEuro }] = await Promise.all([import('jspdf'), import('jspdf-autotable'), import('@/lib/format')])
+  const doc = new JsPDF()
+  doc.setFontSize(15)
+  doc.text(`Resumen ${title}`, 14, 16)
+  doc.setFontSize(10)
+  doc.text(`Ingresos: ${formatEuro(income)}   Gastos: ${formatEuro(expenses)}   Ahorro: ${formatEuro(income - expenses, { sign: true })}`, 14, 24)
+  autoTable(doc, {
+    startY: 30,
+    head: [['Fecha', 'Nombre', 'Categoría', 'Importe']],
+    body: [...rows].sort((a, b) => a.date.localeCompare(b.date)).map(r => [r.date, r.name ?? '', r.category_name, formatEuro(r.amount, { sign: true })]),
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [40, 40, 60] },
+    columnStyles: { 3: { halign: 'right' } },
+  })
+  doc.save(`${file}.pdf`)
 }
 
 export function MesAMes() {
@@ -793,14 +1114,38 @@ export function MesAMes() {
   const prev = idx > 0 ? rows[idx - 1] : null
   const best = bestCycle(rows)
   const loading = payroll.loading || detail.isLoading
-  const isCycle = payroll.isPayrollCycle
-  const unit = isCycle ? 'ciclo' : 'mes'
+  const w = usePeriodWords()
+  const isCycle = w.isCycle
+  const unit = w.unit
   const name = (r: { label: string; start: string }) => (isCycle ? r.label : longMonth(r.start.slice(0, 7)))
+  const investOn = usePreferencesStore(s => isModuleOn(s.prefs, 'investments'))
+  const invested = useQuery({
+    queryKey: ['monthly-investments', cur?.start, cur?.end],
+    queryFn: () => dashApi.monthlyInvestments({ date_from: cur!.start, date_to: cur!.end }),
+    enabled: investOn && !!cur,
+  })
+  const [exp, setExp] = useState(false)
+  const [busy, setBusy] = useState(false)
+  async function doExport(kind: 'pdf' | 'xlsx') {
+    if (!cur) return
+    setBusy(true)
+    try {
+      if (kind === 'xlsx') {
+        await exportApi.download({ format: 'xlsx', period: 'range', date_from: cur.start, date_to: cur.end, sections: ['transactions', 'categories_by_month'] })
+      } else {
+        const rows = (detail.data ?? []).filter(r => r.date >= cur.start && r.date <= cur.end)
+        await exportCyclePdf(name(cur), cur.income, cur.expenses, rows, `financemaster-${cur.start}_${cur.end}`)
+      }
+      setExp(false)
+    } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo exportar', { error: true }) }
+    finally { setBusy(false) }
+  }
 
+  const pc = useIsPC()
   const select = (i: number) => {
     if (!rows[i]) return
     setSelKey(i === rows.length - 1 ? null : rows[i].key)
-    scrollToTop(true)
+    if (!pc) scrollToTop(true)
   }
 
   let compare: ReactNode = null
@@ -830,72 +1175,140 @@ export function MesAMes() {
     </div>
   )
 
+  const heroCard = cur && (
+    <section style={{ ...card, margin: pc ? 0 : '16px 16px 0', borderRadius: 24, padding: '14px 16px 18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {arrow('l')}
+        <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 12, color: C.muted, fontWeight: 700 }}>{cur.isOpen ? (isCycle ? 'Ciclo actual' : 'Este mes') : (isCycle ? 'Ciclo' : 'Mes')}</p>
+          <p style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{name(cur)}</p>
+        </div>
+        {arrow('r')}
+      </div>
+      <p style={{ margin: '16px 0 0', fontSize: 14, color: C.muted, fontWeight: 600 }}>{cur.isOpen ? 'Llevas ahorrado' : 'Ahorraste'}</p>
+      <p style={{ margin: '2px 0 0', fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05 }}>{money(cur.savings, { euro: true, sign: true })}</p>
+      {compare && <div style={{ marginTop: 10 }}>{compare}</div>}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
+        {tile('transfer-in', 'Entró', C.green, cur.income)}
+        {tile('transfer-out', 'Salió', C.red, cur.expenses)}
+      </div>
+      {investOn && (invested.data?.invested ?? 0) > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: C.field, borderRadius: 16, padding: '10px 12px', marginTop: 10 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: C.accentText }}><Icon name="invest" size={15} />Invertido</span>
+          <span style={{ fontSize: 17, fontWeight: 800 }}>{money(invested.data!.invested)}</span>
+        </div>
+      )}
+      <div style={{ marginTop: 12 }}>
+        <Btn kind="ghost" height={44} onClick={() => nav(`/transacciones?periodo=${cur.key}`)}>Ver movimientos</Btn>
+      </div>
+    </section>
+  )
+  const chartCard = rows.length > 1 && (
+    <section style={{ ...card, margin: pc ? 0 : '12px 16px 0', padding: '16px 18px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: 0 }}>
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Ahorro</h2>
+        <span style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}>media {money(cycleAverage(rows), { decimals: 0 })} {curSym()}/{unit}</span>
+      </div>
+      <div style={{ marginTop: 12 }}><SavingsLine values={rows.map(r => r.savings)} sel={idx} id="g-mesames" /></div>
+    </section>
+  )
+  const short = (r: (typeof rows)[number]) => new Date(`${r.start}T00:00:00`).toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')
+  const chartPC = rows.length > 1 && (
+    <section style={{ ...card, padding: '20px 24px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Ahorro por {unit}</h2>
+        <span style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}>media {money(cycleAverage(rows), { decimals: 0 })} {curSym()}/{unit}</span>
+      </div>
+      <div style={{ marginTop: 'auto', paddingTop: 20 }}><SavingsLine values={rows.map(r => r.savings)} sel={idx} id="g-mesames-pc" height={190} labels={rows.map(short)} /></div>
+    </section>
+  )
+  const MCOLS = 'minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr) 18px'
+  const tablePC = (
+    <Section style={{ margin: 0 }} pad="6px 18px">
+      <TableHead cols={MCOLS} labels={[isCycle ? 'Ciclo' : 'Mes', 'Entró', 'Salió', 'Ahorro', 'Tasa de ahorro', '']} right={[1, 2, 3]} />
+      {[...rows].reverse().map(r => {
+        const ri = rows.indexOf(r)
+        const active = ri === idx
+        const rate = r.income > 0 ? r.savings / r.income : null
+        return (
+          <div key={r.key}>
+            <Divider margin="0" />
+            <button type="button" onClick={() => select(ri)} aria-pressed={active}
+              style={{ width: 'calc(100% + 16px)', margin: '0 -8px', display: 'grid', gridTemplateColumns: MCOLS, gap: 14, alignItems: 'center', padding: '12px 8px', border: 0, borderRadius: 14, background: active ? C.field : 'transparent', color: C.text, font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+              <span style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <span style={cellText}>{name(r)}</span>
+                {r.key === best && <Pill>Mejor</Pill>}
+              </span>
+              <span style={{ ...numCell, color: C.green, fontWeight: 700 }}>{money(r.income, { decimals: 0 })}</span>
+              <span style={{ ...numCell, color: C.muted, fontWeight: 700 }}>{money(-Math.abs(r.expenses), { decimals: 0, sign: true })}</span>
+              <span style={{ ...numCell, fontWeight: 800 }}>{money(r.savings, { decimals: 0, sign: true })}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <span style={{ flex: 1, height: 6, borderRadius: 99, background: 'var(--track)', overflow: 'hidden' }}>
+                  {rate != null && <span style={{ display: 'block', width: `${Math.min(100, Math.abs(rate) * 100)}%`, height: '100%', borderRadius: 99, background: rate >= 0 ? C.green : C.red }} />}
+                </span>
+                <span style={{ width: 44, textAlign: 'right', fontSize: 13, fontWeight: 800, color: rate == null ? C.muted : rate >= 0 ? C.text : C.red }}>{rate != null ? `${Math.round(rate * 100)} %` : '—'}</span>
+              </span>
+              <span style={{ color: C.muted, display: 'flex' }}><Icon name="chev-r" size={18} /></span>
+            </button>
+          </div>
+        )
+      })}
+    </Section>
+  )
+  const listCard = (
+    <Section style={{ margin: pc ? 0 : '12px 16px 0' }}>
+      {[...rows].reverse().map((r, i) => {
+        const ri = rows.length - 1 - i
+        const active = ri === idx
+        return (
+          <div key={r.key}>
+            {i > 0 && <Divider margin="0" />}
+            <button type="button" onClick={() => select(ri)} aria-pressed={active}
+              style={{ width: 'calc(100% + 16px)', margin: '0 -8px', display: 'grid', gridTemplateColumns: '1fr auto auto 18px', gap: 14, alignItems: 'center', padding: '12px 8px', border: 0, borderRadius: 14, background: active ? C.field : 'transparent', color: C.text, font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+              <span style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
+                {name(r)}
+                {r.key === best && <Pill>Mejor</Pill>}
+              </span>
+              <span style={{ textAlign: 'right' }}>
+                <span style={{ color: C.green, fontWeight: 700 }}>{money(r.income, { decimals: 0 })}</span>
+                <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: C.muted }}>{money(-Math.abs(r.expenses), { decimals: 0, sign: true })}</span>
+              </span>
+              <span style={{ fontWeight: 800, minWidth: 64, textAlign: 'right' }}>{money(r.savings, { decimals: 0, sign: true })}</span>
+              <span style={{ color: C.muted, display: 'flex' }}><Icon name="chev-r" size={18} /></span>
+            </button>
+          </div>
+        )
+      })}
+    </Section>
+  )
+
   return (
-    <Page>
-      <SubHeader title="Mes a mes" back="/plan" />
+    <Page wide>
+      <SubHeader title={w.each} back="/plan" actions={cur && !loading ? <RoundBtn icon="export" label="Exportar" onClick={() => setExp(true)} /> : null} />
       {loading ? (
         <div style={{ margin: '16px 16px 0', display: 'grid', gap: 12 }}><Skeleton h={230} r={24} /><Skeleton h={130} r={24} /></div>
       ) : !cur ? (
-        <Empty icon="calendar" title="Aún no hay meses" text="Cuando tengas movimientos verás aquí cada mes." />
+        <Empty icon="calendar" title={w.none} text={`Cuando tengas movimientos verás aquí cada ${w.unit}.`} />
+      ) : pc ? (
+        <div style={{ margin: '16px 16px 0' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: chartPC ? 'minmax(0, 1fr) minmax(0, 1.6fr)' : 'minmax(0, 1fr)', gap: 16 }}>
+            {heroCard}
+            {chartPC}
+          </div>
+          <Label style={pcLabel}>{isCycle ? 'Todos los ciclos' : 'Todos los meses'}</Label>
+          {tablePC}
+        </div>
       ) : (
         <>
-          <section style={{ ...card, margin: '16px 16px 0', borderRadius: 24, padding: '14px 16px 18px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {arrow('l')}
-              <div style={{ flex: 1, textAlign: 'center', minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 12, color: C.muted, fontWeight: 700 }}>{cur.isOpen ? (isCycle ? 'Ciclo actual' : 'Este mes') : (isCycle ? 'Ciclo' : 'Mes')}</p>
-                <p style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{name(cur)}</p>
-              </div>
-              {arrow('r')}
-            </div>
-            <p style={{ margin: '16px 0 0', fontSize: 14, color: C.muted, fontWeight: 600 }}>{cur.isOpen ? 'Llevas ahorrado' : 'Ahorraste'}</p>
-            <p style={{ margin: '2px 0 0', fontSize: 40, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05 }}>{money(cur.savings, { euro: true, sign: true })}</p>
-            {compare && <div style={{ marginTop: 10 }}>{compare}</div>}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
-              {tile('transfer-in', 'Entró', C.green, cur.income)}
-              {tile('transfer-out', 'Salió', C.red, cur.expenses)}
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <Btn kind="ghost" height={44} onClick={() => nav(`/transacciones?periodo=${cur.key}`)}>Ver movimientos</Btn>
-            </div>
-          </section>
-
-          {rows.length > 1 && (
-            <section style={{ ...card, margin: '12px 16px 0', padding: '16px 18px' }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: 0 }}>
-                <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Ahorro</h2>
-                <span style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}>media {money(cycleAverage(rows), { decimals: 0 })} {curSym()}/{unit}</span>
-              </div>
-              <div style={{ marginTop: 12 }}><SavingsLine values={rows.map(r => r.savings)} sel={idx} id="g-mesames" /></div>
-            </section>
-          )}
-
-          <Section style={{ margin: '12px 16px 0' }}>
-            {[...rows].reverse().map((r, i) => {
-              const ri = rows.length - 1 - i
-              const active = ri === idx
-              return (
-                <div key={r.key}>
-                  {i > 0 && <Divider margin="0" />}
-                  <button type="button" onClick={() => select(ri)} aria-pressed={active}
-                    style={{ width: 'calc(100% + 16px)', margin: '0 -8px', display: 'grid', gridTemplateColumns: '1fr auto auto 18px', gap: 14, alignItems: 'center', padding: '12px 8px', border: 0, borderRadius: 14, background: active ? C.field : 'transparent', color: C.text, font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
-                    <span style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
-                      {name(r)}
-                      {r.key === best && <Pill>Mejor</Pill>}
-                    </span>
-                    <span style={{ textAlign: 'right' }}>
-                      <span style={{ color: C.green, fontWeight: 700 }}>{money(r.income, { decimals: 0 })}</span>
-                      <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: C.muted }}>{money(-Math.abs(r.expenses), { decimals: 0, sign: true })}</span>
-                    </span>
-                    <span style={{ fontWeight: 800, minWidth: 64, textAlign: 'right' }}>{money(r.savings, { decimals: 0, sign: true })}</span>
-                    <span style={{ color: C.muted, display: 'flex' }}><Icon name="chev-r" size={18} /></span>
-                  </button>
-                </div>
-              )
-            })}
-          </Section>
+          {heroCard}
+          {chartCard}
+          {listCard}
         </>
       )}
+      <Sheet open={exp} onClose={() => !busy && setExp(false)} title={cur ? `Exportar ${name(cur)}` : 'Exportar'}>
+        <SheetOption icon="file" title="PDF" onClick={() => doExport('pdf')} />
+        <SheetOption icon="download" title="Excel" onClick={() => doExport('xlsx')} />
+      </Sheet>
     </Page>
   )
 }
@@ -918,7 +1331,7 @@ function useStreak(enabled = true) {
 
 export function Logros() {
   const streak = useStreak()
-  const trend = useQuery({ queryKey: ['monthly-trend', 6], queryFn: () => dashApi.monthlyTrend(6) })
+  const trend = useCycleTrend(6)
   const goals = useQuery({ queryKey: ['goals'], queryFn: goalApi.list })
   const debts = useQuery({ queryKey: ['debts'], queryFn: debtApi.list })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: dashApi.accounts })

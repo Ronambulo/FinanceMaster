@@ -317,6 +317,15 @@ class ManualPosition(Base):
     user = relationship("User", back_populates="manual_positions")
 
 
+class AssetTypeOverride(Base):
+    """Tipo de activo elegido a mano para una posición (si el automático falla)."""
+    __tablename__ = "asset_type_overrides"
+    id          = Column(Integer, primary_key=True, index=True)
+    user_id     = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    symbol      = Column(String, nullable=False)
+    asset_class = Column(String, nullable=False)
+
+
 class AiUsageLog(Base):
     __tablename__ = "ai_usage_logs"
     id = Column(Integer, primary_key=True, index=True)

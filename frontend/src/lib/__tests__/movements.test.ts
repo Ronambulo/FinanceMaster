@@ -152,6 +152,20 @@ describe('filtros de movimientos', () => {
     expect(periodRange('', today)).toEqual({})
     expect(periodLabel('2026-03')).toBe('Marzo')
   })
+  it('periodos por ciclo de nómina', () => {
+    const cycles = [
+      { start: '2026-08-28', end: '2026-09-26' },
+      { start: '2026-09-27', end: '2026-10-27' },
+      { start: '2026-10-28', end: '2026-12-31' },
+    ]
+    expect(periodRange('this', today, cycles)).toEqual({ date_from: '2026-10-28', date_to: '2026-12-31' })
+    expect(periodRange('last', today, cycles)).toEqual({ date_from: '2026-09-27', date_to: '2026-10-27' })
+    expect(periodRange('3m', today, cycles)).toEqual({ date_from: '2026-08-28', date_to: '2026-12-31' })
+    // Un mes elegido a mano sigue siendo el mes natural
+    expect(periodRange('2026-03', today, cycles)).toEqual({ date_from: '2026-03-01', date_to: '2026-03-31' })
+    expect(periodRange('', today, cycles)).toEqual({})
+    expect(filterParams({ ...EMPTY_FILTERS }, today, cycles)).toMatchObject({ date_from: '2026-10-28' })
+  })
   it('parámetros', () => {
     const p = filterParams({ ...EMPTY_FILTERS, kind: 'transfer', sources: ['n26', 'bbva'], categoryIds: [3, 0], min: '1.200,5', max: '' }, today)
     expect(p).toMatchObject({ type_group: 'transfer', source: 'n26,bbva', category_ids: '3,0', amount_min: 1200.5, amount_max: undefined })

@@ -99,7 +99,13 @@ def update_recurring(
         raise HTTPException(404, "Grupo recurrente no encontrado")
     updates = data.model_dump(exclude_none=True)
     if "avg_amount" in updates:
-        g.amount_is_manual = True
+        updates["amount_is_manual"] = True
+    elif updates.get("amount_is_manual") is False:
+        # Volver al importe automático: media de sus movimientos.
+        amts = [abs(t.amount) for t in db.query(models.Transaction).filter(
+            models.Transaction.recurring_group_id == g.id).all()]
+        if amts:
+            updates["avg_amount"] = round(sum(amts) / len(amts), 2)
     if updates.get("is_active"):
         updates["is_dismissed"] = False
     for k, v in updates.items():

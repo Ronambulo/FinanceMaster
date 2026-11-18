@@ -3,7 +3,8 @@ import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { catApi, txApi, type Transaction } from '@/lib/api'
-import { accountName, averageTicket, countLabel, dayLabel, merchantBars, monthKey, monthName, monthRange, recentMonths, txNet, txTitle } from '@/lib/movements'
+import { accountName, averageTicket, countLabel, dayLabel, merchantBars, merchantCycleBars, monthKey, monthName, monthRange, recentMonths, txNet, txTitle } from '@/lib/movements'
+import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 import { useIsPC } from '@/app/Shell'
 import { CatTile } from '@/ui/Icon'
 import { BackBtn, C, Divider, Empty, Label, RoundBtn, Section, Sheet, SheetOption, Skeleton, useMoney } from '@/ui/kit'
@@ -20,6 +21,9 @@ export default function Comercio() {
   const money = useMoney()
   const today = useMemo(() => new Date(), [])
   const cur = monthKey(today)
+  // El gasto "de este mes" y las barras van por ciclo de nómina, como en Inicio.
+  const cycle = usePayrollCycle(0)
+  const cycles = cycle.cycles
   const [menu, setMenu] = useState(false)
   const [catFor, setCatFor] = useState<Transaction[] | null>(null)
 
@@ -31,6 +35,7 @@ export default function Comercio() {
   const byMonth = useQuery({
     queryKey: ['transactions', 'groups', 'month', 'merchant', name, from],
     queryFn: () => txApi.groups('month', { search: name, date_from: monthRange(from).date_from }),
+    enabled: !cycle.loading && !cycles.length,
   })
   const categories = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
 
@@ -39,9 +44,12 @@ export default function Comercio() {
     const exact = all.filter(t => norm(txTitle(t)) === norm(name))
     return exact.length ? exact : all
   }, [txs.data, name])
-  const month = items.filter(t => t.date.slice(0, 7) === cur)
+  const curCycle = cycles[cycles.length - 1]
+  const month = curCycle
+    ? items.filter(t => t.date >= curCycle.start && t.date <= curCycle.end)
+    : items.filter(t => t.date.slice(0, 7) === cur)
   const monthTotal = month.reduce((s, t) => s + txNet(t), 0)
-  const bars = merchantBars(byMonth.data ?? [], today)
+  const bars = cycles.length ? merchantCycleBars(items, cycles) : merchantBars(byMonth.data ?? [], today)
   const latest = items[0]
   const cat = latest?.category
 
@@ -72,7 +80,7 @@ export default function Comercio() {
           <section style={{ margin: cardMargin, background: C.card, borderRadius: 24, padding: '16px 18px', boxShadow: 'var(--sh-card)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
               <div>
-                <span style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>{monthName(cur)} · {countLabel(month.length)}</span>
+                <span style={{ fontSize: 13, color: C.muted, fontWeight: 600 }}>{curCycle ? cycle.cycleRangeLabel : monthName(cur)} · {countLabel(month.length)}</span>
                 <p style={{ margin: '2px 0 0', fontSize: 30, fontWeight: 800, letterSpacing: '-0.02em' }}>{money(monthTotal, { sign: true, euro: true })}</p>
               </div>
               {month.length > 0 && <span style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}>Media {money(averageTicket(monthTotal, month.length))}</span>}

@@ -31,6 +31,10 @@ MODULE_DEFAULTS: Dict[str, bool] = {
 # Módulos que se pueden añadir al modo ultra simple (allí van apagados de serie).
 ULTRA_MODULES = ("investments", "budgets", "recurring", "goals", "debts", "monthly")
 CAT_ICONS = ("emoji", "dibujo")
+# Tarjetas de Inicio que se pueden ordenar u ocultar (en el orden de serie).
+HOME_CARDS = ("hero", "worth", "month", "pace", "pending", "next", "goal", "insights", "personality", "recent")
+# Tarjetas que antes eran fijas: en listas guardadas antes de poder ocultarlas se añaden visibles.
+HOME_V = 2
 
 DEFAULTS: Dict[str, Any] = {
     "ui_mode": "normal",
@@ -40,6 +44,7 @@ DEFAULTS: Dict[str, Any] = {
     "month_start": 0,
     "ultra_modules": {k: False for k in ULTRA_MODULES},
     "cat_icons": "emoji",
+    "home_cards": list(HOME_CARDS),
 }
 
 
@@ -49,6 +54,25 @@ def _valid_day(v: Any) -> bool:
 
 class PreferencesError(ValueError):
     pass
+
+
+def _cards(v: Any) -> list:
+    """Tarjetas visibles en orden, sin repetidas ni desconocidas."""
+    out = []
+    for c in v:
+        if c in HOME_CARDS and c not in out:
+            out.append(c)
+    return out
+
+
+def _stored_cards(stored: Dict[str, Any]) -> list:
+    v = stored.get("home_cards")
+    if not isinstance(v, list):
+        return list(HOME_CARDS)
+    out = _cards(v)
+    if stored.get("home_v") != HOME_V:
+        out = ["hero"] + [c for c in out if c not in ("hero", "recent")] + ["recent"]
+    return out
 
 
 def _load(raw: Optional[str]) -> Dict[str, Any]:
@@ -73,6 +97,8 @@ def resolve(raw: Optional[str]) -> Dict[str, Any]:
         "month_start": stored.get("month_start") if _valid_day(stored.get("month_start")) else DEFAULTS["month_start"],
         "ultra_modules": {k: False for k in ULTRA_MODULES},
         "cat_icons": stored.get("cat_icons") if stored.get("cat_icons") in CAT_ICONS else DEFAULTS["cat_icons"],
+        "home_cards": _stored_cards(stored),
+        "home_v": HOME_V,
         "initialized": bool(stored),
     }
     umods = stored.get("ultra_modules")
@@ -134,4 +160,9 @@ def merge(raw: Optional[str], patch: Dict[str, Any]) -> str:
         if patch["cat_icons"] not in CAT_ICONS:
             raise PreferencesError(f"Estilo de iconos no válido: {patch['cat_icons']}")
         current["cat_icons"] = patch["cat_icons"]
+    cards = patch.get("home_cards")
+    if cards is not None:
+        if not isinstance(cards, list) or any(c not in HOME_CARDS for c in cards):
+            raise PreferencesError("home_cards no válido")
+        current["home_cards"] = _cards(cards)
     return json.dumps(current, separators=(",", ":"))

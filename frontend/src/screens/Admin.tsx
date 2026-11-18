@@ -2,14 +2,14 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { adminApi, type AdminStats, type AdminUser } from '@/lib/api'
+import { adminApi, aiApi, type AdminStats, type AdminUser } from '@/lib/api'
 import { formatBytes, formatCount, formatUptime, joinedLabel, lastAccessLabel, lastAccessShort } from '@/lib/admin'
 import { useAuthStore } from '@/store/auth'
 import { PCHeader, useIsPC } from '@/app/Shell'
 import { Icon } from '@/ui/Icon'
 import { toast } from '@/ui/Toast'
 import { confirm } from '@/ui/Confirm'
-import { Avatar, Btn, C, Divider, Empty, Field, Pill, RoundBtn, Rows, SearchBox, Section, SetRow, Sheet, Skeleton, SubHeader, Switch } from '@/ui/kit'
+import { Avatar, Btn, C, Divider, Empty, Field, Pill, RoundBtn, Rows, SearchBox, Section, SetRow, Sheet, SheetOption, Skeleton, SubHeader, Switch } from '@/ui/kit'
 
 const cardSt: CSSProperties = { background: C.card, boxShadow: 'var(--sh-card)' }
 const userName = (u: AdminUser) => u.display_name || u.username
@@ -224,11 +224,15 @@ export function Usuario() {
   const me = useAuthStore(s => s.user)
   const q = useQuery({ queryKey: ['admin-user', uid], queryFn: () => adminApi.getUser(uid), enabled: Number.isFinite(uid), retry: false })
   const [pwd, setPwd] = useState(false)
+  const [modelSheet, setModelSheet] = useState(false)
+  const models = useQuery({ queryKey: ['ai-models'], queryFn: aiApi.listModels, enabled: !!q.data?.ai_enabled, staleTime: 10 * 60_000 })
+  const usage = useQuery({ queryKey: ['admin-user-usage', uid], queryFn: () => adminApi.getUserUsage(uid, 12), enabled: !!q.data?.ai_enabled })
   const refresh = (u?: AdminUser) => {
     if (u) qc.setQueryData(['admin-user', uid], (old?: AdminUser) => ({ ...old, ...u }))
     qc.invalidateQueries({ queryKey: ['admin-users'] }); qc.invalidateQueries({ queryKey: ['admin-stats'] })
   }
   const onErr = (e: Error) => toast(e.message, { error: true })
+  const setModel = useMutation({ mutationFn: (m: string | null) => adminApi.setAi(uid, true, m), onSuccess: u => { refresh(u); setModelSheet(false) }, onError: onErr })
   const setAdmin = useMutation({ mutationFn: (v: boolean) => adminApi.setAdmin(uid, v), onSuccess: u => refresh(u), onError: onErr })
   const setActive = useMutation({ mutationFn: (v: boolean) => adminApi.setActive(uid, v), onSuccess: u => refresh(u), onError: onErr })
   const setAi = useMutation({ mutationFn: (v: boolean) => adminApi.setAi(uid, v, q.data?.ai_model ?? null), onSuccess: u => refresh(u), onError: onErr })
@@ -264,10 +268,39 @@ export function Usuario() {
         <Divider />
         <SetRow icon="universal" title="Asistente IA" trail={<Switch label="Asistente IA" on={u.ai_enabled} disabled={setAi.isPending} onChange={v => setAi.mutate(v)} />} />
         <Divider />
+        {u.ai_enabled && (
+          <>
+            <SetRow icon="sparkle" title="Modelo de IA" onClick={() => setModelSheet(true)}
+              trail={<span style={{ fontSize: 14, color: C.muted, fontWeight: 700 }}>{models.data?.models.find(m => m.id === u.ai_model)?.name ?? (u.ai_model || 'Por defecto')}</span>} />
+            <Divider />
+          </>
+        )}
         <SetRow icon="lock" title="Bloquear acceso" trail={<Switch label="Bloquear acceso" on={!u.is_active} disabled={self || setActive.isPending} onChange={v => setActive.mutate(!v)} />} />
         {!self && <><Divider /><SetRow icon="person-delete" title="Eliminar usuario" tone="danger" onClick={remove} /></>}
       </Section>
+      {u.ai_enabled && usage.data && (
+        <Section style={{ marginTop: 16, padding: '14px 18px' }}>
+          <p style={{ margin: 0, fontWeight: 800 }}>Uso de la IA</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', marginTop: 8 }}>
+            <Stat v={formatCount(usage.data.total_requests)} k="peticiones" />
+            <Stat v={formatCount(usage.data.total_tokens)} k="tokens" />
+            <Stat v={`${usage.data.total_estimated_cost.toFixed(2)} $`} k="coste est." />
+          </div>
+          {usage.data.months.filter(m => m.requests > 0).slice(-6).reverse().map(m => (
+            <div key={m.month} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: `1px solid ${C.line}`, fontSize: 14 }}>
+              <span style={{ fontWeight: 700 }}>{new Date(`${m.month}-01T00:00:00`).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}</span>
+              <span style={{ color: C.muted, fontWeight: 700 }}>{`${formatCount(m.requests)} · ${formatCount(m.total_tokens)} tokens`}</span>
+            </div>
+          ))}
+        </Section>
+      )}
       <PasswordSheet user={u} open={pwd} onClose={() => setPwd(false)} />
+      <Sheet open={modelSheet} onClose={() => setModelSheet(false)} title="Modelo de IA">
+        <SheetOption title="Por defecto" selected={!u.ai_model} onClick={() => setModel.mutate(null)} />
+        {(models.data?.models ?? []).map(m => (
+          <SheetOption key={m.id} title={m.name} selected={u.ai_model === m.id} onClick={() => setModel.mutate(m.id)} />
+        ))}
+      </Sheet>
     </>
   )
   if (pc) return (

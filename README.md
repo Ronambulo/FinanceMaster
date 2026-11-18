@@ -6,7 +6,7 @@
 
 **Tu gestor de finanzas personales, autoalojado y sin suscripciones.**
 
-Importa tus movimientos de Trade Republic, analiza tus gastos, controla tu portfolio de inversiones y mantén el control total de tu dinero — todo en una sola app.
+Conecta Trade Republic y MyInvestor, importa los extractos de BBVA, N26, Revolut, Wise y cualquier otro banco por CSV, analiza tus gastos, sigue tus inversiones y mantén el control total de tu dinero — todo en una sola app que puedes instalar en el móvil.
 
 [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?logo=docker\&logoColor=white)](https://ghcr.io/ronambulo/financemaster)
 [![License](https://img.shields.io/badge/Licencia-MIT-green)](LICENSE)
@@ -18,109 +18,105 @@ Importa tus movimientos de Trade Republic, analiza tus gastos, controla tu portf
 
 ## 📸 Vista previa
 
-![Dashboard](screenshots/dashboard.png)
+![Inicio](screenshots/inicio-pc.png)
+
+<p align="center">
+  <img src="screenshots/inicio-movil.png" width="19%" alt="Inicio en el móvil">
+  <img src="screenshots/movimientos-movil.png" width="19%" alt="Movimientos en el móvil">
+  <img src="screenshots/cuentas-movil.png" width="19%" alt="Cuentas en el móvil">
+  <img src="screenshots/plan-movil.png" width="19%" alt="Plan en el móvil">
+  <img src="screenshots/objetivos-movil.png" width="19%" alt="Objetivos en el móvil">
+</p>
+
+<details>
+<summary>Más capturas de escritorio</summary>
+
+![Movimientos](screenshots/movimientos-pc.png)
+![Cuentas](screenshots/cuentas-pc.png)
+![Plan](screenshots/plan-pc.png)
+![Objetivos](screenshots/objetivos-pc.png)
+
+</details>
+
+> Datos de ejemplo inventados.
 
 ---
 
 ## ✨ Características
 
-| Módulo | Descripción |
+| Sección | Descripción |
 |---|---|
-| 📊 **Dashboard** | Resumen mensual de ingresos, gastos y ahorro. Tendencia de los últimos meses, próximos pagos recurrentes y widget de logros. |
-| 📅 **Mensual** | Análisis por tramos de nómina. Desglose de categorías, tabla de transacciones y gráfica de tendencia personalizable. |
-| 💳 **Transacciones** | Listado completo con filtros, búsqueda, edición de categorías y marcado de transacciones a excluir de estadísticas. Importación CSV y entrada manual. |
-| 📈 **Portfolio** | Seguimiento de inversiones con datos de mercado en tiempo real (yfinance). Gráfica comparativa y acumulada, historial de dividendos y operaciones cerradas. Posiciones manuales. |
-| 🔁 **Recurrentes** | Detección automática de pagos periódicos (suscripciones, recibos) y previsión del próximo cargo. |
-| 🎯 **Objetivos** | Metas de ahorro con seguimiento de progreso y allocaciones. |
-| 💸 **Deudas** | Gestión de préstamos, cuotas y amortizaciones con historial de pagos. |
-| 🔥 **FIRE Calculator** | Calcula cuándo podrás retirarte. KPIs de capital necesario, años hasta FIRE, edad estimada y progreso actual. Gráfica de trayectoria. |
-| 🏆 **Logros** | Sistema de gamificación con retos financieros. Progreso circular, categorías y últimos logros desbloqueados. |
-| 👶 **Baby Steps** | Plan de finanzas personales de Dave Ramsey. Seguimiento de los 7 pasos con guía detallada. |
-| 🤖 **Asistente IA** | Chat integrado con IA para consultas sobre tus finanzas. Historial de conversaciones persistente. |
-| ⌨️ **Command Palette** | Navegación rápida con `Ctrl+K`. Acceso a cualquier sección, acciones frecuentes y más. |
-| ⚙️ **Ajustes** | Temas visuales, colores de acento, categorías personalizadas, gestión de funciones activas, integraciones y zona de cuenta. |
+| 🏠 **Inicio** | Lo que te queda del ciclo, gasto por categoría, próximos cargos, avisos y patrimonio con el efectivo disponible una vez apartado lo de los objetivos. Tarjetas que puedes ordenar y ocultar. |
+| 💳 **Movimientos** | Listado con filtros, búsqueda, agrupación por día, categoría, comercio o cuenta. Selección múltiple para categorizar, fusionar, mover o excluir. Categorización con IA. |
+| 🏦 **Cuentas** | Saldos de bancos y brokers, efectivo disponible frente a lo apartado en objetivos, cartera de inversión con gráfica de precio por posición, posiciones manuales y actualización de precios en vivo. |
+| 📅 **Mes a mes** | Resumen por ciclos de nómina o meses naturales, con lo invertido en cada periodo y exportación a PDF o Excel. |
+| 🧾 **Presupuestos** | Límites de gasto por categoría con aviso al acercarte al tope. |
+| 🔁 **Recurrentes** | Detección automática de suscripciones y recibos, previsión del próximo cargo y marcado manual desde un movimiento. |
+| 🎯 **Objetivos** | Metas de ahorro y reparto del sueldo entre gastos, ahorro e inversión. |
+| 💸 **Deudas** | Préstamos, cuotas y amortizaciones con historial de pagos. |
+| 🏆 **Logros** | Rachas y retos financieros. |
+| 🤖 **Asistente IA** | Chat sobre tus finanzas y categorización automática de movimientos. |
+| ⚙️ **Ajustes** | Tema claro/oscuro, modo ultra simple, funciones activables, categorías y reglas, webhooks, tokens de API, exportación y copias completas de la cuenta. |
+| 🛡️ **Administración** | Usuarios, permisos de IA por usuario (modelo y consumo), copias de seguridad del servidor, avisos y actividad. |
 
 ---
 
-## 🔗 Trade Republic — Integración en tiempo real
+## 🏦 Bancos y brokers
 
-Además de importar CSVs, FinanceMaster puede conectarse directamente a la API de Trade Republic para sincronizar tu portfolio en tiempo real.
+| Entidad | Conexión directa | Importación CSV |
+|---|:---:|:---:|
+| Trade Republic | ✔ | ✔ |
+| MyInvestor | ✔ | ✔ |
+| BBVA | | ✔ |
+| N26 | | ✔ |
+| Revolut | | ✔ |
+| Wise | | ✔ |
+| Otro banco | | ✔ (detección automática de columnas) |
 
-1. En **Ajustes → Integraciones**, introduce tu número de teléfono de TR.
-2. Introduce el código de verificación SMS.
-3. El portfolio se sincronizará automáticamente con precios en vivo, dividendos y operaciones.
+Además puedes crear cuentas manuales (efectivo, otras cuentas) y posiciones de inversión manuales.
 
-La conexión se mantiene entre sesiones y se reconecta automáticamente al iniciar la app.
+### Conexión directa (Trade Republic y MyInvestor)
 
----
+1. En **Cuentas → Añadir cuenta**, elige Trade Republic o MyInvestor.
+2. Introduce tus credenciales y confirma el acceso (código o aviso en la app del banco).
+3. Los movimientos, el efectivo y la cartera se sincronizan solos.
 
-## 📥 Importar datos de Trade Republic (CSV)
-
-1. En la app de Trade Republic ve a **Perfil → Documentos → Exportar historial**.
-2. Descarga el CSV de movimientos.
-3. En FinanceMaster abre **Transacciones → Importar CSV**.
-4. Arrastra el archivo al área de carga.
-5. La aplicación detectará y categorizará automáticamente los movimientos.
-
----
-
-## 📈 Portfolio de inversiones
-
-* Seguimiento de acciones, ETFs y fondos (automático vía TR o manual).
-* Evolución histórica de la cartera.
-* Beneficio/pérdida total y por posición.
-* Dividendos recibidos.
-* Operaciones abiertas y cerradas.
-* Comparativa frente a índices de referencia.
+Las credenciales se guardan cifradas y la app se reconecta automáticamente al abrirla. En **Ajustes → Diagnóstico** tienes herramientas para comprobar el saldo con Trade Republic y reparar datos (duplicados, movimientos que faltan, participaciones, tickers…).
 
 ---
 
-## 🔥 FIRE Calculator
+## 📥 Importar por CSV
 
-Calcula tu independencia financiera:
-
-* **Capital necesario** — basado en el 4% SWR.
-* **Años hasta FIRE** — con tasa de ahorro e interés compuesto.
-* **Edad estimada** — cuándo alcanzas la libertad financiera.
-* **Progreso actual** — qué porcentaje del objetivo tienes acumulado.
-* Gráfica de crecimiento del patrimonio hasta el retiro.
+1. Descarga el extracto de movimientos desde la web o la app de tu banco.
+2. En FinanceMaster abre **Cuentas → Añadir cuenta → Otro banco por CSV** (o **Importar** desde el menú).
+3. Arrastra el archivo. El formato del banco se detecta automáticamente.
+4. Revisa la vista previa: los duplicados se descartan y los movimientos se categorizan con tus reglas.
 
 ---
 
-## 🏆 Logros
+## 📈 Inversiones
 
-Sistema de gamificación para mantener buenos hábitos financieros:
-
-* Logros por categorías: ahorro, inversión, control de gastos, constancia y más.
-* Progreso circular global con desglose por categoría.
-* Widget compacto en el Dashboard.
-* Últimos logros desbloqueados en tiempo real.
+* Acciones, ETFs y fondos de Trade Republic, MyInvestor o posiciones manuales.
+* Precio en vivo y gráfica por posición (1 mes, 6 meses, 1 año, 5 años).
+* Beneficio/pérdida total y por posición, agrupado por broker.
+* Dividendos e intereses recibidos.
 
 ---
 
 ## 🎨 Personalización
 
-### Temas incluidos
+* Tema claro, oscuro o el del sistema.
+* **Modo ultra simple**: solo lo esencial, con las funciones que elijas.
+* Funciones activables desde **Ajustes → Funciones**: cuentas, inversión, presupuestos, mes a mes, recurrentes, objetivos, deudas, logros y asistente IA.
+* Tarjetas de Inicio reordenables.
+* Categorías personalizadas con icono y reglas automáticas (con vista previa de a cuántos movimientos afectan).
+* Moneda principal y primer día del mes (nómina o día fijo).
 
-* Trade Republic (predeterminado)
-* Azul oscuro
-* Bosque
-* Púrpura
-* Ámbar
-* Claro
+---
 
-### Opciones adicionales
+## 📱 App instalable (PWA)
 
-* 8 colores de acento.
-* Modo compacto.
-* Categorías personalizadas con icono y color.
-* **Funciones activables/desactivables** desde Ajustes → Funciones:
-  * Calculadora FIRE
-  * Logros
-  * 7 Baby Steps
-  * Deudas
-  * Objetivos
-  * Recurrentes
+FinanceMaster se puede instalar en la pantalla de inicio del iPhone o Android y funciona como una app nativa: barra inferior, gestos, bloqueo automático y recarga sola al actualizar el servidor.
 
 ---
 
@@ -128,10 +124,9 @@ Sistema de gamificación para mantener buenos hábitos financieros:
 
 Al crear tu cuenta, un asistente guiado te permite:
 
-1. Elegir el tema y color de acento.
+1. Elegir modo normal o ultra simple.
 2. Activar o desactivar funciones.
-3. Añadir categorías personalizadas.
-4. Conocer las formas de importar tus datos.
+3. Conectar o importar tus primeras cuentas.
 
 Puedes volver a configurar todo esto en **Ajustes** en cualquier momento.
 
@@ -209,7 +204,7 @@ npm run dev
 * FastAPI
 * SQLAlchemy + SQLite
 * yfinance (datos de mercado)
-* Trade Republic API (streaming en tiempo real)
+* Trade Republic y MyInvestor (sincronización directa)
 * JWT Authentication
 * Groq / Google Gemini (asistente IA, formato OpenAI compatible)
 
@@ -217,10 +212,11 @@ npm run dev
 
 * React 18 + TypeScript
 * Vite
-* Tailwind CSS + Radix UI
-* Recharts (gráficas)
+* Componentes propios con CSS-in-JS y SVG
+* jsPDF / SheetJS (exportación PDF y Excel)
 * TanStack Query (caché y sincronización)
 * Zustand (estado global)
+* PWA instalable (service worker)
 
 ### Despliegue
 
