@@ -295,6 +295,9 @@ export const portfolioApi = {
     request<ManualPosition>(`/portfolio/manual-positions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteManualPosition: (id: number) =>
     request<void>(`/portfolio/manual-positions/${id}`, { method: 'DELETE' }),
+  /** Tipo de activo elegido a mano; null vuelve al automático. */
+  setAssetType: (symbol: string, asset_class: string | null) =>
+    request<{ symbol: string; asset_class: string | null }>('/portfolio/asset-type', { method: 'PUT', body: JSON.stringify({ symbol, asset_class }) }),
 }
 
 // Budgets
@@ -363,7 +366,7 @@ export interface MonthlyTrend { month: string; income: number; expenses: number;
 export interface UpcomingRecurring { id: number; display_name: string; avg_amount: number; next_expected_date: string | null; days_until: number | null; category: Category | null }
 export interface PendingRecurring { group_id: number; display_name: string; avg_amount: number; category_name: string; category_color: string; category_icon: string; next_expected_date: string | null }
 export interface TradeEvent { date: string; shares: number; price_eur: number; total_eur: number }
-export interface PortfolioPosition { symbol: string; name: string; asset_class: string; shares: number; avg_buy_price: number; total_invested: number; realized_pnl: number; dividends_received: number; first_purchase_date: string | null; buy_dates: string[]; sell_dates: string[]; buy_events: TradeEvent[]; sell_events: TradeEvent[]; current_price: number | null; market_value: number | null; unrealized_pnl: number | null; unrealized_pnl_pct: number | null; is_manual?: boolean; manual_id?: number | null; broker?: string | null }
+export interface PortfolioPosition { symbol: string; name: string; asset_class: string; shares: number; avg_buy_price: number; total_invested: number; realized_pnl: number; dividends_received: number; first_purchase_date: string | null; buy_dates: string[]; sell_dates: string[]; buy_events: TradeEvent[]; sell_events: TradeEvent[]; current_price: number | null; market_value: number | null; unrealized_pnl: number | null; unrealized_pnl_pct: number | null; is_manual?: boolean; manual_id?: number | null; broker?: string | null; asset_class_auto?: string | null; asset_class_manual?: boolean }
 export interface StockSearchResult { ticker: string; name: string; exchange: string; currency: string; type_disp: string }
 export interface ManualPosition { id: number; ticker: string; name: string; shares: number; avg_price_eur: number; currency: string; created_at: string }
 export interface PortfolioPerformance { total_invested: number; total_realized_pnl: number; total_fees: number; total_dividends: number; total_market_value: number; total_unrealized_pnl: number; positions: PortfolioPosition[]; dividends_by_asset: { symbol: string; name: string; total: number; count: number }[] }

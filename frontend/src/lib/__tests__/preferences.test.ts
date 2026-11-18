@@ -82,8 +82,12 @@ describe('ultra_modules y cat_icons', () => {
 describe('home_cards', () => {
   it('por defecto todas en orden y limpia valores raros', () => {
     expect(sanitize({}).home_cards).toEqual(HOME_CARD_IDS)
-    expect(sanitize({ home_cards: ['goal', 'x', 'goal', 'worth'] }).home_cards).toEqual(['goal', 'worth'])
-    expect(sanitize({ home_cards: [] }).home_cards).toEqual([])
+    expect(sanitize({ home_cards: ['goal', 'x', 'goal', 'worth'], home_v: 2 }).home_cards).toEqual(['goal', 'worth'])
+    expect(sanitize({ home_cards: [], home_v: 2 }).home_cards).toEqual([])
+  })
+  it('listas antiguas: la principal y los últimos movimientos aparecen visibles', () => {
+    expect(sanitize({ home_cards: ['goal', 'worth'] }).home_cards).toEqual(['hero', 'goal', 'worth', 'recent'])
+    expect(sanitize(sanitize({ home_cards: ['goal'] })).home_cards).toEqual(['hero', 'goal', 'recent'])
   })
   it('applyPatch cambia el orden', () => {
     expect(applyPatch(DEFAULT_PREFERENCES, { home_cards: ['insights', 'month'] }).home_cards).toEqual(['insights', 'month'])

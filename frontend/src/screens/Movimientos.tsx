@@ -23,6 +23,7 @@ import { usePreferencesStore } from '@/store/preferences'
 import { toast } from '@/ui/Toast'
 import { hintSeen, markHint } from '@/lib/hints'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
+import { usePeriodWords } from '@/hooks/usePeriodWords'
 
 type Params = Record<string, string | number | undefined>
 
@@ -87,6 +88,7 @@ export default function Movimientos() {
   // Los periodos van por ciclo de nómina, como en Inicio.
   const cycle = usePayrollCycle(0)
   const cycles = cycle.cycles
+  const w = usePeriodWords()
   const params: Params = useMemo(() => ({ ...filterParams(filters, today, cycles), search: q || undefined }), [filters, q, today, cycles])
   const categories = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const accounts = useQuery({ queryKey: ['accounts', 'tx-sources'], queryFn: dashApi.txSources })
@@ -110,7 +112,7 @@ export default function Movimientos() {
   const days = useMemo(() => groupByDay(items, today), [items, today])
   const total = mode === 'day' ? (list.data?.pages[0]?.total ?? 0) - hiddenIds.size : (groups.data ?? []).reduce((s, g) => s + g.count, 0)
   const sections = useMemo(() => groupSections(groups.data ?? [], split), [groups.data, split])
-  const periodText = filters.period === 'this' ? (cycles.length ? cycle.cycleRangeLabel : monthName(monthKey(today))) : periodLabel(filters.period)
+  const periodText = filters.period === 'this' ? (cycles.length ? cycle.cycleRangeLabel : monthName(monthKey(today))) : periodLabel(filters.period, w)
   const clearPeriod = filters.period !== '' && (
     <span role="button" tabIndex={0} aria-label="Quitar filtro de fecha" onClick={e => { e.stopPropagation(); setFilters(f => ({ ...f, period: '' })) }}
       onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); setFilters(f => ({ ...f, period: '' })) } }}
@@ -241,7 +243,7 @@ export default function Movimientos() {
       <div>
         <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, margin: '0 0 22px' }}>
           <div>
-            <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>{Math.max(0, total)} {filters.period === 'this' ? 'este mes' : `· ${periodText}`}</p>
+            <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>{Math.max(0, total)} {filters.period === 'this' ? w.this : `· ${periodText}`}</p>
             <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em' }}>Movimientos</h1>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -256,7 +258,7 @@ export default function Movimientos() {
           </div>
         </header>
         {!ultra && <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-          <Chip active={filters.period !== ''} onClick={() => setSheet('filters')}>{filters.period === 'this' ? 'Este mes' : periodText}{clearPeriod}</Chip>
+          <Chip active={filters.period !== ''} onClick={() => setSheet('filters')}>{filters.period === 'this' ? w.This : periodText}{clearPeriod}</Chip>
           <Chip icon="bank-card" active={filters.sources.length > 0} onClick={() => setSheet('filters')}>{srcLabel}</Chip>
           <Chip icon="tag" active={catNames.length > 0} onClick={() => setSheet('filters')}>{catNames.length ? catNames.join(', ') : 'Categoría'}</Chip>
           <Chip icon="filter" active={!!(filters.min || filters.max)} onClick={() => setSheet('filters')}>{amountLabel}</Chip>
@@ -683,6 +685,7 @@ function FiltersSheet({ open, onClose, value, onApply, search, categories, accou
   const [months, setMonths] = useState(false)
   const [allCats, setAllCats] = useState(false)
   const { cycles } = usePayrollCycle(0)
+  const w = usePeriodWords()
   useEffect(() => { if (open) { setD(value); setMonths(/^\d{4}-\d{2}$/.test(value.period)); setAllCats(false) } }, [open, value])
   const count = useQuery({
     queryKey: ['transactions', 'count', d, search],
@@ -714,7 +717,7 @@ function FiltersSheet({ open, onClose, value, onApply, search, categories, accou
       <FGroup>
         <SheetLabel>Fecha</SheetLabel>
         <Wrap>
-          {([['this', 'Este mes'], ['last', 'Mes pasado'], ['3m', '3 meses'], ['', 'Todo']] as const).map(([p, l]) => (
+          {([['this', w.This], ['last', w.last], ['3m', w.three], ['', 'Todo']] as const).map(([p, l]) => (
             <Chip key={p} active={d.period === p && !months} style={inSheet(d.period === p && !months)} onClick={() => { setMonths(false); set({ period: p }) }}>{l}</Chip>
           ))}
           <Chip icon="calendar" active={months} style={inSheet(months)} onClick={() => setMonths(m => !m)}>{months && /^\d{4}-\d{2}$/.test(d.period) ? monthName(d.period) : 'Otro mes'}</Chip>

@@ -254,10 +254,10 @@ export function periodRange(period: FilterPeriod, today: Date, cycles: CycleSpan
 }
 
 /** Etiqueta corta del periodo (chip de la lista). */
-export function periodLabel(period: FilterPeriod): string {
-  if (period === 'this') return 'Este mes'
-  if (period === 'last') return 'Mes pasado'
-  if (period === '3m') return '3 meses'
+export function periodLabel(period: FilterPeriod, w = { This: 'Este mes', last: 'Mes pasado', three: '3 meses' }): string {
+  if (period === 'this') return w.This
+  if (period === 'last') return w.last
+  if (period === '3m') return w.three
   if (/^\d{4}-\d{2}$/.test(period)) return monthName(period)
   return rangePeriodLabel(period, new Date()) ?? 'Todo'
 }

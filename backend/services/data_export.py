@@ -46,6 +46,7 @@ BANKS = {
     "n26": "N26",
     "wise": "Wise",
     "bbva": "BBVA",
+    "pluxee": "Pluxee",
     "other": "Otros bancos",
     "manual": "Manual",
 }

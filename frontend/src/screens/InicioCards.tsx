@@ -1,4 +1,5 @@
 // Tarjetas opcionales de Inicio y la hoja para ordenarlas u ocultarlas.
+import { usePeriodWords } from '@/hooks/usePeriodWords'
 import { useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -18,6 +19,7 @@ export const cardBox = (pc?: boolean): CSSProperties => pc
 /** Recurrentes que deberían cobrarse en el periodo y aún no han llegado. */
 export function PendingCard({ pc, start, end }: { pc?: boolean; start: string; end: string }) {
   const money = useMoney()
+  const w = usePeriodWords()
   const q = useQuery({ queryKey: ['pending-recurring', start, end], queryFn: () => dashApi.pendingRecurring(start, end), enabled: !!start && !!end })
   const list = q.data ?? []
   if (list.length === 0) return null
@@ -26,7 +28,7 @@ export function PendingCard({ pc, start, end }: { pc?: boolean; start: string; e
     <section style={cardBox(pc)}>
       <Link to="/recurrentes" style={{ display: 'block', color: C.text }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Por cobrar este mes</h2>
+          <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>Por cobrar {w.this}</h2>
           <span style={{ fontWeight: 800, whiteSpace: 'nowrap' }}>{money(-total, { sign: true })}</span>
         </div>
         {list.slice(0, 3).map(g => (

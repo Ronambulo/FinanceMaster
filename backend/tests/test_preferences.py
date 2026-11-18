@@ -129,3 +129,11 @@ def test_home_cards_order_and_validation():
     assert prefs.resolve(raw)["home_cards"] == []
     with pytest.raises(prefs.PreferencesError):
         prefs.merge(None, {"home_cards": ["nope"]})
+
+
+def test_home_cards_old_lists_show_hero_and_recent():
+    import json
+    old = json.dumps({"home_cards": ["goal", "worth"]})
+    assert prefs.resolve(old)["home_cards"] == ["hero", "goal", "worth", "recent"]
+    raw = prefs.merge(old, {"home_cards": ["goal"]})
+    assert prefs.resolve(raw)["home_cards"] == ["goal"]

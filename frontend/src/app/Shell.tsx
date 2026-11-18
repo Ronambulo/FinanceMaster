@@ -18,6 +18,7 @@ import { queryClient } from '@/lib/queryClient'
 import { miApi, trApi } from '@/lib/api'
 import { toast } from '@/ui/Toast'
 import { PULL_TRIGGER, pullDistance, scrollToTop, setScroller } from '@/app/scroller'
+import { usePeriodWords } from '@/hooks/usePeriodWords'
 import { allNav, isActive, moreNav, primaryNav, type NavIcon, type NavItem } from '@/lib/nav'
 
 export const NAV_ICON: Record<NavIcon, AnyIcon> = {
@@ -34,11 +35,16 @@ function useNav() {
   const prefs = usePreferencesStore(s => s.prefs)
   const user = useAuthStore(s => s.user)
   const isAdmin = !!user?.is_admin
-  return useMemo(() => ({
-    primary: primaryNav(prefs),
-    more: moreNav(prefs, { isAdmin }),
-    all: allNav(prefs, { isAdmin }),
-  }), [prefs, isAdmin])
+  const each = usePeriodWords().each
+  return useMemo(() => {
+    // "Mes a mes" pasa a "Ciclo a ciclo" cuando los periodos van por ciclos.
+    const name = (l: NavItem[]) => l.map(i => (i.id === 'monthly' ? { ...i, label: each } : i))
+    return {
+      primary: name(primaryNav(prefs)),
+      more: name(moreNav(prefs, { isAdmin })),
+      all: name(allNav(prefs, { isAdmin })),
+    }
+  }, [prefs, isAdmin, each])
 }
 
 // ── Móvil ──────────────────────────────────────────────────────────────────

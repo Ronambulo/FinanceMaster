@@ -121,3 +121,11 @@ export function rangePeriodLabel(period: string, today: Date): string | null {
   const r = parseRangePeriod(period)
   return r ? cycleLabel(r.date_from, r.date_to, r.date_to >= iso(today)) : null
 }
+
+/** Textos del periodo: "ciclo" si va de nómina a nómina o desde un día fijo, "mes" si son meses naturales. */
+export function periodWords(isCycle: boolean) {
+  return isCycle
+    ? { isCycle, unit: 'ciclo', Unit: 'Ciclo', this: 'este ciclo', This: 'Este ciclo', last: 'Ciclo pasado', three: '3 ciclos', each: 'Ciclo a ciclo', none: 'Aún no hay ciclos' }
+    : { isCycle, unit: 'mes', Unit: 'Mes', this: 'este mes', This: 'Este mes', last: 'Mes pasado', three: '3 meses', each: 'Mes a mes', none: 'Aún no hay meses' }
+}
+export type PeriodWords = ReturnType<typeof periodWords>

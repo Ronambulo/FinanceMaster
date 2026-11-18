@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { dashApi, goalApi, miApi, portfolioApi, trApi, txApi, type AccountBalance, type PortfolioPosition } from '@/lib/api'
 import {
-  ASSET_COLOR, ASSET_LABEL, BROKERS, accountSub, assetKind, assetMix, balanceSeries, brokerKey, brokerSub,
+  ASSET_COLOR, ASSET_LABEL, BROKERS, accountSub, assetMix, balanceSeries, brokerKey, brokerSub, positionKind,
   holdingsByBroker, positionsReturn, sharesLabel, trWarning, visibleAccounts, worthSplit, type AssetSlice,
 } from '@/lib/accounts'
 import { accountName, dayLabel, kindToType, parseAmount } from '@/lib/movements'
@@ -21,6 +21,9 @@ import { create } from 'zustand'
 import { useFeaturesStore } from '@/store/features'
 import { goalsReserved } from '@/lib/plan'
 import { ManualPositionSheet, PositionSheet, refreshLivePrices } from './Posiciones'
+import { TickerTile, ticker } from '@/ui/TickerTile'
+import { FileDrop } from './Importar'
+export { TickerTile }
 
 const card = { background: C.card, boxShadow: 'var(--sh-card)' }
 const errText = (e: unknown) => (e instanceof Error && e.message ? e.message : 'Algo ha fallado')
@@ -45,7 +48,7 @@ function useAccountsData() {
 // ── Hoja Añadir cuenta ──────────────────────────────────────────────────────
 const useAddAccount = create<{ open: boolean; position: boolean }>(() => ({ open: false, position: false }))
 export const openAddAccount = () => useAddAccount.setState({ open: true })
-const openAddPosition = () => useAddAccount.setState({ open: false, position: true })
+export const openAddPosition = () => useAddAccount.setState({ open: false, position: true })
 
 const NEW_ACCOUNTS: { id: BankId; title: string; to: string }[] = [
   { id: 'n26', title: 'N26', to: '/importar?origen=n26' },
@@ -54,6 +57,7 @@ const NEW_ACCOUNTS: { id: BankId; title: string; to: string }[] = [
   { id: 'caixabank', title: 'CaixaBank', to: '/importar' },
   { id: 'trade_republic', title: 'Trade Republic', to: '/cuentas/trade-republic' },
   { id: 'myinvestor', title: 'MyInvestor', to: '/importar?origen=myinvestor' },
+  { id: 'pluxee', title: 'Pluxee', to: '/cuentas/pluxee' },
 ]
 
 export function AddAccountSheet() {
@@ -126,12 +130,12 @@ function SectionHead({ title, total }: { title: string; total: string }) {
   )
 }
 
-function ReturnText({ pct }: { pct: number | null }) {
+export function ReturnText({ pct }: { pct: number | null }) {
   if (pct == null) return null
   return <span style={{ display: 'block', fontSize: 12, fontWeight: 700, textAlign: 'right', color: pct >= 0 ? C.green : C.red }}>{pctText(pct)}</span>
 }
 
-function Donut({ slices, size = 112 }: { slices: AssetSlice[]; size?: number }) {
+export function Donut({ slices, size = 112 }: { slices: AssetSlice[]; size?: number }) {
   const r = size / 2 - 8
   const len = 2 * Math.PI * r
   const gap = slices.length > 1 ? 3 : 0
@@ -151,7 +155,7 @@ function Donut({ slices, size = 112 }: { slices: AssetSlice[]; size?: number }) 
   )
 }
 
-function Legend({ slices }: { slices: AssetSlice[] }) {
+export function Legend({ slices }: { slices: AssetSlice[] }) {
   return (
     <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
       {slices.map(s => (
@@ -164,24 +168,41 @@ function Legend({ slices }: { slices: AssetSlice[] }) {
   )
 }
 
-const TICKER_BG = ['var(--c-a8323e)', 'var(--c-1b1b1b)', 'var(--c-5b6070)', 'var(--c-c77700)', 'var(--c-13294b)', 'var(--c-36a18b)', 'var(--c-0b7fab)']
-function tickerBg(s: string) {
-  let h = 0
-  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0
-  return TICKER_BG[h % TICKER_BG.length]
+/** Fila de una posición: ticker, nombre, participaciones, valor y rentabilidad. */
+export function PositionRow({ p, onClick }: { p: PortfolioPosition; onClick: () => void }) {
+  const money = useMoney()
+  const pct = p.unrealized_pnl_pct
+  return (
+    <button type="button" onClick={onClick} style={{ width: '100%', border: 0, background: 'transparent', color: C.text, font: 'inherit', textAlign: 'left', cursor: 'pointer', display: 'grid', gridTemplateColumns: '40px minmax(0,1fr) auto', gap: 12, alignItems: 'center', padding: '9px 0' }}>
+      <TickerTile p={p} />
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: 'block', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name || p.symbol}</span>
+        <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>{sharesLabel(p.shares, positionKind(p))}</span>
+      </span>
+      <span style={{ textAlign: 'right' }}>
+        <span style={{ display: 'block', fontWeight: 700 }}>{money(p.market_value ?? p.total_invested)}</span>
+        {pct != null && <span style={{ color: pct >= 0 ? C.green : C.red, fontWeight: 700 }}>{pctText(pct)}</span>}
+      </span>
+    </button>
+  )
 }
-const ticker = (p: PortfolioPosition) => (p.symbol || p.name || '?').replace(/\..*$/, '').slice(0, 5).toUpperCase()
 
-function SyncBar({ broker, compact }: { broker: string; compact?: boolean }) {
+/** Sincronizar Trade Republic: avisa con un toast o lleva a la pantalla de error. */
+function useTrSync() {
   const qc = useQueryClient()
   const nav = useNavigate()
-  const tr = broker === 'trade_republic'
-  const status = useQuery({ queryKey: [tr ? 'tr-status' : 'mi-status'], queryFn: () => (tr ? trApi.status() : miApi.status()) })
-  const sync = useMutation({
+  return useMutation({
     mutationFn: () => trApi.sync(),
     onSuccess: r => { qc.invalidateQueries(); toast(r.synced ? `${r.synced} movimientos nuevos` : 'Todo al día') },
     onError: e => nav('/cuentas/sync-error', { state: { source: 'trade_republic', message: errText(e) } }),
   })
+}
+
+function SyncBar({ broker, compact }: { broker: string; compact?: boolean }) {
+  const nav = useNavigate()
+  const tr = broker === 'trade_republic'
+  const status = useQuery({ queryKey: [tr ? 'tr-status' : 'mi-status'], queryFn: () => (tr ? trApi.status() : miApi.status()) })
+  const sync = useTrSync()
   if (!tr || !status.data) return null
   const s = status.data
   const when = s.last_sync ? `${dayLabel(s.last_sync, new Date())}, ${new Date(s.last_sync).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : null
@@ -208,6 +229,7 @@ export default function Cuentas() {
   const hasTR = d.brokers.some(b => b.broker === 'trade_republic') || d.cash.some(c => c.source === 'trade_republic')
   const trStatus = useQuery({ queryKey: ['tr-status'], queryFn: trApi.status, enabled: hasTR })
   const warn = trWarning(trStatus.data, hasTR)
+  const trSync = useTrSync()
 
   const worthCard = (
     <section style={{ ...card, margin: '16px 16px 0', borderRadius: 28, padding: '18px 20px' }}>
@@ -243,11 +265,18 @@ export default function Cuentas() {
     </div>
   ))
 
-  if (pc) return <CuentasPC d={d} />
+  if (pc) return <FileDrop><CuentasPC d={d} /></FileDrop>
 
   return (
+    <FileDrop>
     <div style={{ paddingBottom: 120 }}>
-      <Header title="Cuentas" actions={<RoundBtn icon="plus" label="Añadir cuenta" onClick={openAddAccount} />} />
+      <Header title="Cuentas" actions={<>
+        {trStatus.data?.connected && (
+          <RoundBtn icon="refresh" label={trSync.isPending ? 'Sincronizando Trade Republic' : 'Sincronizar Trade Republic'} disabled={trSync.isPending}
+            onClick={() => trSync.mutate()} style={trSync.isPending ? { animation: 'fm-spin .8s linear infinite reverse' } : undefined} />
+        )}
+        <RoundBtn icon="plus" label="Añadir cuenta" onClick={openAddAccount} />
+      </>} />
       {d.loading ? <div style={{ margin: '16px 16px 0', display: 'grid', gap: 12 }}><Skeleton h={150} r={28} /><Skeleton h={180} /></div>
         : empty ? <Empty icon="bank-card" title="Aún no hay cuentas" text="Importa un extracto o conecta tu bróker." action={<Btn icon="plus" onClick={openAddAccount} style={{ padding: '0 9px 0 0' }}>Añadir cuenta</Btn>} />
           : (
@@ -266,6 +295,7 @@ export default function Cuentas() {
           )}
       <AddAccountSheet />
     </div>
+    </FileDrop>
   )
 }
 
@@ -303,7 +333,7 @@ function CuentasPC({ d }: { d: ReturnType<typeof useAccountsData> }) {
   let right: ReactNode
   if (sel === null) right = <SummaryPC d={d} onPick={(kind, source) => setSel({ kind, source })} />
   else if (sel.kind === 'cash') right = <section style={{ ...card, borderRadius: 22, padding: '22px 24px' }}><BankPanel key={sel.source} source={sel.source} embedded /></section>
-  else right = <BrokerCardPC broker={sel.source} positions={d.positions} cash={d.cash} />
+  else right = <BrokerCardPC broker={sel.source} positions={d.positions} />
 
   return (
     <div>
@@ -345,11 +375,21 @@ function SummaryPC({ d, onPick }: { d: ReturnType<typeof useAccountsData>; onPic
   const history = d.history
   const first = history.length > 1 ? history[0] : null
   const change = first ? ((d.split.total - first) / Math.abs(first)) * 100 : null
-  const rows = [
-    ...d.cash.map(a => ({ kind: 'cash' as const, source: a.source, title: a.label || accountName(a.source), value: a.balance })),
-    ...d.brokers.map(b => ({ kind: 'broker' as const, source: b.broker, title: accountName(b.broker), value: b.value })),
-  ].sort((a, b) => b.value - a.value)
+  // Una fila por entidad: el efectivo y lo invertido en el mismo sitio (p. ej. Trade Republic) van juntos.
+  const byEntity = new Map<string, { source: string; title: string; cash: number; invested: number }>()
+  for (const a of d.cash) {
+    const e = byEntity.get(a.source) ?? { source: a.source, title: a.label || accountName(a.source), cash: 0, invested: 0 }
+    e.cash += a.balance; byEntity.set(a.source, e)
+  }
+  for (const b of d.brokers) {
+    const e = byEntity.get(b.broker) ?? { source: b.broker, title: accountName(b.broker), cash: 0, invested: 0 }
+    e.invested += b.value; byEntity.set(b.broker, e)
+  }
+  const rows = [...byEntity.values()].map(e => ({ ...e, value: e.cash + e.invested })).sort((a, b) => b.value - a.value)
   const max = Math.max(1, ...rows.map(r => Math.abs(r.value)))
+  const seg = (v: number, color: string, label: string) => v > 0 && (
+    <span title={`${label} ${money(v, { euro: true })}`} style={{ display: 'block', width: `${(v / max) * 100}%`, height: '100%', background: color }} />
+  )
   return (
     <section style={{ ...card, borderRadius: 22, padding: '22px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -373,38 +413,44 @@ function SummaryPC({ d, onPick }: { d: ReturnType<typeof useAccountsData>; onPic
         </>
       )}
       {d.goalsOn && <Available available={d.available} reserved={d.reserved} link />}
-      <h2 style={{ margin: '24px 0 4px', fontSize: 17, fontWeight: 800 }}>Por cuenta</h2>
-      {rows.map(r => {
-        const share = d.split.total > 0 ? Math.round((r.value / d.split.total) * 100) : 0
-        return (
-          <button key={`${r.kind}-${r.source}`} type="button" onClick={() => onPick(r.kind, r.source)}
-            style={{ width: '100%', display: 'grid', gridTemplateColumns: '34px minmax(0, 1fr) auto', gap: 12, alignItems: 'center', padding: '10px 0', border: 0, borderTop: `1px solid ${C.line}`, background: 'transparent', color: C.text, font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
-            <BankLogo source={r.source} size={34} />
-            <span style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-              <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 14 }}>
-                <span style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
-                <span style={{ color: C.muted, fontWeight: 700 }}>{share} %</span>
+      <h2 style={{ margin: '24px 0 8px', fontSize: 17, fontWeight: 800 }}>Por cuenta</h2>
+      <div style={{ display: 'grid', gap: 4 }}>
+        {rows.map(r => {
+          const share = d.split.total > 0 ? (r.value / d.split.total) * 100 : 0
+          const shareText = share > 0 && share < 1 ? '<1 %' : `${Math.round(share)} %`
+          // Abre la parte con más peso de la entidad
+          const kind = r.invested > r.cash ? 'broker' : 'cash'
+          return (
+            <button key={r.source} type="button" onClick={() => onPick(kind, r.source)} className="fm-hover"
+              style={{ width: '100%', display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) auto', gap: 14, alignItems: 'center', padding: '10px 12px', margin: '0 -12px', boxSizing: 'content-box', border: 0, borderRadius: 14, background: 'transparent', color: C.text, font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+              <BankLogo source={r.source} />
+              <span style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+                <span style={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
+                <span style={{ display: 'flex', gap: 2, height: 8, borderRadius: 99, background: 'var(--track)', overflow: 'hidden' }}>
+                  {seg(r.cash, C.green, 'Efectivo')}
+                  {seg(r.invested, 'var(--c-8b85ff)', 'Invertido')}
+                </span>
               </span>
-              <span style={{ display: 'block', height: 6, borderRadius: 99, background: 'var(--track)', overflow: 'hidden' }}>
-                <span style={{ display: 'block', width: `${Math.max(0, (r.value / max) * 100)}%`, height: '100%', borderRadius: 99, background: r.kind === 'cash' ? C.green : 'var(--c-8b85ff)' }} />
+              <span style={{ textAlign: 'right', minWidth: 104 }}>
+                <span style={{ display: 'block', fontWeight: 800 }}>{money(r.value, { euro: true })}</span>
+                <span style={{ display: 'block', fontSize: 12, color: C.muted, fontWeight: 700, marginTop: 2 }}>{shareText}</span>
               </span>
-            </span>
-            <span style={{ fontWeight: 800, minWidth: 96, textAlign: 'right' }}>{money(r.value, { euro: true })}</span>
-          </button>
-        )
-      })}
+            </button>
+          )
+        })}
+      </div>
     </section>
   )
 }
 
-function BrokerCardPC({ broker, positions, cash }: { broker: string; positions: PortfolioPosition[]; cash: AccountBalance[] }) {
+function BrokerCardPC({ broker, positions }: { broker: string; positions: PortfolioPosition[] }) {
   const money = useMoney()
   const qc = useQueryClient()
   const [detail, setDetail] = useState<PortfolioPosition | null>(null)
   const own = positions.filter(p => brokerKey(p) === broker && p.shares > 0.0001).sort((a, b) => (b.market_value ?? 0) - (a.market_value ?? 0))
-  const cashHere = Math.max(cash.find(c => c.source === broker)?.balance ?? 0, 0)
-  const value = own.reduce((a, p) => a + (p.market_value ?? p.total_invested ?? 0), 0) + cashHere
-  const mix = assetMix(own, cashHere)
+  // Solo lo invertido: el efectivo del bróker ya sale en su cuenta de Efectivo.
+  const value = own.reduce((a, p) => a + (p.market_value ?? p.total_invested ?? 0), 0)
+  const mix = assetMix(own, 0)
   const ret = positionsReturn(own)
   return (
     <section style={{ ...card, borderRadius: 22, padding: '22px 24px' }}>
@@ -434,7 +480,7 @@ function BrokerCardPC({ broker, positions, cash }: { broker: string; positions: 
                 <span style={{ fontWeight: 800 }}>{ticker(p)}</span>
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name || p.symbol}</span>
-                  <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>{sharesLabel(p.shares, assetKind(p.asset_class))}</span>
+                  <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>{sharesLabel(p.shares, positionKind(p))}</span>
                 </span>
                 <span style={{ fontWeight: 800 }}>{money(p.market_value ?? p.total_invested, { euro: true })}</span>
                 {pct != null ? <Pill tone={pct >= 0 ? 'green' : 'red'}>{pctText(pct)}</Pill> : <span />}
@@ -575,9 +621,9 @@ export function Broker() {
   const money = useMoney()
   const d = useAccountsData()
   const own = d.positions.filter(p => brokerKey(p) === broker && p.shares > 0.0001).sort((a, b) => (b.market_value ?? 0) - (a.market_value ?? 0))
-  const cashHere = Math.max(d.cash.find(c => c.source === broker)?.balance ?? 0, 0)
-  const value = own.reduce((a, p) => a + (p.market_value ?? p.total_invested ?? 0), 0) + cashHere
-  const mix = assetMix(own, cashHere)
+  // Solo lo invertido: el efectivo del bróker ya sale en su cuenta de Efectivo.
+  const value = own.reduce((a, p) => a + (p.market_value ?? p.total_invested ?? 0), 0)
+  const mix = assetMix(own, 0)
   const ret = positionsReturn(own)
   const m = pc ? 0 : 16
   const [menu, setMenu] = useState(false)
@@ -592,7 +638,7 @@ export function Broker() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <BankLogo source={broker} size={48} />
           <div>
-            <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>Valor total</p>
+            <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>Valor invertido</p>
             <p style={{ margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.03em' }}>{d.loading ? '…' : money(value, { euro: true })}</p>
           </div>
           {ret != null && <span style={{ marginLeft: 'auto' }}><Pill tone={ret >= 0 ? 'green' : 'red'}>{pctText(ret)}</Pill></span>}
@@ -611,25 +657,12 @@ export function Broker() {
       <Section style={pc ? { margin: 0 } : undefined}>
         {d.loading && <div style={{ padding: '8px 0' }}><Skeleton h={48} r={14} /></div>}
         {!d.loading && own.length === 0 && <p style={{ color: C.muted, fontWeight: 600, margin: '14px 0' }}>Sin posiciones abiertas</p>}
-        {own.map((p, i) => {
-          const pct = p.unrealized_pnl_pct
-          return (
-            <div key={p.symbol + (p.manual_id ?? '')}>
-              {i > 0 && <Divider margin="0" />}
-              <button type="button" onClick={() => setDetail(p)} style={{ width: '100%', border: 0, background: 'transparent', color: C.text, font: 'inherit', textAlign: 'left', cursor: 'pointer', display: 'grid', gridTemplateColumns: '40px minmax(0,1fr) auto', gap: 12, alignItems: 'center', padding: '9px 0' }}>
-                <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 12, background: tickerBg(p.symbol || p.name), color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{ticker(p)}</span>
-                <span style={{ minWidth: 0 }}>
-                  <span style={{ display: 'block', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name || p.symbol}</span>
-                  <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>{sharesLabel(p.shares, assetKind(p.asset_class))}</span>
-                </span>
-                <span style={{ textAlign: 'right' }}>
-                  <span style={{ display: 'block', fontWeight: 700 }}>{money(p.market_value ?? p.total_invested)}</span>
-                  {pct != null && <span style={{ color: pct >= 0 ? C.green : C.red, fontWeight: 700 }}>{pctText(pct)}</span>}
-                </span>
-              </button>
-            </div>
-          )
-        })}
+        {own.map((p, i) => (
+          <div key={p.symbol + (p.manual_id ?? '')}>
+            {i > 0 && <Divider margin="0" />}
+            <PositionRow p={p} onClick={() => setDetail(p)} />
+          </div>
+        ))}
       </Section>
       <Sheet open={menu} onClose={() => setMenu(false)} title={accountName(broker)}>
         {d.cash.some(c => c.source === broker) && <SheetOption icon="wallet" title="Ver efectivo" onClick={() => nav(`/cuentas/${broker}`)} />}

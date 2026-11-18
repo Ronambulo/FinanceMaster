@@ -27,6 +27,7 @@ import ConectarTR from '@/screens/ConectarTR'
 import SyncError from '@/screens/SyncError'
 import Plan, { Deudas, Logros, MesAMes, Objetivos, Presupuestos, Recurrentes } from '@/screens/Plan'
 import Cuentas, { Banco, Broker, openAddAccount } from '@/screens/Cuentas'
+import Inversiones from '@/screens/Inversiones'
 import { PwaFixes } from '@/app/pwa'
 import { CategoryEmojiSync } from '@/store/catEmoji'
 import { ConfirmHost } from '@/ui/Confirm'
@@ -119,7 +120,7 @@ function AuthedRoutes() {
       <Route path="/cuentas/sync-error" element={<L bare><SyncError /></L>} />
       <Route path="/cuentas/broker/:broker" element={<L><Broker /></L>} />
       <Route path="/cuentas/:source" element={<L><Banco /></L>} />
-      <Route path="/portfolio" element={<Navigate to="/cuentas" replace />} />
+      <Route path="/portfolio" element={<L><Inversiones /></L>} />
 
       <Route path="/plan" element={<L><Plan /></L>} />
       <Route path="/presupuestos" element={<L><Presupuestos /></L>} />

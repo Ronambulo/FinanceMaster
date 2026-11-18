@@ -42,21 +42,26 @@ export type CatIcons = 'emoji' | 'dibujo'
 
 /** Tarjetas de Inicio que se pueden ordenar u ocultar (en el orden de serie). */
 export const HOME_CARDS = {
+  hero:        'Lo que te queda',
   worth:       'Patrimonio',
   month:       'Este mes',
   pending:     'Cargos pendientes',
   next:        'Próximo cargo',
   goal:        'Objetivo principal',
   insights:    'Avisos',
+  recent:      'Últimos movimientos',
 } as const
+/** Versión de la lista: las anteriores a la 2 no tenían 'hero' ni 'recent' (siempre visibles). */
+export const HOME_V = 2
 export type HomeCard = keyof typeof HOME_CARDS
 export const HOME_CARD_IDS = Object.keys(HOME_CARDS) as HomeCard[]
 
 /** Visibles en orden, sin repetidas ni desconocidas. */
-export function sanitizeCards(v: unknown): HomeCard[] {
+export function sanitizeCards(v: unknown, version: unknown): HomeCard[] {
   if (!Array.isArray(v)) return [...HOME_CARD_IDS]
   const out: HomeCard[] = []
   for (const c of v) if (typeof c === 'string' && c in HOME_CARDS && !out.includes(c as HomeCard)) out.push(c as HomeCard)
+  if (version !== HOME_V) return ['hero', ...out.filter(c => c !== 'hero' && c !== 'recent'), 'recent']
   return out
 }
 
@@ -69,6 +74,7 @@ export interface Preferences {
   ultra_modules: UltraModules
   cat_icons: CatIcons
   home_cards: HomeCard[]
+  home_v: number
   initialized: boolean
 }
 
@@ -96,6 +102,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   ultra_modules: noUltraModules(),
   cat_icons: 'emoji',
   home_cards: [...HOME_CARD_IDS],
+  home_v: HOME_V,
   initialized: false,
 }
 
@@ -125,7 +132,8 @@ export function sanitize(raw: unknown): Preferences {
     month_start: validDay(r.month_start) ? r.month_start : 0,
     ultra_modules: ultra,
     cat_icons: r.cat_icons === 'dibujo' ? 'dibujo' : 'emoji',
-    home_cards: sanitizeCards(r.home_cards),
+    home_cards: sanitizeCards(r.home_cards, r.home_v),
+    home_v: HOME_V,
     initialized: r.initialized === true,
   }
 }
@@ -138,7 +146,7 @@ export function applyPatch(p: Preferences, patch: PreferencesPatch): Preferences
     ...(patch.currency ? { currency: patch.currency } : {}),
     ...(validDay(patch.month_start) ? { month_start: patch.month_start } : {}),
     ...(patch.cat_icons ? { cat_icons: patch.cat_icons } : {}),
-    ...(patch.home_cards ? { home_cards: sanitizeCards(patch.home_cards) } : {}),
+    ...(patch.home_cards ? { home_cards: sanitizeCards(patch.home_cards, HOME_V) } : {}),
     modules: { ...p.modules, ...(patch.modules || {}) },
     ultra_modules: { ...p.ultra_modules, ...(patch.ultra_modules || {}) },
   }

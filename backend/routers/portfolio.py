@@ -20,7 +20,8 @@ def _with_brokers(db: Session, user_id: int, perf: schemas.PortfolioPerformance)
     for p in perf.positions:
         if p.broker is None:
             p.broker = "manual" if p.is_manual else banks.get(p.symbol, "other")
-    return perf
+    from ..services import asset_types
+    return asset_types.apply(db, user_id, perf)
 
 
 @router.get("/live", response_model=schemas.PortfolioPerformance)
@@ -414,6 +415,21 @@ def get_performance(
     db: Session = Depends(get_db),
 ):
     return _with_brokers(db, current_user.id, calculate_portfolio(db, current_user.id))
+
+
+@router.put("/asset-type")
+def set_asset_type(
+    body: schemas.AssetTypeUpdate,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Cambia a mano el tipo de una posición; sin tipo vuelve al automático."""
+    from ..services import asset_types
+    kind = (body.asset_class or "").strip().upper() or None
+    if kind is not None and kind not in asset_types.KINDS:
+        raise HTTPException(400, "Tipo de activo no válido")
+    asset_types.set_override(db, current_user.id, body.symbol, kind)
+    return {"symbol": body.symbol, "asset_class": kind}
 
 
 @router.get("/history", response_model=schemas.TransactionListResponse)

@@ -32,7 +32,9 @@ MODULE_DEFAULTS: Dict[str, bool] = {
 ULTRA_MODULES = ("investments", "budgets", "recurring", "goals", "debts", "monthly")
 CAT_ICONS = ("emoji", "dibujo")
 # Tarjetas de Inicio que se pueden ordenar u ocultar (en el orden de serie).
-HOME_CARDS = ("worth", "month", "pace", "pending", "next", "goal", "insights", "personality")
+HOME_CARDS = ("hero", "worth", "month", "pace", "pending", "next", "goal", "insights", "personality", "recent")
+# Tarjetas que antes eran fijas: en listas guardadas antes de poder ocultarlas se añaden visibles.
+HOME_V = 2
 
 DEFAULTS: Dict[str, Any] = {
     "ui_mode": "normal",
@@ -63,6 +65,16 @@ def _cards(v: Any) -> list:
     return out
 
 
+def _stored_cards(stored: Dict[str, Any]) -> list:
+    v = stored.get("home_cards")
+    if not isinstance(v, list):
+        return list(HOME_CARDS)
+    out = _cards(v)
+    if stored.get("home_v") != HOME_V:
+        out = ["hero"] + [c for c in out if c not in ("hero", "recent")] + ["recent"]
+    return out
+
+
 def _load(raw: Optional[str]) -> Dict[str, Any]:
     if not raw:
         return {}
@@ -85,7 +97,8 @@ def resolve(raw: Optional[str]) -> Dict[str, Any]:
         "month_start": stored.get("month_start") if _valid_day(stored.get("month_start")) else DEFAULTS["month_start"],
         "ultra_modules": {k: False for k in ULTRA_MODULES},
         "cat_icons": stored.get("cat_icons") if stored.get("cat_icons") in CAT_ICONS else DEFAULTS["cat_icons"],
-        "home_cards": _cards(stored.get("home_cards")) if isinstance(stored.get("home_cards"), list) else list(HOME_CARDS),
+        "home_cards": _stored_cards(stored),
+        "home_v": HOME_V,
         "initialized": bool(stored),
     }
     umods = stored.get("ultra_modules")

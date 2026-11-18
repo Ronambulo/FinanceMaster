@@ -286,3 +286,33 @@ export function lastGreenMonth(trend: MonthlyTrend[]): string | null {
   for (let i = trend.length - 2; i >= 0; i--) if (trend[i].savings > 0) return trend[i].month
   return null
 }
+
+/**
+ * Días del mes (1..n) en que cae cada recurrente activo, proyectando hacia atrás y hacia
+ * delante desde su próxima fecha. Los mensuales conservan el día del mes.
+ */
+export function recurringMonthDays<T extends RecurringLike & { next_expected_date: string | null }>(groups: T[], year: number, month: number): Map<number, T[]> {
+  const out = new Map<number, T[]>()
+  const first = Date.UTC(year, month, 1)
+  const last = Date.UTC(year, month + 1, 0)
+  for (const g of groups) {
+    if (!g.is_active || !g.next_expected_date) continue
+    const p = g.period_days && g.period_days > 0 ? g.period_days : 30
+    const [y, m, d] = g.next_expected_date.slice(0, 10).split('-').map(Number)
+    const monthly = p >= 27 && p <= 32
+    const at = (k: number) => {
+      if (!monthly) return Date.UTC(y, m - 1, d) + k * p * 86_400_000
+      const dim = new Date(Date.UTC(y, m + k, 0)).getUTCDate()
+      return Date.UTC(y, m - 1 + k, Math.min(d, dim))
+    }
+    let k = 0
+    while (at(k) > first) k--
+    for (; at(k) <= last; k++) {
+      const t = at(k)
+      if (t < first) continue
+      const day = new Date(t).getUTCDate()
+      out.set(day, [...(out.get(day) ?? []), g])
+    }
+  }
+  return out
+}

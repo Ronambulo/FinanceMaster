@@ -429,6 +429,14 @@ class PortfolioPosition(BaseModel):
     manual_id: Optional[int] = None
     # Banco/broker donde está la posición (trade_republic, myinvestor, manual…)
     broker: Optional[str] = None
+    # Tipo deducido solo y si el usuario lo ha cambiado a mano
+    asset_class_auto: Optional[str] = None
+    asset_class_manual: bool = False
+
+
+class AssetTypeUpdate(BaseModel):
+    symbol: str
+    asset_class: Optional[str] = None  # None vuelve al automático
 
 
 class StockSearchResult(BaseModel):
