@@ -1,8 +1,16 @@
 from datetime import datetime, date
 from datetime import date as DateType  # para campos que se llaman `date`
+from datetime import datetime as DateTimeType, timezone as _tz  # para campos que se llaman `datetime`
 from typing import Optional, List
 from pydantic import BaseModel, EmailStr, field_validator
 from .models import CategoryType, DebtDirection, GoalType, GoalCategory
+
+
+def _naive_utc(v):
+    """Las horas se guardan en UTC sin zona, como las de los bancos."""
+    if isinstance(v, DateTimeType) and v.tzinfo is not None:
+        return v.astimezone(_tz.utc).replace(tzinfo=None)
+    return v
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
@@ -122,6 +130,9 @@ class TransactionCreate(BaseModel):
     source: Optional[str] = None
     note: Optional[str] = None
     is_internal_transfer: Optional[bool] = None
+    # Momento exacto (con zona); `date` sigue siendo el día local.
+    datetime: Optional[DateTimeType] = None
+    _dt = field_validator("datetime")(lambda v: _naive_utc(v))
 
 class TransferCreate(BaseModel):
     amount: float
@@ -129,6 +140,8 @@ class TransferCreate(BaseModel):
     from_source: str
     to_source: str
     note: Optional[str] = None
+    datetime: Optional[DateTimeType] = None
+    _dt = field_validator("datetime")(lambda v: _naive_utc(v))
 
 class QuickTransactionCreate(BaseModel):
     """Entrada simplificada para clientes externos (p.ej. un Atajo de iOS) que
@@ -165,6 +178,8 @@ class TransactionUpdate(BaseModel):
     is_ai_categorized: Optional[bool] = None
     source: Optional[str] = None
     note: Optional[str] = None
+    datetime: Optional[DateTimeType] = None
+    _dt = field_validator("datetime")(lambda v: _naive_utc(v))
 
 class SplitPart(BaseModel):
     category_id: Optional[int] = None

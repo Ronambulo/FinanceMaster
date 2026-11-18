@@ -286,3 +286,23 @@ def test_transfer_rejects_same_account_and_zero(user_client):
     base = {"date": "2026-11-15", "from_source": "n26", "to_source": "n26", "amount": 10}
     assert client.post("/api/transactions/transfer", json=base).status_code == 400
     assert client.post("/api/transactions/transfer", json={**base, "to_source": "revolut", "amount": 0}).status_code == 400
+
+
+def test_datetime_stored_as_naive_utc_on_create_transfer_and_edit(user_client, db):
+    client, uid = user_client
+    r = client.post("/api/transactions", json={
+        "date": "2026-11-18", "datetime": "2026-11-18T13:32:00.000Z", "type": "CARD_TRANSACTION",
+        "amount": -12.5, "name": "Café", "source": "manual",
+    })
+    assert r.status_code in (200, 201), r.text
+    assert r.json()["datetime"].startswith("2026-11-18T13:32:00")
+    tid = r.json()["id"]
+    # Una hora con zona se guarda convertida a UTC.
+    r = client.put(f"/api/transactions/{tid}", json={"datetime": "2026-11-18T09:15:00+01:00"})
+    assert r.status_code == 200, r.text
+    assert r.json()["datetime"].startswith("2026-11-18T08:15:00")
+    r = client.post("/api/transactions/transfer", json={
+        "amount": 50, "date": "2026-11-17", "datetime": "2026-11-17T20:00:00Z", "from_source": "manual", "to_source": "n26",
+    })
+    assert r.status_code in (200, 201), r.text
+    assert all(t["datetime"].startswith("2026-11-17T20:00:00") for t in r.json())

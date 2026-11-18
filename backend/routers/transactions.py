@@ -113,7 +113,7 @@ def _source_cond(T, sources):
     return or_(*conds)
 
 
-MANUAL_ONLY_FIELDS = ("amount", "date", "type", "source")
+MANUAL_ONLY_FIELDS = ("amount", "date", "datetime", "type", "source")
 
 
 def is_manual(tx: models.Transaction) -> bool:
@@ -503,7 +503,7 @@ def create_transfer(
         raise HTTPException(400, "Elige dos cuentas distintas")
     label = lambda k: BANK_LABELS.get(k) or {"manual": "Efectivo"}.get(k, k)
     note = (data.note or "").strip() or None
-    common = dict(user_id=current_user.id, date=data.date, currency="EUR", account_category="CASH",
+    common = dict(user_id=current_user.id, date=data.date, datetime=data.datetime, currency="EUR", account_category="CASH",
                   is_auto_categorized=False, is_manual=True, is_internal_transfer=True, note=note)
     out = models.Transaction(type="TRANSFER_OUTBOUND", amount=-amount, source=src,
                              name=f"A {label(dst)}", **common)

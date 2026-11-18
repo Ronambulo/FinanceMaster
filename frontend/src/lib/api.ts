@@ -135,7 +135,7 @@ export const txApi = {
   get: (id: number) => request<Transaction>(`/transactions/${id}`),
   delete: (id: number) =>
     request<void>(`/transactions/${id}`, { method: 'DELETE' }),
-  transfer: (data: { amount: number; date: string; from_source: string; to_source: string; note?: string }) =>
+  transfer: (data: { amount: number; date: string; datetime?: string; from_source: string; to_source: string; note?: string }) =>
     request<Transaction[]>('/transactions/transfer', { method: 'POST', body: JSON.stringify(data) }),
   split: (id: number, parts: { category_id: number | null; amount: number }[]) =>
     request<Transaction>(`/transactions/${id}/split`, { method: 'POST', body: JSON.stringify({ parts }) }),

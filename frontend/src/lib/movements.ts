@@ -305,8 +305,31 @@ export function shortDate(iso: string): string {
 export function longDateTime(date: string, datetime?: string | null): string {
   const d = new Date(`${date.slice(0, 10)}T00:00:00`)
   const base = `${WEEKDAYS[d.getDay()]} ${shortDate(date)}`
-  const time = datetime?.match(/T(\d{2}:\d{2})/)?.[1]
-  return time && time !== '00:00' ? `${base} · ${time}` : base
+  const time = txTime(datetime)
+  return time ? `${base} · ${time}` : base
+}
+
+/** "14:32" en hora local. */
+export function clockTime(d = new Date()): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/** Hora local (HH:MM) de un `datetime` del servidor (UTC sin zona); '' si no tiene hora. */
+export function txTime(datetime?: string | null): string {
+  if (!datetime || /T00:00(:00(\.0+)?)?$/.test(datetime)) return ''
+  return clockTime(serverDate(datetime))
+}
+
+/** Día y hora locales → instante ISO (UTC) para el servidor. */
+export function toServerTime(date: string, time: string): string {
+  return new Date(`${date}T${time || '12:00'}:00`).toISOString()
+}
+
+/** Importe escrito con el teclado del sistema: solo dígitos, una coma y 2 decimales. */
+export function cleanAmount(raw: string): string {
+  let t = ''
+  for (const ch of raw) t = typeKey(t, ch === '.' ? ',' : ch)
+  return t
 }
 
 /** Fecha corta del chip de "Nuevo movimiento": Hoy, Ayer o "17 nov". */

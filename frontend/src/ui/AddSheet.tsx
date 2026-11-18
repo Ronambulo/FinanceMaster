@@ -1,32 +1,31 @@
-// Hoja "Nuevo movimiento" (tableros Anadir, Traspaso y UltraAnadir).
+// Hoja "Nuevo movimiento": la misma en modo simple y normal, en móvil y en PC.
+// El importe se escribe con el teclado del sistema (numérico en el móvil).
 import { cur } from '@/lib/format'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { catApi, dashApi, txApi, type AccountBalance, type Category } from '@/lib/api'
-import { accountName, categoriesFor, dayLabel, kindToType, parseAmount, signedAmount, typeKey, type TxKind } from '@/lib/movements'
-import { usePreferencesStore } from '@/store/preferences'
+import { accountName, categoriesFor, chipDate, cleanAmount, clockTime, isoDay, kindToType, parseAmount, signedAmount, toServerTime, type TxKind } from '@/lib/movements'
 import { useAddStore } from '@/store/add'
 import { BankLogo } from './BankLogo'
+import { CatPickSheet } from './CatPick'
 import { CatTile, Icon } from './Icon'
 import { Btn, C, FONT, Field, IconTile, Segmented, Sheet, SheetOption, useMoney } from './kit'
 import { toast } from './Toast'
 
 const LAST = 'fm-add-source'
-const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', ',', '0', '⌫']
 const SAVE: Record<TxKind, string> = { expense: 'Guardar gasto', income: 'Guardar ingreso', transfer: 'Guardar traspaso' }
 const DONE: Record<TxKind, string> = { expense: 'Gasto guardado', income: 'Ingreso guardado', transfer: 'Traspaso guardado' }
+const SHOWN = 7 // categorías a la vista; la octava casilla abre todas
 
-function localIso(d = new Date()) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 function readLast(): string | null {
   try { return localStorage.getItem(LAST) } catch { return null }
 }
 function writeLast(s: string) {
   try { localStorage.setItem(LAST, s) } catch { /* sin almacenamiento */ }
 }
+const daysAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return isoDay(d) }
 
-const chip = { height: 36, padding: '0 14px', border: 0, borderRadius: 99, background: C.field, color: C.text, font: `700 13px ${FONT}`, display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', cursor: 'pointer', flex: 'none', boxShadow: 'var(--sh-card)' } as const
+const chip = { height: 36, border: 0, borderRadius: 99, background: C.field, color: C.text, font: `700 13px ${FONT}`, display: 'inline-flex', alignItems: 'center', gap: 7, whiteSpace: 'nowrap', cursor: 'pointer', flex: 'none' } as const
 
 /** Hoja global; se monta una vez junto a los avisos. */
 export function AddSheet() {
@@ -39,17 +38,17 @@ export function AddSheet() {
 function AddForm({ initial, onClose }: { initial: TxKind; onClose: () => void }) {
   const qc = useQueryClient()
   const money = useMoney()
-  const ultra = usePreferencesStore(s => s.prefs.ui_mode === 'ultra')
-  const [kind, setKind] = useState<TxKind>(ultra ? (initial === 'income' ? 'income' : 'expense') : initial)
+  const [kind, setKind] = useState<TxKind>(initial)
   const [amount, setAmount] = useState('')
   const [catId, setCatId] = useState<number | null>(null)
-  const [date, setDate] = useState(localIso())
+  const [date, setDate] = useState(isoDay(new Date()))
+  const [time, setTime] = useState(clockTime())
   const [note, setNote] = useState('')
   const [source, setSource] = useState<string | null>(null)
   const [to, setTo] = useState<string | null>(null)
-  const [sub, setSub] = useState<'account' | 'from' | 'to' | 'note' | null>(null)
+  const [sub, setSub] = useState<'account' | 'from' | 'to' | 'note' | 'when' | 'cats' | null>(null)
   const [busy, setBusy] = useState(false)
-  const dateRef = useRef<HTMLInputElement>(null)
+  const amountRef = useRef<HTMLInputElement>(null)
 
   const categories = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: dashApi.accounts })
@@ -63,38 +62,35 @@ function AddForm({ initial, onClose }: { initial: TxKind; onClose: () => void })
   const src = source ?? (accs.some(a => a.source === readLast()) ? readLast()! : accs[0]?.source ?? 'manual')
   const dst = to ?? accs.find(a => a.source !== src)?.source ?? null
   const cat: Category | undefined = list.find(c => c.id === catId) ?? (kind !== 'transfer' ? list[0] : undefined)
+  // La elegida desde "Todas" se pone delante para que se vea marcada.
+  const shown = useMemo(() => {
+    const first = list.slice(0, SHOWN)
+    return cat && !first.some(c => c.id === cat.id) ? [cat, ...first.slice(0, SHOWN - 1)] : first
+  }, [list, cat])
   const value = parseAmount(amount)
 
-  const press = (k: string) => setAmount(a => typeKey(a, k))
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (sub || (e.target instanceof HTMLInputElement && e.target.type !== 'date')) return
-      if (/^[\d,.]$/.test(e.key)) { press(e.key); e.preventDefault() }
-      else if (e.key === 'Backspace') { press('⌫'); e.preventDefault() }
-      else if (e.key === 'Enter') { save(); e.preventDefault() }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  })
+  // El teclado del móvil solo se abre si el foco llega dentro del toque que abrió la hoja.
+  useEffect(() => { amountRef.current?.focus({ preventScroll: true }) }, [])
 
   const label = (s: string) => (s === 'manual' ? 'Efectivo' : accountName(s))
-  const accLead = (s: string, size = 32) => (s === 'manual'
-    ? <IconTile icon="wallet" size={size} radius={10} bg={C.soft} color={C.accentText} iconSize={size / 2} />
-    : <BankLogo source={s} size={size} radius={10} />)
+  const accLead = (s: string, size = 24, radius = 8) => (s === 'manual'
+    ? <IconTile icon="wallet" size={size} radius={radius} bg={C.soft} color={C.accentText} iconSize={Math.round(size / 2)} />
+    : <BankLogo source={s} size={size} radius={radius} />)
   const balanceOf = (s: string) => accs.find(a => a.source === s)?.balance ?? 0
 
   async function save() {
     if (busy) return
-    if (!value || value <= 0) { toast('Escribe un importe', { error: true }); return }
+    if (!value || value <= 0) { toast('Escribe un importe', { error: true }); amountRef.current?.focus(); return }
     setBusy(true)
+    const datetime = toServerTime(date, time)
     try {
       if (kind === 'transfer') {
         if (!dst || dst === src) { toast('Elige dos cuentas distintas', { error: true }); return }
-        const made = await txApi.transfer({ amount: value, date, from_source: src, to_source: dst, note: note.trim() || undefined })
+        const made = await txApi.transfer({ amount: value, date, datetime, from_source: src, to_source: dst, note: note.trim() || undefined })
         undoable(made.map(t => t.id))
       } else {
         const made = await txApi.create({
-          date, type: kindToType(kind), amount: signedAmount(value, kind), name: cat?.name ?? (kind === 'income' ? 'Ingreso' : 'Gasto'),
+          date, datetime, type: kindToType(kind), amount: signedAmount(value, kind), name: cat?.name ?? (kind === 'income' ? 'Ingreso' : 'Gasto'),
           category_id: cat?.id ?? null, source: src, note: note.trim() || null,
         })
         undoable([made.id])
@@ -116,134 +112,126 @@ function AddForm({ initial, onClose }: { initial: TxKind; onClose: () => void })
     })
   }
 
-  const openDate = () => {
-    const el = dateRef.current
-    if (!el) return
-    try { el.showPicker() } catch { el.focus(); el.click() }
-  }
-
-  const amountView = (size: number, margin: string) => (
-    <p style={{ margin, textAlign: 'center', fontSize: size, fontWeight: 800, letterSpacing: '-0.03em' }} aria-live="polite">
-      {amount || '0'}
-      <span style={{ color: C.muted }}>{cur()}</span>
-    </p>
-  )
-
-  const keypad = (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 14 }}>
-      {KEYS.map(k => (
-        <button key={k} type="button" aria-label={k === '⌫' ? 'Borrar' : undefined} onClick={() => press(k)}
-          style={{ height: 50, border: 0, borderRadius: 14, background: C.field, color: C.text, font: `700 22px ${FONT}`, cursor: 'pointer', boxShadow: 'var(--sh-card)' }}>{k}</button>
-      ))}
-    </div>
-  )
-
-  const saveBtn = (h: number) => (
-    <Btn height={h} disabled={busy} onClick={save} style={{ margin: '14px 0 0' }}>{SAVE[kind]}</Btn>
-  )
-
-  const dateInput = (
-    <input ref={dateRef} type="date" tabIndex={-1} aria-hidden="true" value={date} max={localIso()} onChange={e => e.target.value && setDate(e.target.value)}
-      style={{ position: 'absolute', left: '50%', bottom: 0, width: 1, height: 1, opacity: 0, pointerEvents: 'none' }} />
-  )
-
-  const accountPicker = (
-    <Sheet open={sub === 'account' || sub === 'from' || sub === 'to'} onClose={() => setSub(null)} title={sub === 'from' ? 'Desde' : sub === 'to' ? 'Hacia' : 'Cuenta'}>
-      {accs.map(a => {
-        const cur = sub === 'to' ? dst : src
-        return (
-          <SheetOption key={a.source} selected={a.source === cur} title={label(a.source)} sub={money(a.balance, { euro: true })} lead={accLead(a.source, 40)}
-            onClick={() => {
-              if (sub === 'to') setTo(a.source)
-              else { setSource(a.source); if (a.source === dst) setTo(null) }
-              setSub(null)
-            }} />
-        )
-      })}
-    </Sheet>
-  )
-
-  // ── Ultra simple: gasto o ingreso ─────────────────────────────────────────────
-  if (ultra) {
-    return (
-      <Sheet open onClose={onClose} title={kind === 'income' ? 'Añadir ingreso' : 'Añadir gasto'}>
-        {amountView(52, '6px 0 0')}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 18 }}>
-          {list.slice(0, 8).map(c => (
-            <button key={c.id} type="button" aria-pressed={cat?.id === c.id} onClick={() => setCatId(c.id)}
-              style={{ border: 0, borderRadius: 18, background: C.field, color: C.text, padding: '12px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, font: `700 12px ${FONT}`, cursor: 'pointer', boxShadow: cat?.id === c.id ? 'inset 0 0 0 2px var(--c-5b52f0)' : 'var(--sh-card)', minWidth: 0 }}>
-              <CatTile name={c.name} type={c.type} size={40} icon={19} />
-              <span style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
-            </button>
-          ))}
-        </div>
-        {keypad}
-        {saveBtn(56)}
-      </Sheet>
-    )
-  }
+  const swap = () => { if (dst) { setSource(dst); setTo(src) } }
 
   return (
     <Sheet open onClose={onClose} title="Nuevo movimiento">
       <Segmented label="Tipo" value={kind} onChange={setKind} options={[['expense', 'Gasto'], ['income', 'Ingreso'], ['transfer', 'Traspaso']]} />
 
+      <label style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', margin: '20px 0 0', cursor: 'text' }}>
+        <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clipPath: 'inset(50%)' }}>Importe</span>
+        <input ref={amountRef} inputMode="decimal" enterKeyHint="done" autoComplete="off" placeholder="0" value={amount}
+          onChange={e => setAmount(cleanAmount(e.target.value))}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); save() } }}
+          style={{ width: `${Math.max(amount.length, 1) + 0.6}ch`, maxWidth: '78%', border: 0, background: 'transparent', color: C.text, font: `800 54px ${FONT}`, letterSpacing: '-0.04em', textAlign: 'center', outline: 'none', caretColor: 'var(--c-b3aeff)', padding: 0, lineHeight: 1.1 }} />
+        <span style={{ fontSize: 34, fontWeight: 800, color: C.muted, marginLeft: 4 }}>{cur()}</span>
+      </label>
+
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+        <button type="button" onClick={() => setSub('when')} style={{ ...chip, padding: '0 14px 0 11px', background: C.soft, color: C.accentText, fontWeight: 800 }}>
+          <Icon name="calendar" size={16} />{chipDate(date, new Date())} · {time}
+        </button>
+        {kind !== 'transfer' && (
+          <button type="button" onClick={() => setSub('account')} style={{ ...chip, padding: '0 14px 0 6px' }}>{accLead(src)}{label(src)}</button>
+        )}
+        <button type="button" aria-label={note.trim() ? `Nota: ${note.trim()}` : 'Añadir nota'} onClick={() => setSub('note')}
+          style={{ ...chip, ...(note.trim() ? { padding: '0 14px 0 11px', maxWidth: 170 } : { width: 36, justifyContent: 'center', padding: 0 }) }}>
+          <Icon name="edit" size={16} />
+          {note.trim() && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{note.trim()}</span>}
+        </button>
+      </div>
+
       {kind === 'transfer' ? (
-        <>
-          {amountView(46, '18px 0 6px')}
-          <TransferPick title="Desde" lead={accLead(src)} text={`${label(src)} · ${money(balanceOf(src), { euro: true })}`} onClick={() => setSub('from')} />
-          <div style={{ display: 'flex', justifyContent: 'center', margin: '-4px 0 4px', color: C.muted }}><Icon name="arrow-swap" size={18} /></div>
-          <TransferPick title="Hacia" lead={dst ? accLead(dst) : undefined} text={dst ? `${label(dst)} · ${money(balanceOf(dst), { euro: true })}` : 'Elige cuenta'} onClick={() => setSub('to')} />
-          <p style={{ margin: '2px 4px 0', fontSize: 13, color: C.muted, fontWeight: 600 }}>No cuenta como gasto ni ingreso</p>
-          <Btn disabled={busy} onClick={save} style={{ margin: '18px 0 0' }}>{SAVE.transfer}</Btn>
-        </>
+        <div style={{ position: 'relative', display: 'grid', gap: 8, marginTop: 20 }}>
+          <AccountRow title="Desde" lead={accLead(src, 40, 12)} name={label(src)} balance={money(balanceOf(src), { euro: true })} onClick={() => setSub('from')} />
+          <AccountRow title="Hacia" lead={dst ? accLead(dst, 40, 12) : undefined} name={dst ? label(dst) : 'Elige cuenta'} balance={dst ? money(balanceOf(dst), { euro: true }) : ''} onClick={() => setSub('to')} />
+          <button type="button" aria-label="Intercambiar cuentas" onClick={swap}
+            style={{ position: 'absolute', right: 112, top: 'calc(50% - 18px)', width: 36, height: 36, borderRadius: '50%', border: 0, padding: 0, background: C.soft, color: C.accentText, boxShadow: `0 0 0 4px ${C.pop}`, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <Icon name="arrow-swap" size={17} />
+          </button>
+        </div>
       ) : (
-        <>
-          {amountView(46, '18px 0 0')}
-          <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-            <button type="button" onClick={openDate} style={{ ...chip, padding: '0 14px 0 11px' }}><Icon name="calendar" size={16} />{dayLabel(date, new Date())}</button>
-            <button type="button" onClick={() => setSub('account')} style={chip}>{label(src)}</button>
-            <button type="button" onClick={() => setSub('note')} style={{ ...chip, padding: '0 14px 0 11px', maxWidth: 160, overflow: 'hidden' }}>
-              <Icon name="edit" size={16} />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{note.trim() || 'Nota'}</span>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px 4px', marginTop: 18 }}>
+          {shown.map(c => {
+            const on = cat?.id === c.id
+            return (
+              <button key={c.id} type="button" aria-pressed={on} onClick={() => setCatId(c.id)} style={tileBtn}>
+                <CatTile name={c.name} type={c.type} size={46} icon={22} style={on ? { boxShadow: `0 0 0 2px ${C.pop}, 0 0 0 4px var(--c-5b52f0)` } : undefined} />
+                <span style={{ ...tileText, color: on ? C.text : C.muted, fontWeight: on ? 800 : 700 }}>{c.name}</span>
+              </button>
+            )
+          })}
+          {list.length > shown.length && (
+            <button type="button" onClick={() => setSub('cats')} style={tileBtn}>
+              <span style={{ width: 46, height: 46, borderRadius: 15, background: C.field, color: C.muted, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="dots" size={22} /></span>
+              <span style={{ ...tileText, color: C.muted }}>Todas</span>
             </button>
-            {dateInput}
-          </div>
-          <div className="fm-noscroll" style={{ display: 'flex', gap: 14, justifyContent: list.length > 6 ? 'flex-start' : 'space-between', marginTop: 18, overflowX: 'auto', paddingBottom: 2 }}>
-            {list.map(c => {
-              const on = cat?.id === c.id
-              return (
-                <button key={c.id} type="button" aria-pressed={on} onClick={() => setCatId(c.id)}
-                  style={{ flex: 'none', width: 52, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, border: 0, background: 'transparent', color: C.text, font: `700 11px ${FONT}`, padding: '4px 0 0', cursor: 'pointer' }}>
-                  <CatTile name={c.name} type={c.type} size={46} icon={22} style={on ? { boxShadow: `0 0 0 2px ${C.pop}, 0 0 0 4px var(--c-5b52f0)` } : undefined} />
-                  <span style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
-                </button>
-              )
-            })}
-          </div>
-          {keypad}
-          {saveBtn(52)}
-        </>
+          )}
+        </div>
       )}
 
-      {accountPicker}
+      <Btn height={56} disabled={busy} onClick={save} style={{ margin: '20px 0 0' }}>{SAVE[kind]}</Btn>
+
+      {/* Hojas secundarias */}
+      <Sheet open={sub === 'account' || sub === 'from' || sub === 'to'} onClose={() => setSub(null)} title={sub === 'from' ? 'Desde' : sub === 'to' ? 'Hacia' : 'Cuenta'}>
+        {accs.map(a => (
+          <SheetOption key={a.source} selected={a.source === (sub === 'to' ? dst : src)} title={label(a.source)} sub={money(a.balance, { euro: true })} lead={accLead(a.source, 40, 10)}
+            onClick={() => {
+              if (sub === 'to') setTo(a.source)
+              else { setSource(a.source); if (a.source === dst) setTo(null) }
+              setSub(null)
+            }} />
+        ))}
+      </Sheet>
       <Sheet open={sub === 'note'} onClose={() => setSub(null)} title="Nota">
-        <Field id="add-nota" placeholder="Añadir nota" value={note} autoFocus onChange={e => setNote(e.target.value)} onKeyDown={e => e.key === 'Enter' && setSub(null)} />
+        <Field id="add-nota" placeholder="Añadir nota" value={note} autoFocus maxLength={200} onChange={e => setNote(e.target.value)} onKeyDown={e => e.key === 'Enter' && setSub(null)} />
         <Btn onClick={() => setSub(null)}>Listo</Btn>
       </Sheet>
-      {kind === 'transfer' && dateInput}
+      {sub === 'when' && <WhenSheet date={date} time={time} onDone={(d, t) => { setDate(d); setTime(t); setSub(null) }} onClose={() => setSub(null)} />}
+      <CatPickSheet open={sub === 'cats'} categories={list} current={cat?.id} onPick={c => setCatId(c.id)} onClose={() => setSub(null)} />
     </Sheet>
   )
 }
 
-function TransferPick({ title, lead, text, onClick }: { title: string; lead?: React.ReactNode; text: string; onClick: () => void }) {
+const tileBtn = { border: 0, background: 'transparent', color: C.text, padding: '4px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, cursor: 'pointer', minWidth: 0, font: 'inherit' } as const
+const tileText = { fontSize: 11.5, lineHeight: 1.2, textAlign: 'center', maxWidth: '100%', overflowWrap: 'anywhere', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } as const
+
+/** Hoja de fecha y hora: atajos de día y los selectores del sistema. */
+function WhenSheet({ date, time, onDone, onClose }: { date: string; time: string; onDone: (d: string, t: string) => void; onClose: () => void }) {
+  const [d, setD] = useState(date)
+  const [t, setT] = useState(time)
+  const quick: [string, string][] = [['Hoy', daysAgo(0)], ['Ayer', daysAgo(1)], ['Anteayer', daysAgo(2)]]
   return (
-    <div style={{ margin: '0 0 12px' }}>
-      <p style={{ fontSize: 13, fontWeight: 700, color: C.muted, margin: '0 0 6px 4px' }}>{title}</p>
-      <button type="button" onClick={onClick} style={{ width: '100%', height: 52, boxSizing: 'border-box', border: 0, borderRadius: 16, background: C.field, display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px 0 10px', color: C.text, font: `700 15px ${FONT}`, cursor: 'pointer', boxShadow: 'var(--sh-card)' }}>
-        {lead}
-        <span style={{ flex: 1, textAlign: 'left', paddingLeft: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</span>
-        <span style={{ color: C.muted, display: 'flex' }}><Icon name="chev-d" size={18} /></span>
-      </button>
-    </div>
+    <Sheet open onClose={onClose} title="Fecha y hora">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+        {quick.map(([l, v]) => {
+          const on = d === v
+          return (
+            <button key={l} type="button" aria-pressed={on} onClick={() => setD(v)}
+              style={{ height: 44, border: 0, borderRadius: 14, background: on ? C.soft : C.field, color: on ? C.accentText : C.text, boxShadow: on ? 'inset 0 0 0 2px var(--c-5b52f0)' : 'none', font: `${on ? 800 : 700} 14px ${FONT}`, cursor: 'pointer' }}>{l}</button>
+          )
+        })}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 10, marginTop: 16 }}>
+        <Field label="Fecha" id="add-fecha" type="date" icon="calendar" value={d} max={daysAgo(0)} onChange={e => e.target.value && setD(e.target.value)} style={{ margin: 0 }} />
+        <Field label="Hora" id="add-hora" type="time" icon="history-record" value={t} onChange={e => e.target.value && setT(e.target.value)} style={{ margin: 0 }} />
+      </div>
+      <button type="button" onClick={() => { setD(daysAgo(0)); setT(clockTime()) }}
+        style={{ margin: '8px 0 0', height: 40, border: 0, background: 'transparent', color: C.accentText, font: `800 14px ${FONT}`, padding: '0 4px', cursor: 'pointer' }}>Usar la hora actual</button>
+      <Btn height={56} onClick={() => onDone(d, t)} style={{ marginTop: 10 }}>Listo</Btn>
+    </Sheet>
+  )
+}
+
+function AccountRow({ title, lead, name, balance, onClick }: { title: string; lead?: React.ReactNode; name: string; balance: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} style={{ height: 62, boxSizing: 'border-box', border: 0, borderRadius: 18, background: C.field, display: 'flex', alignItems: 'center', gap: 12, padding: '0 14px 0 10px', color: C.text, font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+      {lead ?? <span style={{ width: 40, height: 40, borderRadius: 12, background: C.card }} />}
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: C.muted }}>{title}</span>
+        <span style={{ fontSize: 15, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+      </span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: C.muted }}>{balance}</span>
+    </button>
   )
 }

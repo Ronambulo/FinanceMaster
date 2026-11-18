@@ -1,5 +1,5 @@
 // Piezas del lienzo de diseño, con las medidas exactas de las pantallas.
-import { useEffect, useRef, type CSSProperties, type ReactNode, type ButtonHTMLAttributes, type InputHTMLAttributes } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type ButtonHTMLAttributes, type InputHTMLAttributes } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { Icon, type AnyIcon } from './Icon'
@@ -262,7 +262,26 @@ export function Pill({ children, tone = 'green' }: { children: ReactNode; tone?:
 }
 
 // ── Hoja inferior ───────────────────────────────────────────────────────────
+/** Alto del teclado en pantalla (0 si está cerrado), según el visualViewport. */
+export function useKeyboardInset(active = true) {
+  const [inset, setInset] = useState(0)
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!active || !vv) return
+    const read = () => {
+      const gap = window.innerHeight - vv.height - vv.offsetTop
+      setInset(gap > 80 ? Math.round(gap) : 0)
+    }
+    read()
+    vv.addEventListener('resize', read)
+    vv.addEventListener('scroll', read)
+    return () => { vv.removeEventListener('resize', read); vv.removeEventListener('scroll', read) }
+  }, [active])
+  return inset
+}
+
 export function Sheet({ open, onClose, title, children, actions, label }: { open: boolean; onClose: () => void; title?: ReactNode; children: ReactNode; actions?: ReactNode; label?: string }) {
+  const kb = useKeyboardInset(open)
   useEffect(() => {
     if (!open) return
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -279,7 +298,7 @@ export function Sheet({ open, onClose, title, children, actions, label }: { open
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'calc(0px - var(--vb-gap, 0px))', zIndex: 60 }}>
       <div ref={overlay} aria-hidden="true" onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--overlay)', animation: 'fm-fade .15s' }} />
       <div ref={panel} role="dialog" aria-modal="true" aria-label={label ?? (typeof title === 'string' ? title : undefined)} style={{
-        position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '92dvh', overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', boxSizing: 'border-box',
+        position: 'absolute', left: 0, right: 0, bottom: kb, maxHeight: kb ? `calc(100% - ${kb + 12}px)` : '92dvh', overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', boxSizing: 'border-box',
         padding: '12px 18px max(26px, env(safe-area-inset-bottom))', borderRadius: '32px 32px 0 0', background: C.pop, boxShadow: 'var(--sh-sheet)',
         border: 'var(--pop-border)', animation: 'fm-up .2s ease-out', margin: '0 auto', maxWidth: 560, color: C.text,
       }}>
