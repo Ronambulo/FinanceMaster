@@ -1,3 +1,6 @@
+import { forgetQueries } from '@/lib/queryPersist'
+import { parseSSE, type ChatEvent, type ChatTurn } from './chat'
+
 const BASE = '/api'
 
 function getToken(): string | null {
@@ -14,10 +17,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...options, headers })
   if (res.status === 401) {
     localStorage.removeItem('fm_token')
-    localStorage.removeItem('fm-auth')
+    localStorage.removeItem('fm-auth'); forgetQueries()
     const isAuthPage = ['/login', '/registro'].includes(window.location.pathname)
-    if (!isAuthPage) window.location.replace('/login')
-    throw new Error('Sesión caducada. Inicia sesión de nuevo.')
+    if (!isAuthPage) {
+      window.location.replace('/login')
+      throw new Error('Sesión caducada. Inicia sesión de nuevo.')
+    }
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -28,12 +33,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 // Auth
+/** Los proxys (túnel de VS Code, Vite) pueden reescribir Origin: el servidor usa este para el RP ID de las passkeys. */
+const pkHeaders = () => ({ 'X-App-Origin': window.location.origin })
+
 export const authApi = {
-  register: (data: { email: string; username: string; password: string }) =>
+  register: (data: { email?: string; username: string; password: string; display_name?: string }) =>
     request<{ access_token: string; user: User }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: { email: string; password: string }) =>
     request<{ access_token: string; user: User }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request<User>('/auth/me'),
+  updateProfile: (data: { display_name: string | null }) =>
+    request<User>('/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
   changePassword: (data: { current_password: string; new_password: string }) =>
     request<{ ok: boolean }>('/auth/password', { method: 'PUT', body: JSON.stringify(data) }),
   deleteAllData: () =>
@@ -43,6 +53,21 @@ export const authApi = {
       '/auth/data/transactions', { method: 'DELETE' }),
   deleteAccount: () =>
     request<void>('/auth/account', { method: 'DELETE' }),
+  logout: () => request<{ ok: boolean }>('/auth/logout', { method: 'POST' }),
+  listPasskeys: () => request<Passkey[]>('/auth/passkeys'),
+  passkeyRegisterOptions: () => request<{ options: string }>('/auth/passkeys/register/options', { method: 'POST', headers: pkHeaders() }),
+  passkeyRegister: (credential: Record<string, unknown>) =>
+    request<Passkey>('/auth/passkeys/register', { method: 'POST', headers: pkHeaders(), body: JSON.stringify({ credential }) }),
+  deletePasskey: (id: number) => request<{ ok: boolean }>(`/auth/passkeys/${id}`, { method: 'DELETE' }),
+  passkeyLoginOptions: () => request<{ key: string; options: string }>('/auth/passkeys/login/options', { method: 'POST', headers: pkHeaders() }),
+  passkeyLogin: (key: string, credential: Record<string, unknown>) =>
+    request<{ access_token: string; user: User }>('/auth/passkeys/login', { method: 'POST', headers: pkHeaders(), body: JSON.stringify({ key, credential }) }),
+  listSessions: () => request<AuthSession[]>('/auth/sessions'),
+  closeSession: (id: number) => request<{ ok: boolean }>(`/auth/sessions/${id}`, { method: 'DELETE' }),
+  closeOtherSessions: () => request<{ closed: number }>('/auth/sessions/close-others', { method: 'POST' }),
+  getPreferences: () => request<unknown>('/auth/preferences'),
+  updatePreferences: (patch: import('./preferences').PreferencesPatch) =>
+    request<unknown>('/auth/preferences', { method: 'PUT', body: JSON.stringify(patch) }),
 }
 
 // Admin
@@ -57,7 +82,38 @@ export const adminApi = {
   getUserUsage: (userId: number, months = 12) =>
     request<AiUsageSummary>(`/admin/users/${userId}/usage?months=${months}`),
   getStats: () => request<AdminStats>('/admin/stats'),
+  getUser: (userId: number) => request<AdminUser>(`/admin/users/${userId}`),
+  createUser: (data: { username: string; password: string; display_name?: string; email?: string }) =>
+    request<AdminUser>('/admin/users', { method: 'POST', body: JSON.stringify(data) }),
+  setAdmin: (userId: number, isAdmin: boolean) =>
+    request<AdminUser>(`/admin/users/${userId}/admin`, { method: 'PUT', body: JSON.stringify({ is_admin: isAdmin }) }),
+  resetPassword: (userId: number, password: string) =>
+    request<{ success: boolean }>(`/admin/users/${userId}/password`, { method: 'PUT', body: JSON.stringify({ password }) }),
+  activity: (limit = 100) => request<ActivityEntry[]>(`/admin/activity?limit=${limit}`),
+  notices: () => request<{ unread: number; items: AdminNotice[] }>('/admin/notices'),
+  readNotices: () => request<{ ok: boolean }>('/admin/notices/read', { method: 'POST' }),
+  deleteNotice: (id: number) => request<{ ok: boolean }>(`/admin/notices/${id}`, { method: 'DELETE' }),
+  backups: () => request<BackupInfo>('/admin/backups'),
+  updateBackups: (data: { enabled?: boolean; keep?: number }) =>
+    request<BackupInfo>('/admin/backups', { method: 'PUT', body: JSON.stringify(data) }),
+  backupNow: () => request<BackupFile>('/admin/backups', { method: 'POST' }),
+  /** Descarga con el token (un enlace normal no lleva la cabecera). */
+  downloadBackup: async (name: string) => {
+    const res = await fetch(`${BASE}/admin/backups/${encodeURIComponent(name)}`, { headers: { Authorization: `Bearer ${getToken() ?? ''}` } })
+    if (!res.ok) throw new Error('No se pudo descargar la copia')
+    const url = URL.createObjectURL(await res.blob())
+    const a = document.createElement('a')
+    a.href = url; a.download = name; a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  },
 }
+
+export interface Passkey { id: number; credential_id: string; device: string | null; created_at: string; last_used_at: string | null }
+export interface AuthSession { id: number; device: string; ip: string | null; created_at: string; last_seen_at: string | null; current: boolean }
+export interface ActivityEntry { id: number; user_id: number | null; username: string | null; action: string; label: string; detail: string | null; created_at: string }
+export interface AdminNotice { id: number; level: string; title: string; text: string | null; created_at: string; read: boolean }
+export interface BackupFile { name: string; size_bytes: number; created_at: string }
+export interface BackupInfo { enabled: boolean; keep: number; hour: number; keep_choices: number[]; items: BackupFile[] }
 
 // Transactions
 export const txApi = {
@@ -70,12 +126,19 @@ export const txApi = {
     request<Transaction>('/transactions', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: number, data: Partial<Transaction>) =>
     request<Transaction>(`/transactions/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  get: (id: number) => request<Transaction>(`/transactions/${id}`),
   delete: (id: number) =>
     request<void>(`/transactions/${id}`, { method: 'DELETE' }),
-  importCsv: (file: File, bankFormat = 'auto') => {
+  transfer: (data: { amount: number; date: string; from_source: string; to_source: string; note?: string }) =>
+    request<Transaction[]>('/transactions/transfer', { method: 'POST', body: JSON.stringify(data) }),
+  split: (id: number, parts: { category_id: number | null; amount: number }[]) =>
+    request<Transaction>(`/transactions/${id}/split`, { method: 'POST', body: JSON.stringify({ parts }) }),
+  importCsv: (file: File, bankFormat = 'auto', opts: { skip?: number[]; categories?: Record<number, number | null> } = {}) => {
     const fd = new FormData()
     fd.append('file', file)
     fd.append('bank_format', bankFormat)
+    if (opts.skip?.length) fd.append('skip', opts.skip.join(','))
+    if (opts.categories && Object.keys(opts.categories).length) fd.append('categories', JSON.stringify(opts.categories))
     return request<ImportResult>('/transactions/import', { method: 'POST', body: fd })
   },
   previewImport: (file: File, bankFormat = 'auto') => {
@@ -84,10 +147,24 @@ export const txApi = {
     fd.append('bank_format', bankFormat)
     return request<ImportPreview>('/transactions/import/preview', { method: 'POST', body: fd })
   },
+  importHistory: () => request<ImportLog[]>('/transactions/import/history'),
   link: (transactionIds: number[]) =>
     request<Transaction>('/transactions/link', { method: 'POST', body: JSON.stringify({ transaction_ids: transactionIds }) }),
+  confirm: (ids: number[]) =>
+    request<{ confirmed: number }>('/transactions/confirm', { method: 'POST', body: JSON.stringify({ ids }) }),
   unlink: (linkGroupId: number) =>
     request<{ ok: boolean }>(`/transactions/link/${linkGroupId}`, { method: 'DELETE' }),
+  groups: (by: TxGroupBy, params: Record<string, string | number | undefined> = {}) => {
+    const q = new URLSearchParams({ by })
+    Object.entries(params).forEach(([k, v]) => v !== undefined && v !== '' && q.set(k, String(v)))
+    return request<TxGroup[]>(`/transactions/groups?${q}`)
+  },
+  similar: (id: number) =>
+    request<{ merchant: string; count: number }>(`/transactions/${id}/similar`),
+  bulkCategory: (data: { ids: number[]; category_id: number; include_same_merchant?: boolean; create_rule?: boolean }) =>
+    request<BulkCategoryResult>('/transactions/bulk-category', { method: 'POST', body: JSON.stringify(data) }),
+  bulkCategoryUndo: (data: { previous: PreviousCategory[]; rule_ids: number[] }) =>
+    request<{ restored: number }>('/transactions/bulk-category/undo', { method: 'POST', body: JSON.stringify(data) }),
 }
 
 // Dashboard
@@ -118,6 +195,9 @@ export const dashApi = {
     request<MonthlyInvestmentSummary>(`/dashboard/monthly-investments?date_from=${params.date_from}&date_to=${params.date_to}`),
   pendingRecurring: (dateFrom: string, dateTo: string) =>
     request<PendingRecurring[]>(`/dashboard/pending-recurring?date_from=${dateFrom}&date_to=${dateTo}`),
+  accounts: () => request<AccountBalance[]>('/dashboard/accounts'),
+  /** Igual, más los orígenes que solo tienen inversiones (para filtrar movimientos). */
+  txSources: () => request<AccountBalance[]>('/dashboard/accounts?with_investments=true'),
   netWorthHistory: (months = 24) =>
     request<NetWorthPoint[]>(`/dashboard/net-worth-history?months=${months}`),
   insights: () =>
@@ -235,8 +315,8 @@ export const budgetApi = {
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-export interface User { id: number; email: string; username: string; created_at: string; is_admin: boolean; ai_enabled: boolean; ai_model: string | null }
-export interface AdminUser extends User { is_active: boolean }
+export interface User { id: number; email: string; username: string; display_name?: string | null; created_at: string; is_admin: boolean; ai_enabled: boolean; ai_model: string | null }
+export interface AdminUser extends User { is_active: boolean; last_login_at?: string | null; tx_count?: number; account_count?: number }
 export interface Category { id: number; user_id: number | null; name: string; icon: string; color: string; type: string; is_system: boolean }
 export interface CategoryRule { id: number; keyword: string; category_id: number; field: string; priority: number; category: Category }
 export interface Transaction {
@@ -248,16 +328,26 @@ export interface Transaction {
   category_id: number | null; category: Category | null
   is_auto_categorized: boolean; is_ai_categorized: boolean; is_internal_transfer: boolean; exclude_from_stats: boolean; is_pending: boolean; recurring_group_id: number | null
   link_group_id: number | null; is_link_primary: boolean; effective_amount: number | null; linked_transactions: Transaction[] | null
+  source?: string | null
+  note?: string | null; split_parent_id?: number | null; split_count?: number; is_manual?: boolean | null; split_parts?: { category_id: number | null; amount: number }[] | null
+  created_at?: string | null
 }
+export type TxGroupBy = 'category' | 'merchant' | 'account' | 'day' | 'month'
+export interface TxGroup { key: string; label: string; income: number; expense: number; count: number; icon: string | null; color: string | null; category_name?: string | null }
+export interface PreviousCategory { id: number; category_id: number | null; is_auto_categorized: boolean; is_ai_categorized?: boolean }
+export interface BulkCategoryResult { updated: number; previous: PreviousCategory[]; rule_ids: number[] }
 export interface TransactionListResponse { items: Transaction[]; total: number; page: number; page_size: number; income_sum: number; expense_sum: number }
 export interface ImportResult { imported: number; skipped_duplicates: number; errors: number; updated?: number; detected_bank?: string }
 export interface ImportPreviewRow { date: string | null; type: string; name: string | null; symbol: string | null; shares: number | null; amount: number; currency: string; will_update?: boolean }
+export interface ImportReviewRow extends ImportPreviewRow { key: number; status: 'new' | 'duplicate' | 'update'; category_id: number | null; is_internal_transfer: boolean }
+export interface ImportLog { id: number; filename: string | null; source: string | null; imported: number; skipped: number; errors: number; created_at: string | null }
 export interface ImportPreview {
   detected_bank: string
   bank_label: string | null
   total: number
   new: ImportPreviewRow[]
   duplicates: ImportPreviewRow[]
+  rows?: ImportReviewRow[]
   errors: string[]
   skipped: string[]
 }
@@ -283,6 +373,7 @@ export interface Budget { id: number; category_id: number | null; category: Cate
 export interface BudgetStatus { budget_id: number; category_id: number | null; category_name: string; category_color: string; category_icon: string; budgeted: number; spent: number; remaining: number; pct_used: number }
 export interface MonthlyDetailRow { id: number; date: string; name: string | null; category_id: number | null; category_name: string; category_color: string; category_icon: string; amount: number; exclude_from_stats: boolean; recurring_group_id: number | null }
 export interface MonthlyInvestmentSummary { invested: number; count: number }
+export interface AccountBalance { source: string; label: string; balance: number; count: number; last_date: string | null; tx_count?: number }
 export interface NetWorthPoint { month: string; cash: number; portfolio: number; debt: number; net_worth: number }
 export interface Insight { id: number; type: string; title: string; message: string; severity: string; is_read: boolean; created_at: string }
 export interface Webhook { id: number; url: string; events: string[]; is_active: boolean; created_at: string }
@@ -393,6 +484,29 @@ export const aiApi = {
     request<{ models: AiModel[]; default: string }>('/ai/models'),
   getUsage: (months = 12) =>
     request<AiUsageSummary>(`/ai/usage?months=${months}`),
+  /** Conversación con el asistente (SSE). Llama a `onEvent` por cada evento. */
+  chat: async (body: { message: string; history: ChatTurn[] }, onEvent: (e: ChatEvent) => void, signal?: AbortSignal) => {
+    const token = getToken()
+    const res = await fetch(`${BASE}/ai/chat`, {
+      method: 'POST', signal,
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok || !res.body) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(err.detail || 'No se pudo contactar con el asistente')
+    }
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    let buf = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const parsed = parseSSE(buf + dec.decode(value, { stream: true }))
+      buf = parsed.rest
+      for (const ev of parsed.events) { onEvent(ev); if (ev.type === 'done') return }
+    }
+  },
 }
 
 export interface AiModel {
@@ -448,6 +562,10 @@ export interface AdminStats {
   users_with_budgets: number
   signups_by_month: AdminSignupMonth[]
   ai_usage: AdminGlobalAiUsage
+  db_size_bytes?: number
+  uptime_seconds?: number
+  unread_notices?: number
+  backups?: { enabled: boolean; keep: number; hour: number; last: BackupFile | null }
 }
 export interface AiUsageSummary {
   months: AiUsageMonth[]
@@ -567,7 +685,7 @@ async function fetchExport(p: ExportParams): Promise<{ blob: Blob; filename: str
   })
   if (res.status === 401) {
     localStorage.removeItem('fm_token')
-    localStorage.removeItem('fm-auth')
+    localStorage.removeItem('fm-auth'); forgetQueries()
     window.location.replace('/login')
     throw new Error('Sesión caducada. Inicia sesión de nuevo.')
   }
@@ -628,7 +746,7 @@ export const accountApi = {
     const res = await fetch(`${BASE}/account/backup`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
     if (res.status === 401) {
       localStorage.removeItem('fm_token')
-      localStorage.removeItem('fm-auth')
+      localStorage.removeItem('fm-auth'); forgetQueries()
       window.location.replace('/login')
       throw new Error('Sesión caducada. Inicia sesión de nuevo.')
     }

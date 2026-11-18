@@ -1,0 +1,92 @@
+import type { MonthlyDetailRow } from '@/lib/api'
+import type { PayrollCycle } from '@/hooks/usePayrollCycle'
+import { periodTotals } from '@/lib/home'
+
+export interface CycleRow {
+  key: string          // "YYYY-MM-DD_YYYY-MM-DD", también el periodo de Movimientos
+  start: string
+  end: string
+  isOpen: boolean
+  label: string        // "27 oct – 26 nov" o "27 oct – hoy"
+  income: number
+  expenses: number
+  savings: number
+}
+
+const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic']
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const parse = (s: string) => new Date(s + 'T12:00:00')
+const shortDay = (s: string) => { const d = parse(s); return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}` }
+
+export function cycleLabel(start: string, end: string, isOpen: boolean): string {
+  return `${shortDay(start)} – ${isOpen ? 'hoy' : shortDay(end)}`
+}
+
+/** Sin nómina detectada: los meses naturales hacen de ciclos. */
+export function calendarCycles(today: Date, n: number, day = 1): PayrollCycle[] {
+  // Ciclos que empiezan el día `day` (1 = meses naturales; Perfil permite 1..28).
+  const d = Math.min(Math.max(1, Math.round(day)), 28)
+  const base = today.getMonth() + (today.getDate() >= d ? 0 : -1)
+  const out: PayrollCycle[] = []
+  for (let i = n - 1; i >= 0; i--) {
+    const first = new Date(today.getFullYear(), base - i, d, 12)
+    const last = new Date(today.getFullYear(), base - i + 1, d - 1, 12)
+    out.push({ start: iso(first), end: iso(last), isOpen: i === 0 })
+  }
+  return out
+}
+
+/** Totales de cada ciclo (más antiguo primero) a partir de las filas de todo el rango. */
+export function cycleRows(cycles: PayrollCycle[], rows: MonthlyDetailRow[]): CycleRow[] {
+  return cycles.map(c => {
+    const t = periodTotals(rows.filter(r => r.date >= c.start && r.date <= c.end))
+    return {
+      key: `${c.start}_${c.end}`, start: c.start, end: c.end, isOpen: c.isOpen,
+      label: cycleLabel(c.start, c.end, c.isOpen),
+      income: t.income, expenses: t.expenses, savings: Math.round((t.income - t.expenses) * 100) / 100,
+    }
+  })
+}
+
+/**
+ * Gasto del ciclo anterior hasta el mismo día del ciclo. Un ciclo abierto se
+ * compara a estas alturas; uno cerrado, entero contra el anterior entero.
+ */
+export function previousSpendAligned(cur: CycleRow, prev: CycleRow, rows: MonthlyDetailRow[], today: Date): number {
+  if (!cur.isOpen) return prev.expenses
+  const elapsed = Math.round((parse(iso(today)).getTime() - parse(cur.start).getTime()) / 86_400_000)
+  const lim = parse(prev.start)
+  lim.setDate(lim.getDate() + Math.max(0, elapsed))
+  const until = iso(lim) < prev.end ? iso(lim) : prev.end
+  return periodTotals(rows.filter(r => r.date >= prev.start && r.date <= until)).expenses
+}
+
+/** Ciclo con más ahorro entre los cerrados (hacen falta dos). */
+export function bestCycle(rows: CycleRow[]): string | null {
+  const closed = rows.filter(r => !r.isOpen)
+  if (closed.length < 2) return null
+  let best = closed[0]
+  for (const r of closed) if (r.savings > best.savings) best = r
+  return best.savings > 0 ? best.key : null
+}
+
+/** Ahorro medio de los ciclos cerrados (el abierto aún no ha terminado). */
+export function cycleAverage(rows: CycleRow[]): number {
+  const closed = rows.filter(r => !r.isOpen)
+  const base = closed.length ? closed : rows
+  if (!base.length) return 0
+  return Math.round(base.reduce((s, r) => s + r.savings, 0) / base.length)
+}
+
+const RANGE = /^(\d{4}-\d{2}-\d{2})_(\d{4}-\d{2}-\d{2})$/
+
+/** Periodo de Movimientos con rango de fechas exacto (un ciclo). */
+export function parseRangePeriod(period: string): { date_from: string; date_to: string } | null {
+  const m = RANGE.exec(period)
+  return m ? { date_from: m[1], date_to: m[2] } : null
+}
+
+export function rangePeriodLabel(period: string, today: Date): string | null {
+  const r = parseRangePeriod(period)
+  return r ? cycleLabel(r.date_from, r.date_to, r.date_to >= iso(today)) : null
+}

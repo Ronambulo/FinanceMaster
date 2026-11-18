@@ -1,4 +1,5 @@
 from datetime import datetime, date
+from datetime import date as DateType  # para campos que se llaman `date`
 from typing import Optional, List
 from pydantic import BaseModel, EmailStr, field_validator
 from .models import CategoryType, DebtDirection, GoalType, GoalCategory
@@ -6,18 +7,20 @@ from .models import CategoryType, DebtDirection, GoalType, GoalCategory
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: Optional[EmailStr] = None
     username: str
     password: str
+    display_name: Optional[str] = None
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str  # correo o nombre de usuario
     password: str
 
 class UserOut(BaseModel):
     id: int
     email: str
     username: str
+    display_name: Optional[str] = None
     created_at: datetime
     is_admin: bool = False
     ai_enabled: bool = False
@@ -33,6 +36,22 @@ class Token(BaseModel):
 # ── Admin ────────────────────────────────────────────────────────────────────
 class AdminUserOut(UserOut):
     is_active: bool
+    last_login_at: Optional[datetime] = None
+    # Recuentos para el panel (solo cantidades, nunca contenido).
+    tx_count: int = 0
+    account_count: int = 0
+
+class AdminSetAdmin(BaseModel):
+    is_admin: bool
+
+class AdminSetPassword(BaseModel):
+    password: str
+
+class AdminCreateUser(BaseModel):
+    username: str
+    password: str
+    display_name: Optional[str] = None
+    email: Optional[EmailStr] = None
 
 class AdminSetActive(BaseModel):
     is_active: bool
@@ -97,6 +116,17 @@ class TransactionCreate(BaseModel):
     description: Optional[str] = None
     category_id: Optional[int] = None
     fee: Optional[float] = None
+    # Cuenta a la que se asigna (n26, revolut…); por defecto efectivo/manual.
+    source: Optional[str] = None
+    note: Optional[str] = None
+    is_internal_transfer: Optional[bool] = None
+
+class TransferCreate(BaseModel):
+    amount: float
+    date: DateType
+    from_source: str
+    to_source: str
+    note: Optional[str] = None
 
 class QuickTransactionCreate(BaseModel):
     """Entrada simplificada para clientes externos (p.ej. un Atajo de iOS) que
@@ -105,7 +135,7 @@ class QuickTransactionCreate(BaseModel):
     type: str = "expense"  # "expense" | "income"
     name: Optional[str] = None  # si no se manda (o va vacío), se usa un título por defecto
     category_name: Optional[str] = None
-    date: Optional[date] = None
+    date: Optional[DateType] = None
     note: Optional[str] = None
 
     @field_validator("amount", mode="before")
@@ -120,6 +150,10 @@ class QuickTransactionCreate(BaseModel):
 
 class TransactionUpdate(BaseModel):
     category_id: Optional[int] = None
+    # Solo para movimientos manuales: los importados vienen del banco.
+    amount: Optional[float] = None
+    date: Optional[DateType] = None
+    type: Optional[str] = None
     name: Optional[str] = None
     description: Optional[str] = None
     is_internal_transfer: Optional[bool] = None
@@ -127,6 +161,12 @@ class TransactionUpdate(BaseModel):
     is_pending: Optional[bool] = None
     is_auto_categorized: Optional[bool] = None
     is_ai_categorized: Optional[bool] = None
+    source: Optional[str] = None
+    note: Optional[str] = None
+
+class SplitPart(BaseModel):
+    category_id: Optional[int] = None
+    amount: float  # en positivo; el signo lo pone el movimiento original
 
 class TransactionOut(BaseModel):
     id: int
@@ -159,8 +199,20 @@ class TransactionOut(BaseModel):
     is_link_primary: bool = False
     effective_amount: Optional[float] = None
     source: Optional[str] = None
+    note: Optional[str] = None
+    split_parent_id: Optional[int] = None
+    split_count: int = 0
+    is_manual: Optional[bool] = None
+    split_parts: Optional[List[SplitPart]] = None
     linked_transactions: Optional[List["TransactionOut"]] = None
+    created_at: Optional[datetime] = None
     model_config = {"from_attributes": True}
+
+class SplitRequest(BaseModel):
+    parts: List[SplitPart]
+
+class ConfirmRequest(BaseModel):
+    ids: List[int]
 
 class LinkTransactionsRequest(BaseModel):
     transaction_ids: List[int]
@@ -169,6 +221,55 @@ class ImportResult(BaseModel):
     imported: int
     skipped_duplicates: int
     errors: int
+
+class PreferencesUpdate(BaseModel):
+    ui_mode: Optional[str] = None
+    theme: Optional[str] = None
+    modules: Optional[dict] = None
+    currency: Optional[str] = None
+    month_start: Optional[int] = None
+    ultra_modules: Optional[dict] = None
+    cat_icons: Optional[str] = None
+
+
+class BulkCategoryRequest(BaseModel):
+    ids: List[int]
+    category_id: int
+    # Cambiar también el resto de movimientos del mismo comercio
+    include_same_merchant: bool = False
+    # Crear una regla para que los próximos de ese comercio entren ya así
+    create_rule: bool = False
+
+
+class PreviousCategory(BaseModel):
+    id: int
+    category_id: Optional[int] = None
+    is_auto_categorized: bool = False
+    is_ai_categorized: bool = False
+
+
+class BulkCategoryResult(BaseModel):
+    updated: int
+    previous: List[PreviousCategory]
+    rule_ids: List[int] = []
+
+
+class BulkCategoryUndo(BaseModel):
+    previous: List[PreviousCategory]
+    rule_ids: List[int] = []
+
+
+class TransactionGroup(BaseModel):
+    key: str
+    label: str
+    income: float = 0.0
+    expense: float = 0.0
+    count: int = 0
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    # Por comercio: la categoría más reciente, para pintar su ficha.
+    category_name: Optional[str] = None
+
 
 class TransactionListResponse(BaseModel):
     items: List[TransactionOut]

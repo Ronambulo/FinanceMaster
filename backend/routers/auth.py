@@ -1,45 +1,171 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timedelta
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from .. import models, schemas, auth
 from ..database import get_db
+from ..services import preferences as prefs
+from ..services import activity
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=schemas.Token)
-def register(data: schemas.UserCreate, db: Session = Depends(get_db)):
-    if db.query(models.User).filter(models.User.email == data.email).first():
+def register(data: schemas.UserCreate, request: Request, db: Session = Depends(get_db)):
+    username = data.username.strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="Falta el usuario")
+    # El correo es opcional: sin él se guarda uno interno único.
+    email = data.email or f"{username}@local"
+    if db.query(models.User).filter(models.User.email == email).first():
         raise HTTPException(status_code=400, detail="Email ya registrado")
-    if db.query(models.User).filter(models.User.username == data.username).first():
+    if db.query(models.User).filter(models.User.username == username).first():
         raise HTTPException(status_code=400, detail="Usuario ya existe")
 
     user = models.User(
-        email=data.email,
-        username=data.username,
+        email=email,
+        username=username,
+        display_name=(data.display_name or "").strip() or None,
         hashed_password=auth.hash_password(data.password),
     )
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    token = auth.create_access_token({"sub": str(user.id)})
+    token = auth.issue_token(db, user, request)
+    activity.record(db, "register", user=user, request=request)
     return schemas.Token(access_token=token, token_type="bearer", user=schemas.UserOut.model_validate(user))
 
 
 @router.post("/login", response_model=schemas.Token)
-def login(data: schemas.UserLogin, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == data.email).first()
+def login(data: schemas.UserLogin, request: Request, db: Session = Depends(get_db)):
+    ident = data.email.strip()
+    user = db.query(models.User).filter((models.User.email == ident) | (models.User.username == ident)).first()
     if not user or not auth.verify_password(data.password, user.hashed_password):
+        activity.failed_login(db, ident, user, request)
         raise HTTPException(status_code=401, detail="Credenciales incorrectas")
 
-    token = auth.create_access_token({"sub": str(user.id)})
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+    token = auth.issue_token(db, user, request)
+    activity.record(db, "login", user=user, request=request)
     return schemas.Token(access_token=token, token_type="bearer", user=schemas.UserOut.model_validate(user))
+
+
+@router.post("/logout")
+def logout(
+    request: Request,
+    jti: Optional[str] = Depends(auth.token_jti),
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    if jti:
+        s = db.query(models.UserSession).filter(models.UserSession.jti == jti).first()
+        if s and s.revoked_at is None:
+            s.revoked_at = datetime.utcnow()
+            db.commit()
+    activity.record(db, "logout", user=current_user, request=request)
+    return {"ok": True}
+
+
+@router.get("/sessions")
+def list_sessions(
+    jti: Optional[str] = Depends(auth.token_jti),
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Sesiones abiertas (sin cerrar y sin caducar), la actual primero."""
+    since = datetime.utcnow() - timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
+    rows = (
+        db.query(models.UserSession)
+        .filter(models.UserSession.user_id == current_user.id, models.UserSession.revoked_at.is_(None),
+                models.UserSession.created_at >= since)
+        .order_by(models.UserSession.last_seen_at.desc())
+        .all()
+    )
+    out = [{
+        "id": s.id,
+        "device": activity.device_label(s.user_agent),
+        "ip": s.ip,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "last_seen_at": s.last_seen_at.isoformat() if s.last_seen_at else None,
+        "current": s.jti == jti,
+    } for s in rows]
+    out.sort(key=lambda s: not s["current"])
+    return out
+
+
+@router.delete("/sessions/{session_id}")
+def close_session(
+    session_id: int,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    s = db.query(models.UserSession).filter(models.UserSession.id == session_id, models.UserSession.user_id == current_user.id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    if s.revoked_at is None:
+        s.revoked_at = datetime.utcnow()
+        db.commit()
+    return {"ok": True}
+
+
+@router.post("/sessions/close-others")
+def close_other_sessions(
+    request: Request,
+    jti: Optional[str] = Depends(auth.token_jti),
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    n = auth.revoke_sessions(db, current_user.id, except_jti=jti)
+    if n:
+        activity.record(db, "sessions_closed", user=current_user, detail=f"{n}", request=request)
+    return {"closed": n}
 
 
 @router.get("/me", response_model=schemas.UserOut)
 def me(current_user: models.User = Depends(auth.get_current_user)):
+    return current_user
+
+
+@router.get("/preferences")
+def get_preferences(current_user: models.User = Depends(auth.get_current_user)):
+    return prefs.resolve(current_user.preferences)
+
+
+@router.put("/preferences")
+def update_preferences(
+    data: schemas.PreferencesUpdate,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        current_user.preferences = prefs.merge(current_user.preferences, data.model_dump(exclude_none=True))
+    except prefs.PreferencesError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    db.commit()
+    return prefs.resolve(current_user.preferences)
+
+
+class ProfileUpdate(BaseModel):
+    display_name: str | None = None
+
+
+@router.put("/profile", response_model=schemas.UserOut)
+def update_profile(
+    data: ProfileUpdate,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    name = (data.display_name or "").strip()
+    if len(name) > 60:
+        raise HTTPException(status_code=422, detail="El nombre es demasiado largo")
+    current_user.display_name = name or None
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 
@@ -51,6 +177,8 @@ class PasswordChange(BaseModel):
 @router.put("/password")
 def change_password(
     data: PasswordChange,
+    request: Request,
+    jti: Optional[str] = Depends(auth.token_jti),
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -58,6 +186,9 @@ def change_password(
         raise HTTPException(status_code=400, detail="Contraseña actual incorrecta")
     current_user.hashed_password = auth.hash_password(data.new_password)
     db.commit()
+    # Al cambiar la contraseña se cierran los demás dispositivos.
+    auth.revoke_sessions(db, current_user.id, except_jti=jti)
+    activity.record(db, "password_changed", user=current_user, request=request)
     return {"ok": True}
 
 
@@ -74,6 +205,10 @@ def delete_account(
     # se limpian a mano para no dejar filas huérfanas tras el borrado.
     db.query(models.Insight).filter(models.Insight.user_id == current_user.id).delete()
     db.query(models.AiUsageLog).filter(models.AiUsageLog.user_id == current_user.id).delete()
+    db.query(models.ImportLog).filter(models.ImportLog.user_id == current_user.id).delete()
+    db.query(models.UserSession).filter(models.UserSession.user_id == current_user.id).delete()
+    db.query(models.Passkey).filter(models.Passkey.user_id == current_user.id).delete()
+    activity.record(db, "account_deleted", user=current_user)
 
     db.delete(current_user)
     db.commit()

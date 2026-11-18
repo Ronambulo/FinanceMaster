@@ -1,180 +1,199 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap');
 
-@layer base {
-  :root {
-    /* ── Default palette (charcoal-navy + sage accent) ──
-       These are CSS fallbacks; applyTheme() in theme.ts overrides them at runtime
-       based on the user's saved preference (localStorage). */
-
-    --background:        218 17% 9%;
-    --foreground:        210 13% 94%;
-    --card:              218 17% 13%;
-    --card-foreground:   210 13% 94%;
-    --popover:           217 17% 15%;
-    --popover-foreground:210 13% 94%;
-
-    /* Accent — updated by applyTheme(); default = sage */
-    --primary:           153 27% 60%;
-    --primary-foreground:218 17% 9%;
-
-    --secondary:         218 17% 15%;
-    --secondary-foreground:210 8% 85%;
-    --muted:             218 17% 13%;
-    --muted-foreground:  217 10% 64%;
-    --accent:            218 17% 15%;
-    --accent-foreground: 210 10% 90%;
-    --destructive:       6 65% 58%;
-    --destructive-foreground:0 0% 98%;
-    --border:            218 17% 19%;
-    --input:             218 17% 15%;
-    --ring:              153 27% 60%;
-    --radius:            1rem;
-
-    /* Semantic financial tokens — updated by applyTheme() */
-    --positive:  153 27% 60%;   /* sage      = gain / income */
-    --negative:  9 55% 67%;     /* coral     = loss / expense */
-    --warning:   39 55% 63%;    /* gold      = caution */
-
-    /* Qualitative dataviz palette — constant across themes */
-    --chart-1: 153 27% 60%;   /* sage */
-    --chart-2: 216 35% 63%;   /* blue */
-    --chart-3: 39 59% 63%;    /* gold */
-    --chart-4: 267 33% 66%;   /* mauve */
-
-    /* Safe-area insets (notch / home indicator / gesture bars) — 0 on
-       browsers or contexts that don't report them, so these are safe to
-       add unconditionally anywhere fixed chrome touches a screen edge. */
-    --safe-top:    calc(env(safe-area-inset-top, 0px) + 2px);
-    --safe-bottom: 0px;
-    --safe-left:   calc(env(safe-area-inset-left, 0px) + 2px);
-    --safe-right:  calc(env(safe-area-inset-right, 0px) + 2px);
-  }
+/* Tokens del lienzo: :root = claro, .dark = oscuro (el hex original). */
+:root {
+  --c-001391: #001391;
+  --c-0369a1: #0369a1;
+  --c-0b0b0f: #0b0b0f;
+  --c-0b7fab: #0b7fab;
+  --c-0f1015: #f2f3f7;
+  --c-12301f: #e6f6ee;
+  --c-13294b: #13294b;
+  --c-132e31: #e4f5f6;
+  --c-14161f: #f1f2f6;
+  --c-14283c: #e3f1fd;
+  --c-14866e: #14866e;
+  --c-15161c: #f4f5f9;
+  --c-186a3b: #6fe0a5;
+  --c-1a1b23: #ffffff;
+  --c-1b1b1b: #1b1b1b;
+  --c-1db954: #1db954;
+  --c-1f2029: #ffffff;
+  --c-1f5f99: #1f5f99;
+  --c-1f9d63: #1f9d63;
+  --c-23242e: #f4f5f9;
+  --c-262546: #eceefe;
+  --c-262734: #eef0f4;
+  --c-2a2346: #efeaff;
+  --c-2a2b38: #e4e6ee;
+  --c-2f7fd0: #2f7fd0;
+  --c-33281f: #f5ece4;
+  --c-36a18b: #36a18b;
+  --c-3a1a1e: #fdecec;
+  --c-3a1a2c: #fdeaf4;
+  --c-3a2a14: #fff1de;
+  --c-3a2e14: #fff4dc;
+  --c-4a4b58: #d5d7e0;
+  --c-4f46e5: #b3aeff;
+  --c-5b3aa8: #5b3aa8;
+  --c-5b52f0: #4f46e5;
+  --c-5b6070: #5b6070;
+  --c-6d64f0: #6d64f0;
+  --c-6fe0a5: #186a3b;
+  --c-7fdbe3: #14666e;
+  --c-8a4b00: #8a4b00;
+  --c-8b85ff: #4f46e5;
+  --c-8cc6ff: #1f5f99;
+  --c-9a9fb0: #5b6070;
+  --c-a12c2c: #a12c2c;
+  --c-a8323e: #a8323e;
+  --c-b3aeff: #4f46e5;
+  --c-be185d: #be185d;
+  --c-c2410c: #c2410c;
+  --c-c4b2ff: #5b3aa8;
+  --c-c77700: #c77700;
+  --c-c9ccd8: #5b6070;
+  --c-d1467f: #d1467f;
+  --c-d5d7e0: #d5d7e0;
+  --c-e07a00: #e07a00;
+  --c-e0bc9a: #6e4a2e;
+  --c-e0e2ff: #e0e2ff;
+  --c-e3f1fd: #e3f1fd;
+  --c-e50914: #e50914;
+  --c-e8f6ee: #e8f6ee;
+  --c-eceefe: #eceefe;
+  --c-efeaff: #efeaff;
+  --c-f1f2f6: #14161f;
+  --c-f2f3f7: #f2f3f7;
+  --c-f4f5f9: #f4f5f9;
+  --c-fdecec: #fdecec;
+  --c-ff9b9b: #a12c2c;
+  --c-ff9ccf: #9b2766;
+  --c-ffc27a: #8a4b00;
+  --c-ffc979: #7a4f00;
+  --c-fff1de: #fff1de;
+  --c-ffffff: #ffffff;
+  --track: #eceefe;
+  --avatar: #e0e2ff;
+  --sh-card: 0 1px 2px rgba(20,22,31,0.05);
+  --sh-nav: 0 8px 24px rgba(20,22,31,0.10);
+  --sh-sheet: 0 -8px 32px rgba(20,22,31,0.16);
+  --pop-border: 0;
+  --overlay: rgba(20,22,31,0.35);
+}
+.dark {
+  --c-001391: #001391;
+  --c-0369a1: #0369a1;
+  --c-0b0b0f: #0b0b0f;
+  --c-0b7fab: #0b7fab;
+  --c-0f1015: #0f1015;
+  --c-12301f: #12301f;
+  --c-13294b: #13294b;
+  --c-132e31: #132e31;
+  --c-14161f: #14161f;
+  --c-14283c: #14283c;
+  --c-14866e: #14866e;
+  --c-15161c: #15161c;
+  --c-186a3b: #186a3b;
+  --c-1a1b23: #1a1b23;
+  --c-1b1b1b: #1b1b1b;
+  --c-1db954: #1db954;
+  --c-1f2029: #1f2029;
+  --c-1f5f99: #1f5f99;
+  --c-1f9d63: #1f9d63;
+  --c-23242e: #23242e;
+  --c-262546: #262546;
+  --c-262734: #262734;
+  --c-2a2346: #2a2346;
+  --c-2a2b38: #2a2b38;
+  --c-2f7fd0: #2f7fd0;
+  --c-33281f: #33281f;
+  --c-36a18b: #36a18b;
+  --c-3a1a1e: #3a1a1e;
+  --c-3a1a2c: #3a1a2c;
+  --c-3a2a14: #3a2a14;
+  --c-3a2e14: #3a2e14;
+  --c-4a4b58: #4a4b58;
+  --c-4f46e5: #4f46e5;
+  --c-5b3aa8: #5b3aa8;
+  --c-5b52f0: #5b52f0;
+  --c-5b6070: #5b6070;
+  --c-6d64f0: #6d64f0;
+  --c-6fe0a5: #6fe0a5;
+  --c-7fdbe3: #7fdbe3;
+  --c-8a4b00: #8a4b00;
+  --c-8b85ff: #8b85ff;
+  --c-8cc6ff: #8cc6ff;
+  --c-9a9fb0: #9a9fb0;
+  --c-a12c2c: #a12c2c;
+  --c-a8323e: #a8323e;
+  --c-b3aeff: #b3aeff;
+  --c-be185d: #be185d;
+  --c-c2410c: #c2410c;
+  --c-c4b2ff: #c4b2ff;
+  --c-c77700: #c77700;
+  --c-c9ccd8: #c9ccd8;
+  --c-d1467f: #d1467f;
+  --c-d5d7e0: #d5d7e0;
+  --c-e07a00: #e07a00;
+  --c-e0bc9a: #e0bc9a;
+  --c-e0e2ff: #e0e2ff;
+  --c-e3f1fd: #e3f1fd;
+  --c-e50914: #e50914;
+  --c-e8f6ee: #e8f6ee;
+  --c-eceefe: #eceefe;
+  --c-efeaff: #efeaff;
+  --c-f1f2f6: #f1f2f6;
+  --c-f2f3f7: #f2f3f7;
+  --c-f4f5f9: #f4f5f9;
+  --c-fdecec: #fdecec;
+  --c-ff9b9b: #ff9b9b;
+  --c-ff9ccf: #ff9ccf;
+  --c-ffc27a: #ffc27a;
+  --c-ffc979: #ffc979;
+  --c-fff1de: #fff1de;
+  --c-ffffff: #ffffff;
+  --track: #2a2b38;
+  --avatar: #262546;
+  --sh-card: none;
+  --sh-nav: 0 8px 24px rgba(0,0,0,0.45);
+  --sh-sheet: 0 -8px 32px rgba(0,0,0,0.5);
+  --pop-border: 1px solid #2a2b38;
+  --overlay: rgba(5,6,10,0.62);
 }
 
-@layer base {
-  * { @apply border-border; }
-
-  html { scroll-behavior: smooth; }
-
-  body {
-    @apply bg-background text-foreground antialiased font-sans;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-    -webkit-font-smoothing: antialiased;
-    /* Allow scrolling but block pinch-zoom and double-tap-to-zoom on touch devices. */
-    touch-action: pan-x pan-y;
-  }
-
-  h1, h2, h3 {
-    @apply font-display;
-  }
-
-  /* ── Subtle scrollbar ── */
-  ::-webkit-scrollbar { width: 4px; height: 4px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb {
-    background: hsl(var(--border));
-    border-radius: 999px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.6);
-  }
+:root { --app-height: 100dvh; }
+html, body, #root { margin: 0; min-height: 100%; }
+body {
+  background: var(--c-0f1015);
+  color: var(--c-f1f2f6);
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: pan-x pan-y;
+  overscroll-behavior-y: none;
 }
+a { color: var(--c-f1f2f6); text-decoration: none; }
+button, input, select, textarea { font-family: inherit; }
+button { cursor: pointer; }
+button, a, input, select, textarea, [role=button] { touch-action: manipulation; }
+input::placeholder { color: var(--c-9a9fb0); opacity: 1; }
+input:focus, button:focus { outline: none; }
+input:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--c-8b85ff); outline-offset: 2px; }
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.screen { position: relative; min-height: 100dvh; box-sizing: border-box; padding-bottom: 120px; }
+@keyframes fm-spin { to { transform: rotate(360deg); } }
+@keyframes fm-pulse { 50% { opacity: .5; } }
+@keyframes fm-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes fm-bob { 0%, 100% { transform: none; } 25% { transform: translateY(-10px); } 45% { transform: none; } 65% { transform: translateY(-5px); } 80% { transform: none; } }
+@keyframes fm-fade { from { opacity: 0; } to { opacity: 1; } }
 
-/* ── Glassmorphism utilities ── */
-@layer utilities {
-  .glass {
-    background: rgba(255, 255, 255, 0.035);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-  }
-
-  /* Lift-and-glow hover for cards */
-  .card-hover {
-    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-                box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-                border-color 0.2s ease;
-  }
-  .card-hover:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.1);
-  }
-
-  /* Semantic color utility classes */
-  .positive { color: hsl(var(--positive)); }
-  .negative { color: hsl(var(--negative)); }
-
-  /* Staggered animation helpers */
-  .delay-75  { animation-delay: 75ms; }
-  .delay-150 { animation-delay: 150ms; }
-  .delay-225 { animation-delay: 225ms; }
-  .delay-300 { animation-delay: 300ms; }
-  .delay-375 { animation-delay: 375ms; }
-}
-
-/* ── App main content — bottom padding clears the mobile bottom nav
-   (78px) plus whatever safe-area the device reports below it. ── */
-main.app-main {
-  padding-bottom: calc(78px + 3.125rem + var(--safe-bottom)) !important;
-}
-@media (min-width: 768px) {
-  main.app-main {
-    padding-bottom: 1.5rem !important;
-  }
-}
-
-/* ── Compact mode ── */
-html.compact main {
-  padding: 0.5rem !important;
-}
-html.compact main.app-main {
-  padding-bottom: calc(78px + 0.625rem + var(--safe-bottom)) !important;
-}
-@media (min-width: 768px) {
-  html.compact main {
-    padding: 0.875rem !important;
-  }
-  html.compact main.app-main {
-    padding-bottom: 0.875rem !important;
-  }
-}
-html.compact .space-y-6 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.875rem !important; }
-html.compact .space-y-4 > :not([hidden]) ~ :not([hidden]) { margin-top: 0.625rem !important; }
-html.compact .gap-4 { gap: 0.625rem !important; }
-html.compact .gap-6 { gap: 0.875rem !important; }
-html.compact tbody td { padding-top: 0.4rem !important; padding-bottom: 0.4rem !important; }
-html.compact .text-xl { font-size: 1.05rem !important; }
-html.compact h1.text-2xl { font-size: 1.2rem !important; }
-
-/* ── Animation keyframes ── */
-@keyframes fade-up {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes fade-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes slide-in-left {
-  from { opacity: 0; transform: translateX(-8px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes number-pop {
-  from { opacity: 0; transform: scale(0.94) translateY(4px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-@keyframes accordion-down {
-  from { height: 0; }
-  to   { height: var(--radix-accordion-content-height); }
-}
-
-@keyframes accordion-up {
-  from { height: var(--radix-accordion-content-height); }
-  to   { height: 0; }
+/* Ajustes > Apariencia > Animaciones reducidas */
+html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after {
+  animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important; scroll-behavior: auto !important;
 }

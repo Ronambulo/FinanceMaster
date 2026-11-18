@@ -82,5 +82,5 @@ export function currentMonth(): string {
 /** Nombre visible del banco o broker de origen (columna `source`). */
 export const BANK_NAMES: Record<string, string> = {
   trade_republic: 'Trade Republic', myinvestor: 'MyInvestor', revolut: 'Revolut',
-  n26: 'N26', wise: 'Wise', other: 'Otros bancos', manual: 'Manual',
+  n26: 'N26', wise: 'Wise', bbva: 'BBVA', other: 'Otros bancos', manual: 'Manual',
 }

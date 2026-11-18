@@ -637,12 +637,13 @@ async def tr_debug_detail(
     if not client or not client.is_connected():
         raise HTTPException(400, "No conectado a Trade Republic")
     import asyncio
-    dsub = await client._client.timeline_detail_v2(event_id)
-    try:
-        sid_str, _, response = await asyncio.wait_for(client._client.recv(), timeout=15.0)
-        return {"event_id": event_id, "detail": response}
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    async with client.ws_lock():
+        dsub = await client._client.timeline_detail_v2(event_id)
+        try:
+            response = await asyncio.wait_for(client._client._recv_subscription(str(dsub)), timeout=15.0)
+            return {"event_id": event_id, "detail": response}
+        except Exception as e:
+            raise HTTPException(500, str(e))
 
 
 @router.post("/fix-securities")

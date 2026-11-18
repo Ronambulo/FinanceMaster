@@ -7,8 +7,9 @@ from .revolut import RevolutConnector
 from .n26 import N26Connector
 from .wise import WiseConnector
 from .myinvestor import MyInvestorConnector
+from .bbva import BBVAConnector
 
-CONNECTORS = [TradeRepublicConnector, RevolutConnector, N26Connector, WiseConnector, MyInvestorConnector]
+CONNECTORS = [TradeRepublicConnector, RevolutConnector, N26Connector, WiseConnector, MyInvestorConnector, BBVAConnector]
 
 _BANK_NAMES = {
     TradeRepublicConnector: "trade_republic",
@@ -16,6 +17,7 @@ _BANK_NAMES = {
     N26Connector: "n26",
     WiseConnector: "wise",
     MyInvestorConnector: "myinvestor",
+    BBVAConnector: "bbva",
 }
 
 BANK_LABELS = {
@@ -24,6 +26,7 @@ BANK_LABELS = {
     "n26": "N26",
     "wise": "Wise",
     "myinvestor": "MyInvestor",
+    "bbva": "BBVA",
 }
 
 
@@ -71,6 +74,9 @@ def parse_file(content: bytes, bank_format: str = "auto") -> Dict[str, Any]:
 
     if bank_format == "auto" or bank_format not in _BANK_NAMES.values():
         detected = detect_bank(headers)
+        # BBVA pone líneas informativas antes de la fila de columnas.
+        if detected == "unknown" and BBVAConnector.sniff(content):
+            detected = "bbva"
     else:
         detected = bank_format
 

@@ -1,222 +1,199 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { QueryClientProvider, useQueryClient } from '@tanstack/react-query'
+// Raíz de la app: autenticación, preferencias, tema y rutas del rediseño.
+import { useEffect, type ReactNode } from 'react'
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '@/lib/queryClient'
-import { ToastProvider } from '@/components/ui/toast'
+import { dashApi, portfolioApi } from '@/lib/api'
+import { persistQueries, restoreQueries } from '@/lib/queryPersist'
+import { applyTheme } from '@/lib/theme'
+import { applyAppearance } from '@/lib/appearance'
 import { useAuthStore } from '@/store/auth'
-import { AppLayout } from '@/components/layout/AppLayout'
-import { Login } from '@/pages/Login'
-import { Register } from '@/pages/Register'
-import { Dashboard } from '@/pages/Dashboard'
-import { CommandPalette } from '@/components/CommandPalette'
-import { OnboardingWizard } from '@/components/OnboardingWizard'
-import { AiChat } from '@/components/AiChat'
-import { useCallback, useEffect, useState, Suspense, lazy } from 'react'
+import { usePreferencesStore } from '@/store/preferences'
+import { AppLayout } from '@/app/Shell'
+import { Login, Registro, enforceRemember } from '@/screens/Auth'
+import Inicio from '@/screens/Inicio'
+import Onboarding from '@/screens/Onboarding'
+import Movimientos from '@/screens/Movimientos'
+import Comercio from '@/screens/Comercio'
+import Detalle from '@/screens/Detalle'
+import EditarGasto from '@/screens/EditarGasto'
+import Dividir from '@/screens/Dividir'
+import Importar from '@/screens/Importar'
+import Ajustes from '@/screens/Ajustes'
+import Admin, { Usuario, Usuarios } from '@/screens/Admin'
+import { Actividad, Avisos, Copias } from '@/screens/AdminServidor'
+import Chat from '@/screens/Chat'
+import ConectarTR from '@/screens/ConectarTR'
+import SyncError from '@/screens/SyncError'
+import Plan, { Deudas, Logros, MesAMes, Objetivos, Presupuestos, Recurrentes } from '@/screens/Plan'
+import Cuentas, { Banco, Broker, openAddAccount } from '@/screens/Cuentas'
+import { PwaFixes } from '@/app/pwa'
+import { CategoryEmojiSync } from '@/store/catEmoji'
+import { ConfirmHost } from '@/ui/Confirm'
+import { ToastHost } from '@/ui/Toast'
+import { AddSheet } from '@/ui/AddSheet'
+import { openAdd } from '@/store/add'
+import { useNavigate } from 'react-router-dom'
+import { useIsPC } from '@/app/Shell'
+import { Empty, SubHeader, Spinner } from '@/ui/kit'
 
-const Transactions = lazy(() => import('@/pages/Transactions').then(m => ({ default: m.Transactions })))
-const Portfolio = lazy(() => import('@/pages/Portfolio').then(m => ({ default: m.Portfolio })))
-const Recurring = lazy(() => import('@/pages/Recurring').then(m => ({ default: m.Recurring })))
-const Debts = lazy(() => import('@/pages/Debts').then(m => ({ default: m.Debts })))
-const Goals = lazy(() => import('@/pages/Goals').then(m => ({ default: m.Goals })))
-const Monthly = lazy(() => import('@/pages/Monthly').then(m => ({ default: m.Monthly })))
-const Settings = lazy(() => import('@/pages/Settings').then(m => ({ default: m.Settings })))
-const Admin = lazy(() => import('@/pages/Admin').then(m => ({ default: m.Admin })))
-const AchievementsPage = lazy(() => import('@/pages/Achievements').then(m => ({ default: m.AchievementsPage })))
-import { applyTheme, THEME_KEY, ACCENT_KEY, getCompact } from '@/lib/theme'
-import { useFeaturesStore } from '@/store/features'
-import type { FeatureId } from '@/lib/features'
-import { WifiOff, Loader2, Smartphone } from 'lucide-react'
-import { trApi } from '@/lib/api'
-import { useToast } from '@/components/ui/toast'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { TRLoginStep } from '@/components/TRLoginStep'
-import { useTR2FAStore } from '@/store/tr2fa'
+enforceRemember()
 
-function OfflineBanner() {
-  const [offline, setOffline] = useState(!navigator.onLine)
+/** Pantalla aún sin construir en esta rama. */
+function Pending({ title, back = '/' }: { title: string; back?: string }) {
+  return (
+    <>
+      <SubHeader title={title} back={back} />
+      <Empty title={title} text="Esta pantalla llega en el siguiente paso." />
+    </>
+  )
+}
+
+function Loading() {
+  return <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spinner /></div>
+}
+
+/** Enlaces antiguos: /?import=1 y /settings?tab=… */
+function Home() {
+  const [sp] = useSearchParams()
+  if (sp.get('import') === '1') return <Navigate to="/importar" replace />
+  return <Inicio />
+}
+function LegacySettings() {
+  const [sp] = useSearchParams()
+  const tab = sp.get('tab')
+  const map: Record<string, string> = { categories: 'categorias', appearance: 'apariencia', integrations: 'integraciones', export: 'datos', backup: 'datos', diagnostics: 'diagnostico', features: 'modo' }
+  return <Navigate to={tab && map[tab] ? `/ajustes/${map[tab]}` : '/ajustes'} replace />
+}
+
+/** /anadir y /traspaso: abren la hoja y vuelven atrás. */
+function AddRoute({ kind }: { kind: 'expense' | 'transfer' }) {
+  const nav = useNavigate()
   useEffect(() => {
-    const on  = () => setOffline(false)
-    const off = () => setOffline(true)
-    window.addEventListener('online',  on)
-    window.addEventListener('offline', off)
-    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off) }
+    openAdd(kind)
+    if (window.history.length > 1) nav(-1)
+    else nav('/', { replace: true })
+  }, [kind, nav])
+  return null
+}
+
+/** /cuentas/nueva: abre la hoja Añadir cuenta sobre Cuentas. */
+function NewAccount() {
+  useEffect(() => { openAddAccount() }, [])
+  return <Navigate to="/cuentas" replace />
+}
+
+function L({ children, bare }: { children: ReactNode; bare?: boolean }) {
+  return <AppLayout bare={bare}>{children}</AppLayout>
+}
+
+function AuthedRoutes() {
+  const { prefs, loaded, load } = usePreferencesStore()
+  const loc = useLocation()
+  useEffect(() => { load() }, [load])
+  // La gráfica de patrimonio es la petición más lenta (precios históricos):
+  // se pide ya, en paralelo con las preferencias, para que Inicio y Cuentas
+  // la encuentren lista.
+  useEffect(() => { queryClient.prefetchQuery({ queryKey: ['net-worth', 12], queryFn: () => dashApi.netWorthHistory(12), staleTime: 5 * 60_000 }) }, [])
+  if (!loaded) return <Loading />
+  if (!prefs.initialized && loc.pathname !== '/bienvenida') return <Navigate to="/bienvenida" replace />
+
+  const P = (title: string, back?: string, bare = true) => <L bare={bare}><Pending title={title} back={back} /></L>
+  return (
+    <Routes>
+      <Route path="/" element={<L><Home /></L>} />
+      <Route path="/bienvenida" element={<Onboarding />} />
+
+      <Route path="/transacciones" element={<L><Movimientos /></L>} />
+      <Route path="/transacciones/:id" element={<L bare><Detalle /></L>} />
+      <Route path="/transacciones/:id/editar" element={<L bare><EditarGasto /></L>} />
+      <Route path="/transacciones/:id/dividir" element={<L bare><Dividir /></L>} />
+      <Route path="/comercio/:name" element={<L><Comercio /></L>} />
+      <Route path="/anadir" element={<AddRoute kind="expense" />} />
+      <Route path="/traspaso" element={<AddRoute kind="transfer" />} />
+      <Route path="/importar" element={<L bare><Importar /></L>} />
+
+      <Route path="/cuentas" element={<L><Cuentas /></L>} />
+      <Route path="/cuentas/nueva" element={<NewAccount />} />
+      <Route path="/cuentas/trade-republic" element={<L bare><ConectarTR /></L>} />
+      <Route path="/cuentas/sync-error" element={<L bare><SyncError /></L>} />
+      <Route path="/cuentas/broker/:broker" element={<L><Broker /></L>} />
+      <Route path="/cuentas/:source" element={<L><Banco /></L>} />
+      <Route path="/portfolio" element={<Navigate to="/cuentas" replace />} />
+
+      <Route path="/plan" element={<L><Plan /></L>} />
+      <Route path="/presupuestos" element={<L><Presupuestos /></L>} />
+      <Route path="/recurrentes" element={<L><Recurrentes /></L>} />
+      <Route path="/objetivos" element={<L><Objetivos /></L>} />
+      <Route path="/deudas" element={<L><Deudas /></L>} />
+      <Route path="/monthly" element={<L><MesAMes /></L>} />
+      <Route path="/logros" element={<L><Logros /></L>} />
+      <Route path="/chat" element={<L><Chat /></L>} />
+
+      <Route path="/ajustes" element={<L><Ajustes /></L>} />
+      <Route path="/ajustes/:sec" element={<L bare><Ajustes /></L>} />
+      <Route path="/settings" element={<LegacySettings />} />
+
+      <Route path="/admin" element={<L bare><Admin /></L>} />
+      <Route path="/admin/usuarios" element={<L bare><Usuarios /></L>} />
+      <Route path="/admin/copias" element={<L bare><Copias /></L>} />
+      <Route path="/admin/avisos" element={<L bare><Avisos /></L>} />
+      <Route path="/admin/actividad" element={<L bare><Actividad /></L>} />
+      <Route path="/admin/usuarios/:id" element={<L bare><Usuario /></L>} />
+
+      <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/registro" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}
+
+// Últimos datos guardados en el dispositivo: las pestañas se pintan al instante.
+restoreQueries(queryClient, useAuthStore.getState().user?.id)
+persistQueries(queryClient, () => (useAuthStore.getState().token ? useAuthStore.getState().user?.id : null))
+
+/** Pide por adelantado lo de Cuentas para que al entrar ya esté. */
+function Prefetch() {
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      queryClient.prefetchQuery({ queryKey: ['accounts'], queryFn: dashApi.accounts })
+      queryClient.prefetchQuery({ queryKey: ['net-worth', 12], queryFn: () => dashApi.netWorthHistory(12), staleTime: 5 * 60_000 })
+      queryClient.prefetchQuery({ queryKey: ['portfolio-performance'], queryFn: portfolioApi.performance })
+    }, 300)
+    return () => clearTimeout(t)
   }, [])
-  if (!offline) return null
-  return (
-    <div
-      className="fixed top-0 inset-x-0 z-[200] flex items-center justify-center gap-2 bg-amber-500/90 backdrop-blur-sm py-1.5 text-xs font-medium text-amber-950"
-      style={{ paddingTop: 'calc(0.375rem + var(--safe-top))' }}
-    >
-      <WifiOff className="h-3.5 w-3.5" />
-      Sin conexión — mostrando datos en caché
-    </div>
-  )
+  return null
 }
 
-/* ── Modal de login de Trade Republic — se muestra cuando el auto-connect deja
-   un inicio de sesión pendiente (confirmar en la app o código del autenticador).
-   `onClose` solo oculta el diálogo (el login pendiente sigue y se puede retomar);
-   `onVerified` se dispara únicamente cuando la sesión queda conectada. */
-export function TwoFAModal({ open, onClose, onVerified }: { open: boolean; onClose: () => void; onVerified?: () => void }) {
-  const { toast } = useToast()
-  const qc = useQueryClient()
-  const [attempt, setAttempt] = useState(0)
-  const [restarting, setRestarting] = useState(false)
-
-  const handleConnected = useCallback(() => {
-    toast('Trade Republic conectado', 'success')
-    qc.invalidateQueries({ queryKey: ['tr-status'] })
-    onVerified?.()
-    onClose()
-  }, [toast, qc, onVerified, onClose])
-
-  async function handleRestart() {
-    setRestarting(true)
-    try {
-      const r = await trApi.autoConnect()
-      if (r.status === 'connected') handleConnected()
-      else if (r.status === 'error') toast(`Trade Republic: ${r.message ?? 'error al conectar'}`, 'error')
-      setAttempt(a => a + 1)
-    } catch (e: any) {
-      toast(e.message || 'Error al conectar', 'error')
-    } finally {
-      setRestarting(false)
-    }
+function Gate() {
+  const token = useAuthStore(s => s.token)
+  useEffect(() => { applyTheme(); applyAppearance() }, [])
+  if (!token) {
+    return (
+      <>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/registro" element={<Registro />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+        <PwaFixes />
+      </>
+    )
   }
-
-  return (
-    <Dialog open={open} onOpenChange={v => { if (!v) onClose() }}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Inicio de sesión en Trade Republic</DialogTitle>
-        </DialogHeader>
-        <div className="pt-1">
-          {restarting ? (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Conectando…
-            </p>
-          ) : open && (
-            <TRLoginStep key={attempt} onConnected={handleConnected} onRestart={handleRestart} onCancel={onClose} />
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
+  return <><AuthedRoutes /><AddSheet /><ConfirmHost /><Toasts /><PwaFixes /><CategoryEmojiSync /><Prefetch /></>
 }
 
-/* Small reopening affordance — shown whenever a 2FA code is pending but the
-   modal has been dismissed, so the user can get back to it without a resend. */
-function PendingTwoFABanner() {
-  const pending = useTR2FAStore(s => s.pending)
-  const show = useTR2FAStore(s => s.show)
-  const open = useTR2FAStore(s => s.open)
-
-  if (!pending || show) return null
-  return (
-    <button
-      onClick={open}
-      className="fixed right-4 z-[150] flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/25 bottom-[calc(5rem_+_var(--safe-bottom))] md:bottom-6"
-    >
-      <Smartphone className="h-4 w-4" />
-      Inicio de sesión de Trade Republic pendiente
-    </button>
-  )
-}
-
-let lastTokenAutoConnected: string | null = null
-
-function TrAutoConnect() {
-  const { toast } = useToast()
-  const token = useAuthStore(s => s.token)
-  const show = useTR2FAStore(s => s.show)
-  const setPending = useTR2FAStore(s => s.setPending)
-  const closeModal = useTR2FAStore(s => s.close)
-  const clearPending = useTR2FAStore(s => s.clear)
-
-  useEffect(() => {
-    if (!token || lastTokenAutoConnected === token) return
-    lastTokenAutoConnected = token
-
-    trApi.autoConnect().then(r => {
-      if (r.status === 'connected') toast('Trade Republic conectado', 'success')
-      // 'needs_2fa' here never sends a new SMS — the backend only reports a code
-      // that's already pending (either just sent, or from before a page reload).
-      else if (r.status === 'needs_2fa') setPending()
-      else if (r.status === 'error') toast(`Trade Republic: ${r.message ?? 'error al conectar'}`, 'error')
-      // 'no_credentials' → silencioso
-    }).catch(() => {})
-  }, [token])
-
-  return (
-    <>
-      <TwoFAModal open={show} onClose={closeModal} onVerified={clearPending} />
-      <PendingTwoFABanner />
-    </>
-  )
-}
-
-function PublicRoute({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore(s => s.token)
-  if (token) return <Navigate to="/" replace />
-  return <>{children}</>
-}
-
-function PrivateRoute({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore(s => s.token)
-  if (!token) return <Navigate to="/login" replace />
-  return (
-    <>
-      <TrAutoConnect />
-      {children}
-      <AiChat />
-    </>
-  )
-}
-
-function FeatureRoute({ feature, children }: { feature: FeatureId; children: React.ReactNode }) {
-  const features = useFeaturesStore(s => s.features)
-  if (!features[feature]) return <Navigate to="/" replace />
-  return <>{children}</>
-}
-
-function AdminRoute({ children }: { children: React.ReactNode }) {
-  const user = useAuthStore(s => s.user)
-  if (!user?.is_admin) return <Navigate to="/" replace />
-  return <>{children}</>
+function Toasts() {
+  const pc = useIsPC()
+  return <ToastHost pc={pc} />
 }
 
 export default function App() {
-  useEffect(() => {
-    const themeId  = localStorage.getItem(THEME_KEY)  || 'trade-republic'
-    const accentId = localStorage.getItem(ACCENT_KEY) || 'lime'
-    applyTheme(themeId, accentId)
-    if (getCompact()) document.documentElement.classList.add('compact')
-  }, [])
-
   return (
     <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        <BrowserRouter>
-          <OfflineBanner />
-          <CommandPalette />
-          <OnboardingWizard />
-          <Routes>
-            <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-            <Route path="/registro" element={<PublicRoute><Register /></PublicRoute>} />
-            <Route path="/" element={<PrivateRoute><AppLayout /></PrivateRoute>}>
-              <Route index element={<Dashboard />} />
-              <Route path="transacciones" element={<Transactions />} />
-              <Route path="portfolio" element={<Portfolio />} />
-              <Route path="recurrentes" element={<FeatureRoute feature="recurring"><Recurring /></FeatureRoute>} />
-              <Route path="deudas" element={<FeatureRoute feature="debts"><Debts /></FeatureRoute>} />
-              <Route path="objetivos" element={<FeatureRoute feature="goals"><Goals /></FeatureRoute>} />
-              <Route path="monthly" element={<Monthly />} />
-              <Route path="logros" element={<FeatureRoute feature="achievements"><AchievementsPage /></FeatureRoute>} />
-              <Route path="ajustes" element={<Settings />} />
-              <Route path="admin" element={<AdminRoute><Admin /></AdminRoute>} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
-      </ToastProvider>
+      <BrowserRouter>
+        <Gate />
+      </BrowserRouter>
     </QueryClientProvider>
   )
 }
