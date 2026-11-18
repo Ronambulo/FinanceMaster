@@ -82,9 +82,8 @@ export function StandaloneFix() {
   useEffect(() => {
     if (!(isStandalone() && isIos())) return
     const root = document.documentElement
-    // Es innerHeight, no la altura de pantalla: con la barra de estado "default" la
-    // app empieza bajo ella y lo que se pinte más abajo de innerHeight no se ve
-    // (antes se compensaba ese "hueco" y en el iPhone 17 Pro la barra salía cortada).
+    // Con la barra de estado "black-translucent" la app ocupa toda la pantalla; con
+    // "default" iOS la pinta solo hasta innerHeight y abajo queda una franja vacía.
     const measure = () => {
       root.style.setProperty('--vb-gap', '0px')
       root.style.setProperty('--app-height', `${window.innerHeight}px`)
