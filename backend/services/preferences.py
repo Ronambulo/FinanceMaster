@@ -26,6 +26,14 @@ MODULE_DEFAULTS: Dict[str, bool] = {
     "debts": True,         # Deudas
     "achievements": False, # Logros
     "ai": False,           # Asistente IA: discreto y apagado de serie
+    "shared": False,       # Gastos compartidos: quién te debe qué
+}
+
+# Avisos push que se pueden apagar uno a uno (solo llegan si el dispositivo se suscribió).
+NOTIFY_DEFAULTS: Dict[str, bool] = {
+    "recurring": True,     # Un cargo recurrente vence mañana
+    "budget": True,        # Un presupuesto llega al 80 % (y al 100 %)
+    "payroll": True,       # Entra la nómina (abre el cierre del mes)
 }
 
 # Módulos que se pueden añadir al modo ultra simple (allí van apagados de serie).
@@ -45,6 +53,7 @@ DEFAULTS: Dict[str, Any] = {
     "ultra_modules": {k: False for k in ULTRA_MODULES},
     "cat_icons": "emoji",
     "home_cards": list(HOME_CARDS),
+    "notify": dict(NOTIFY_DEFAULTS),
 }
 
 
@@ -99,8 +108,14 @@ def resolve(raw: Optional[str]) -> Dict[str, Any]:
         "cat_icons": stored.get("cat_icons") if stored.get("cat_icons") in CAT_ICONS else DEFAULTS["cat_icons"],
         "home_cards": _stored_cards(stored),
         "home_v": HOME_V,
+        "notify": dict(NOTIFY_DEFAULTS),
         "initialized": bool(stored),
     }
+    notify = stored.get("notify")
+    if isinstance(notify, dict):
+        for k, v in notify.items():
+            if k in NOTIFY_DEFAULTS and isinstance(v, bool):
+                out["notify"][k] = v
     umods = stored.get("ultra_modules")
     if isinstance(umods, dict):
         for k, v in umods.items():
@@ -160,6 +175,16 @@ def merge(raw: Optional[str], patch: Dict[str, Any]) -> str:
         if patch["cat_icons"] not in CAT_ICONS:
             raise PreferencesError(f"Estilo de iconos no válido: {patch['cat_icons']}")
         current["cat_icons"] = patch["cat_icons"]
+    notify = patch.get("notify")
+    if notify is not None:
+        if not isinstance(notify, dict):
+            raise PreferencesError("notify debe ser un objeto")
+        for k, v in notify.items():
+            if k not in NOTIFY_DEFAULTS:
+                raise PreferencesError(f"Aviso desconocido: {k}")
+            if not isinstance(v, bool):
+                raise PreferencesError(f"El aviso {k} debe ser true o false")
+            current["notify"][k] = v
     cards = patch.get("home_cards")
     if cards is not None:
         if not isinstance(cards, list) or any(c not in HOME_CARDS for c in cards):

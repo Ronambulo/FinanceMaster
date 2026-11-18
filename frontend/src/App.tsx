@@ -28,6 +28,8 @@ import SyncError from '@/screens/SyncError'
 import Plan, { Deudas, Logros, MesAMes, Objetivos, Presupuestos, Recurrentes } from '@/screens/Plan'
 import Cuentas, { Banco, Broker, openAddAccount } from '@/screens/Cuentas'
 import Inversiones from '@/screens/Inversiones'
+import Cierre from '@/screens/Cierre'
+import Compartidos from '@/screens/Compartidos'
 import { PwaFixes } from '@/app/pwa'
 import { CategoryEmojiSync } from '@/store/catEmoji'
 import { ConfirmHost } from '@/ui/Confirm'
@@ -78,6 +80,21 @@ function AddRoute({ kind }: { kind: 'expense' | 'transfer' }) {
   return null
 }
 
+/** Al tocar un aviso con la app ya abierta, el service worker pide ir a su pantalla. */
+function PushNavigate() {
+  const nav = useNavigate()
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    const onMsg = (e: MessageEvent) => {
+      const d = e.data as { type?: string; url?: string } | null
+      if (d?.type === 'navigate' && typeof d.url === 'string' && d.url.startsWith('/')) nav(d.url)
+    }
+    navigator.serviceWorker.addEventListener('message', onMsg)
+    return () => navigator.serviceWorker.removeEventListener('message', onMsg)
+  }, [nav])
+  return null
+}
+
 /** /cuentas/nueva: abre la hoja Añadir cuenta sobre Cuentas. */
 function NewAccount() {
   useEffect(() => { openAddAccount() }, [])
@@ -123,8 +140,10 @@ function AuthedRoutes() {
       <Route path="/portfolio" element={<L><Inversiones /></L>} />
 
       <Route path="/plan" element={<L><Plan /></L>} />
+      <Route path="/cierre" element={<L bare><Cierre /></L>} />
       <Route path="/presupuestos" element={<L><Presupuestos /></L>} />
       <Route path="/recurrentes" element={<L><Recurrentes /></L>} />
+      <Route path="/compartidos" element={<L><Compartidos /></L>} />
       <Route path="/objetivos" element={<L><Objetivos /></L>} />
       <Route path="/deudas" element={<L><Deudas /></L>} />
       <Route path="/monthly" element={<L><MesAMes /></L>} />
@@ -181,7 +200,7 @@ function Gate() {
       </>
     )
   }
-  return <><AuthedRoutes /><AddSheet /><ConfirmHost /><Toasts /><PwaFixes /><CategoryEmojiSync /><Prefetch /></>
+  return <><AuthedRoutes /><AddSheet /><ConfirmHost /><Toasts /><PwaFixes /><CategoryEmojiSync /><Prefetch /><PushNavigate /></>
 }
 
 function Toasts() {

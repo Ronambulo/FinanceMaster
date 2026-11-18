@@ -111,6 +111,21 @@ def start():
         replace_existing=True,
         misfire_grace_time=3600,
     )
+    from .alerts import run_hourly, run_recurring_due
+    scheduler.add_job(
+        run_recurring_due,
+        trigger=CronTrigger(hour=19, minute=0),
+        id="recurring_due_alerts",
+        replace_existing=True,
+        misfire_grace_time=3 * 3600,
+    )
+    scheduler.add_job(
+        run_hourly,
+        trigger=IntervalTrigger(hours=1),
+        id="hourly_alerts",
+        replace_existing=True,
+        misfire_grace_time=1800,
+    )
     from .backups import HOUR, scheduled_backup
     scheduler.add_job(
         scheduled_backup,
@@ -118,6 +133,14 @@ def start():
         id="daily_backup",
         replace_existing=True,
         misfire_grace_time=6 * 3600,
+    )
+    from .recategorize import run as recategorize_run
+    scheduler.add_job(
+        recategorize_run,
+        trigger=IntervalTrigger(hours=6),
+        id="recategorize",
+        replace_existing=True,
+        misfire_grace_time=3600,
     )
     scheduler.start()
     log.info("APScheduler started")

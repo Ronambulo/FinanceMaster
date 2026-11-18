@@ -781,7 +781,7 @@ async def tr_sync(
             continue
 
         # Compute category for this row (MCC extracted from TR detail sections)
-        category_id, is_auto, is_internal = auto_categorize(
+        category_id, is_auto, is_internal = _res = auto_categorize(
             db=db,
             user_id=current_user.id,
             tx_type=row["type"],
@@ -819,6 +819,7 @@ async def tr_sync(
                 elif existing.category_id != category_id:
                     existing.category_id = category_id
                     changed = True
+                existing.category_source = _res.source
                 existing.is_internal_transfer = is_internal
                 if row.get("symbol") and not existing.symbol:
                     existing.symbol = row["symbol"]
@@ -844,6 +845,7 @@ async def tr_sync(
             user_id=current_user.id,
             category_id=category_id,
             is_auto_categorized=is_auto,
+            category_source=_res.source,
             is_internal_transfer=is_internal,
             source="trade_republic",
             **row,
@@ -875,6 +877,8 @@ async def tr_sync(
         detect_recurring(db, current_user.id)
     except Exception:
         pass
+    from ..services.recategorize import kick
+    kick(current_user.id)
 
     # Resolve ISIN/name → Yahoo ticker for all unresolved positions
     resolve_result = {"resolved": 0, "skipped": 0, "total": 0}
@@ -1230,7 +1234,7 @@ async def tr_import_missing(
             continue
 
         # external_id guaranteed unique — skip secondary dedup entirely
-        category_id, is_auto, is_internal = auto_categorize(
+        category_id, is_auto, is_internal = _res = auto_categorize(
             db=db,
             user_id=current_user.id,
             tx_type=row["type"],
@@ -1246,6 +1250,7 @@ async def tr_import_missing(
             user_id=current_user.id,
             category_id=category_id,
             is_auto_categorized=is_auto,
+            category_source=_res.source,
             is_internal_transfer=is_internal,
             source="trade_republic",
             **row,

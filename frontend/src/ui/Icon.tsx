@@ -34,7 +34,7 @@ function norm(s: string): string {
 }
 
 const RULES: [RegExp, CatTone][] = [
-  [/transfer|traspaso|interna/, 'traspaso'],
+  [/transfer|traspaso|interna|bizum/, 'traspaso'],
   [/inversion|trading|broker|fondo|cripto|etf/, 'inversion'],
   [/nomina|salario|sueldo|ingreso|interes|dividend|pension/, 'nomina'],
   [/regalo|saveback|cashback|donacion/, 'regalos'],

@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from .database import engine
 from . import models
-from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic, myinvestor, integrations, admin, export, account, passkeys
+from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic, myinvestor, integrations, admin, export, account, passkeys, push, shares, merchants
 from .services.categorizer import seed_system_categories
 from .database import SessionLocal
 from sqlalchemy import text
@@ -57,6 +57,9 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE transactions ADD COLUMN split_parent_id INTEGER",
             "ALTER TABLE transactions ADD COLUMN is_manual BOOLEAN",
             "ALTER TABLE users ADD COLUMN last_login_at DATETIME",
+            "ALTER TABLE goals ADD COLUMN auto_mode VARCHAR",
+            "ALTER TABLE goals ADD COLUMN auto_value REAL",
+            "ALTER TABLE transactions ADD COLUMN category_source VARCHAR",
         ]:
             try:
                 conn.execute(text(stmt))
@@ -127,6 +130,11 @@ async def lifespan(app: FastAPI):
         import logging
         logging.getLogger("main").warning("Scheduler not started: %s", exc)
 
+    # Recategoriza lo no confirmado y descarga logos, sin bloquear el arranque.
+    if os.environ.get("FM_DISABLE_BACKGROUND") != "1":
+        from .services.recategorize import kick
+        kick()
+
     yield
 
     # ── Shutdown ───────────────────────────────────────────────────────────────
@@ -165,6 +173,9 @@ app.include_router(integrations.router)
 app.include_router(admin.router)
 app.include_router(export.router)
 app.include_router(account.router)
+app.include_router(push.router)
+app.include_router(shares.router)
+app.include_router(merchants.router)
 
 
 # Serve React frontend

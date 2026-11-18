@@ -4,8 +4,24 @@ from sqlalchemy.orm import Session
 from .. import models, schemas, auth
 from ..database import get_db
 from datetime import date
+from ..services.alerts import mark_current_payroll
 
 router = APIRouter(prefix="/api/goals", tags=["goals"])
+
+AUTO_MODES = ("amount", "percent")
+
+
+def _check_auto(vals: dict) -> None:
+    """Normaliza la aportación automática: "off" (o vacío) la quita; si no, exige un valor válido."""
+    mode = vals.get("auto_mode")
+    if not mode or mode == "off":
+        vals["auto_mode"], vals["auto_value"] = None, None
+        return
+    if mode not in AUTO_MODES:
+        raise HTTPException(400, "Tipo de aportación no válido")
+    v = vals.get("auto_value")
+    if v is None or v <= 0 or (mode == "percent" and v > 100):
+        raise HTTPException(400, "Cantidad de aportación no válida")
 
 
 def _enrich_goal(goal: models.Goal) -> schemas.GoalOut:
@@ -33,10 +49,14 @@ def create_goal(
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
-    goal = models.Goal(user_id=current_user.id, **data.model_dump())
+    vals = data.model_dump()
+    _check_auto(vals)
+    goal = models.Goal(user_id=current_user.id, **vals)
     db.add(goal)
     db.commit()
     db.refresh(goal)
+    if goal.auto_mode:
+        mark_current_payroll(db, goal)
     return _enrich_goal(goal)
 
 
@@ -53,10 +73,17 @@ def update_goal(
     ).first()
     if not goal:
         raise HTTPException(404, "Objetivo no encontrado")
-    for k, v in data.model_dump(exclude_none=True).items():
+    vals = data.model_dump(exclude_none=True)
+    was_auto = bool(goal.auto_mode)
+    if "auto_mode" in vals:
+        vals.setdefault("auto_value", goal.auto_value)
+        _check_auto(vals)
+    for k, v in vals.items():
         setattr(goal, k, v)
     db.commit()
     db.refresh(goal)
+    if goal.auto_mode and not was_auto:
+        mark_current_payroll(db, goal)
     return _enrich_goal(goal)
 
 

@@ -1,22 +1,28 @@
 // Piezas compartidas de movimientos: ficha de comercio, fila, mini gráfico y barras.
-import type { CSSProperties, ReactNode } from 'react'
-import type { Transaction } from '@/lib/api'
+import { useState, type CSSProperties, type ReactNode } from 'react'
+import type { Merchant, Transaction } from '@/lib/api'
 import { accountName, dayLabel, needsReview, txNet, txTitle } from '@/lib/movements'
 import { sparkPath } from '@/lib/home'
 import { CatGlyph, CatTile, Icon, catTone, toneColors, toneIcon } from './Icon'
 import { Amount, C, Row, useMoney } from './kit'
 
-const BRANDS: [RegExp, string, string][] = [
-  [/netflix/i, '#e50914', 'N'],
-  [/spotify/i, '#1db954', 'S'],
-]
+// Logos que no cargaron en esta sesión: no se vuelven a pedir.
+const failedLogos = new Set<string>()
 
-/** Logotipo de marca conocida o, si no, la ficha de su categoría. */
-export function MerchantTile({ name, category, type, size = 40, radius }: { name: string; category?: string | null; type?: string | null; size?: number; radius?: number }) {
-  const b = BRANDS.find(([re]) => re.test(name))
-  if (b) {
+/** Logo de la marca; si no hay, su inicial en el color de la marca; si no, la ficha de su categoría. */
+export function MerchantTile({ name, merchant, category, type, size = 40, radius }: { name: string; merchant?: Merchant | null; category?: string | null; type?: string | null; size?: number; radius?: number }) {
+  const [, setBroken] = useState(0)
+  const r = radius ?? size / 2
+  const logo = merchant?.logo
+  // El servidor entrega la ficha ya compuesta (fondo incluido): se pinta a sangre.
+  // Sin logo descargado, el icono de la categoría, igual que el resto de filas.
+  if (logo && !failedLogos.has(logo)) {
     return (
-      <span aria-hidden="true" style={{ width: size, height: size, borderRadius: radius ?? size / 2, background: `var(--c-${b[1].slice(1)})`, color: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: size >= 40 ? 18 : 17, flex: 'none' }}>{b[2]}</span>
+      <span aria-hidden="true" style={{ width: size, height: size, borderRadius: r, background: '#fff', overflow: 'hidden', flex: 'none', display: 'block' }}>
+        <img src={logo} alt="" loading="lazy" decoding="async" draggable={false}
+          onError={() => { failedLogos.add(logo); setBroken(n => n + 1) }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      </span>
     )
   }
   return <CatTile name={category} type={type} size={size} radius={radius} />
@@ -33,7 +39,7 @@ export function shortDayLabel(iso: string, today: Date): string {
 
 export function txLead(tx: Transaction, size = 40) {
   const title = txTitle(tx)
-  return <ReviewDot on={needsReview(tx)}><MerchantTile name={title} category={tx.category?.name} type={tx.category?.type} size={size} /></ReviewDot>
+  return <ReviewDot on={needsReview(tx)}><MerchantTile name={title} merchant={tx.merchant} category={tx.category?.name} type={tx.category?.type} size={size} /></ReviewDot>
 }
 
 /** Punto de "nuevo, categoría sin revisar" en la esquina de la ficha. */

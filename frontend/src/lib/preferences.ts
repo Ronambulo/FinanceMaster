@@ -25,6 +25,7 @@ export const MODULES = {
   debts:        { label: 'Deudas',       desc: 'Préstamos y créditos',              default: true  },
   achievements: { label: 'Logros',       desc: 'Retos y gamificación',              default: false },
   ai:           { label: 'Asistente IA', desc: 'Preguntas sobre tus finanzas',      default: false },
+  shared:       { label: 'Gastos compartidos', desc: 'Lo que te deben de gastos a medias', default: false },
 } as const
 
 export type ModuleId = keyof typeof MODULES
@@ -36,6 +37,16 @@ export type UltraModuleId = typeof ULTRA_MODULES[number]
 export type UltraModules = Record<UltraModuleId, boolean>
 export const isUltraModule = (id: string): id is UltraModuleId => (ULTRA_MODULES as readonly string[]).includes(id)
 const noUltraModules = (): UltraModules => Object.fromEntries(ULTRA_MODULES.map(id => [id, false])) as UltraModules
+
+/** Avisos push que el usuario puede apagar uno a uno. */
+export const NOTIFY_KINDS = {
+  recurring: 'Cargo recurrente mañana',
+  budget:    'Presupuesto al 80 %',
+  payroll:   'Nómina recibida',
+} as const
+export type NotifyKind = keyof typeof NOTIFY_KINDS
+export type NotifyPrefs = Record<NotifyKind, boolean>
+const allNotify = (): NotifyPrefs => ({ recurring: true, budget: true, payroll: true })
 
 /** Iconos de categoría: el emoji de cada categoría o el dibujo de la app. */
 export type CatIcons = 'emoji' | 'dibujo'
@@ -75,6 +86,7 @@ export interface Preferences {
   cat_icons: CatIcons
   home_cards: HomeCard[]
   home_v: number
+  notify: NotifyPrefs
   initialized: boolean
 }
 
@@ -87,6 +99,7 @@ export type PreferencesPatch = Partial<{
   ultra_modules: Partial<UltraModules>
   cat_icons: CatIcons
   home_cards: HomeCard[]
+  notify: Partial<NotifyPrefs>
 }>
 
 export function defaultModules(): Record<ModuleId, boolean> {
@@ -103,6 +116,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   cat_icons: 'emoji',
   home_cards: [...HOME_CARD_IDS],
   home_v: HOME_V,
+  notify: allNotify(),
   initialized: false,
 }
 
@@ -124,6 +138,12 @@ export function sanitize(raw: unknown): Preferences {
       if (isUltraModule(k) && typeof v === 'boolean') ultra[k] = v
     }
   }
+  const notify = allNotify()
+  if (r.notify && typeof r.notify === 'object') {
+    for (const [k, v] of Object.entries(r.notify as Record<string, unknown>)) {
+      if (k in NOTIFY_KINDS && typeof v === 'boolean') notify[k as NotifyKind] = v
+    }
+  }
   return {
     ui_mode: r.ui_mode === 'ultra' ? 'ultra' : 'normal',
     theme: r.theme === 'light' || r.theme === 'dark' || r.theme === 'system' ? r.theme : 'system',
@@ -134,6 +154,7 @@ export function sanitize(raw: unknown): Preferences {
     cat_icons: r.cat_icons === 'dibujo' ? 'dibujo' : 'emoji',
     home_cards: sanitizeCards(r.home_cards, r.home_v),
     home_v: HOME_V,
+    notify,
     initialized: r.initialized === true,
   }
 }
@@ -149,6 +170,7 @@ export function applyPatch(p: Preferences, patch: PreferencesPatch): Preferences
     ...(patch.home_cards ? { home_cards: sanitizeCards(patch.home_cards, HOME_V) } : {}),
     modules: { ...p.modules, ...(patch.modules || {}) },
     ultra_modules: { ...p.ultra_modules, ...(patch.ultra_modules || {}) },
+    notify: { ...p.notify, ...(patch.notify || {}) },
   }
 }
 

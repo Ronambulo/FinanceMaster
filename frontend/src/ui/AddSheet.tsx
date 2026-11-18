@@ -4,7 +4,7 @@ import { cur } from '@/lib/format'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { catApi, dashApi, txApi, type AccountBalance, type Category } from '@/lib/api'
-import { accountName, categoriesFor, chipDate, cleanAmount, clockTime, isoDay, kindToType, parseAmount, signedAmount, toServerTime, type TxKind } from '@/lib/movements'
+import { accountName, byUsage, categoriesFor, chipDate, cleanAmount, clockTime, isoDay, kindToType, parseAmount, signedAmount, toServerTime, type TxKind } from '@/lib/movements'
 import { useAddStore } from '@/store/add'
 import { BankLogo } from './BankLogo'
 import { CatPickSheet } from './CatPick'
@@ -52,7 +52,8 @@ function AddForm({ initial, onClose }: { initial: TxKind; onClose: () => void })
 
   const categories = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: dashApi.accounts })
-  const list = useMemo(() => categoriesFor(categories.data ?? [], kind === 'income' ? 'income' : 'expense'), [categories.data, kind])
+  const usage = useQuery({ queryKey: ['category-usage'], queryFn: catApi.usage, staleTime: 5 * 60_000 })
+  const list = useMemo(() => byUsage(categoriesFor(categories.data ?? [], kind === 'income' ? 'income' : 'expense'), usage.data), [categories.data, usage.data, kind])
   const accs: AccountBalance[] = useMemo(() => {
     const a = (accounts.data ?? []).filter(x => x.source !== 'manual')
     return [...a, { source: 'manual', label: 'Efectivo', balance: (accounts.data ?? []).find(x => x.source === 'manual')?.balance ?? 0, count: 0, last_date: null }]

@@ -6,7 +6,8 @@ from backend.tests.conftest import add_tx, system_category
 
 
 def test_merchant_key_normalizes_case_and_spaces():
-    assert merchant_key("  MERCADONA   Valencia ") == "mercadona valencia"
+    assert merchant_key("  MERCADONA   Valencia ") == "mercadona"
+    assert merchant_key("  Bar   Pepe ") == "bar pepe"
     assert merchant_key(None) == ""
 
 
@@ -306,3 +307,22 @@ def test_datetime_stored_as_naive_utc_on_create_transfer_and_edit(user_client, d
     })
     assert r.status_code in (200, 201), r.text
     assert all(t["datetime"].startswith("2026-11-17T20:00:00") for t in r.json())
+
+
+def test_search_finds_movements_inside_a_merge(user_client, db):
+    client, uid = user_client
+    a = add_tx(db, uid, name="Cena cumpleaños", amount=-60.0)
+    b = add_tx(db, uid, name="Bizum Laura", amount=20.0, type="TRANSFER_INSTANT_INBOUND")
+    add_tx(db, uid, name="Mercadona", amount=-12.5)
+    primary = client.post("/api/transactions/link", json={"transaction_ids": [a.id, b.id]}).json()
+
+    def found(q):
+        return [t["id"] for t in client.get("/api/transactions", params={"search": q}).json()["items"]]
+
+    # El fusionado no sale suelto: sale la fusión que lo contiene.
+    assert found("laura") == [primary["id"]]
+    assert found("20,00") == [primary["id"]]
+    # Sin acentos, varias palabras en cualquier orden y por categoría.
+    assert found("cumpleanos") == [primary["id"]]
+    assert found("laura bizum") == [primary["id"]]
+    assert found("laura mercadona") == []

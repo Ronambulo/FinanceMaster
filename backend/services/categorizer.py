@@ -31,148 +31,7 @@ TYPE_MAP = {
     "TAX": ("Impuestos", "expense"),
 }
 
-# Default merchant keyword mappings to system categories
-_DEFAULT_KEYWORD_MAP = [
-    # (lowercase keyword, category name)
-    # --- Supermercado ---
-    ("mercadona", "Supermercado"),
-    ("lidl", "Supermercado"),
-    ("carrefour", "Supermercado"),
-    ("aldi", "Supermercado"),
-    ("dia supermercado", "Supermercado"),
-    ("dia %", "Supermercado"),
-    ("alcampo", "Supermercado"),
-    ("supermercado", "Supermercado"),
-    ("alimentacion", "Supermercado"),
-    ("alimentación", "Supermercado"),
-    ("grocery", "Supermercado"),
-    ("bell food", "Supermercado"),
-
-    # --- Comida Rápida ---
-    ("mcdonald", "Comida Rápida"),
-    ("burger king", "Comida Rápida"),
-    ("kfc", "Comida Rápida"),
-    ("popeyes", "Comida Rápida"),
-    ("taco bell", "Comida Rápida"),
-    ("pizza hut", "Comida Rápida"),
-    ("domino's", "Comida Rápida"),
-    ("papa john", "Comida Rápida"),
-    ("100 montaditos", "Comida Rápida"),
-
-    # --- Bar / Cafetería ---
-    ("starbucks", "Bar / Cafetería"),
-    ("cafeteria", "Bar / Cafetería"),
-    ("barrika", "Bar / Cafetería"),
-    ("bertiz", "Bar / Cafetería"),
-    ("café", "Bar / Cafetería"),
-    ("cafe", "Bar / Cafetería"),
-    ("la pecera", "Bar / Cafetería"),
-
-    # --- Restaurante ---
-    ("restaurante", "Restaurante"),
-    ("vips", "Restaurante"),
-    ("celicioso", "Restaurante"),
-    ("pizzería", "Restaurante"),
-    ("pizzeria", "Restaurante"),
-    ("sushi", "Restaurante"),
-    ("principe carlos", "Restaurante"),
-    ("sanabres", "Restaurante"),
-    ("sanabr", "Restaurante"),
-
-    # --- Hotel ---
-    ("hotel", "Hotel"),
-    ("hostal", "Hotel"),
-    ("pension", "Hotel"),
-    ("pensión", "Hotel"),
-    ("apartamento", "Hotel"),
-    ("booking.com", "Hotel"),
-    ("airbnb", "Hotel"),
-
-    # --- Taxi / Uber ---
-    ("uber", "Taxi / Uber"),
-    ("cabify", "Taxi / Uber"),
-    ("bolt", "Taxi / Uber"),
-    ("freenow", "Taxi / Uber"),
-
-    # --- Transporte Público ---
-    ("renfe", "Transporte Público"),
-    ("metro de madrid", "Transporte Público"),
-    ("crtm", "Transporte Público"),
-    ("emt madrid", "Transporte Público"),
-    ("metro ligero", "Transporte Público"),
-    ("tren", "Transporte Público"),
-    ("autobus", "Transporte Público"),
-    ("autobús", "Transporte Público"),
-    ("billete", "Transporte Público"),
-
-    # --- Vuelos ---
-    ("ryanair", "Vuelos"),
-    ("iberia", "Vuelos"),
-    ("vueling", "Vuelos"),
-    ("vuelo", "Vuelos"),
-    ("viajes", "Vuelos"),
-
-    # --- Gasolinera ---
-    ("gasolinera", "Gasolinera"),
-    ("estacion de servicio", "Gasolinera"),
-    ("estación de servicio", "Gasolinera"),
-    ("repsol", "Gasolinera"),
-    ("cepsa", "Gasolinera"),
-    ("galp", "Gasolinera"),
-    ("bp oil", "Gasolinera"),
-
-    # --- Software y Apps / Entretenimiento ---
-    ("netflix", "Entretenimiento"),
-    ("spotify", "Entretenimiento"),
-    ("hbo", "Entretenimiento"),
-    ("disney+", "Entretenimiento"),
-    ("prime video", "Entretenimiento"),
-    ("nintendo", "Entretenimiento"),
-    ("playstation", "Entretenimiento"),
-    ("steam", "Entretenimiento"),
-    ("eneba", "Entretenimiento"),
-    ("epic games", "Entretenimiento"),
-    ("instant gaming", "Entretenimiento"),
-    ("xceed", "Entretenimiento"),
-    ("deeventoss", "Entretenimiento"),
-    ("eventoss", "Entretenimiento"),
-    ("software", "Software y Apps"),
-    ("claude", "Software y Apps"),
-    ("openai", "Software y Apps"),
-    ("chatgpt", "Software y Apps"),
-    ("namecheap", "Software y Apps"),
-    ("digitalocean", "Software y Apps"),
-    ("aws", "Software y Apps"),
-    ("google cloud", "Software y Apps"),
-    ("hosting", "Software y Apps"),
-
-    # --- Ropa ---
-    ("zara", "Ropa"),
-    ("mango", "Ropa"),
-    ("h&m", "Ropa"),
-    ("pull and bear", "Ropa"),
-    ("nike", "Ropa"),
-    ("adidas", "Ropa"),
-    ("bershka", "Ropa"),
-    ("stradivarius", "Ropa"),
-    ("decathlon", "Ropa"),
-
-    # --- Farmacia / Médico ---
-    ("farmacia", "Farmacia"),
-    ("médico", "Médico"),
-    ("medico", "Médico"),
-    ("clinica", "Médico"),
-    ("clínica", "Médico"),
-    ("hospital", "Médico"),
-    ("dentista", "Médico"),
-    ("cm sanchinarro", "Médico"),
-
-    # --- Compras Varias ---
-    ("amazon", "Compras Varias"),
-    ("aliexpress", "Compras Varias"),
-    ("ebay", "Compras Varias"),
-    ("fnac", "Libros / Electrónica"),
-]
+# Las marcas y palabras genericas viven en data/merchants_es.json (services/merchants.py).
 
 
 def get_or_create_system_category(db: Session, name: str, cat_type: str, icon: str = "💰", color: str = "#6366f1") -> models.Category:
@@ -225,6 +84,7 @@ def seed_system_categories(db: Session):
         ("Saveback", "income", "🎁", "#22c55e"),
         ("Ingreso", "income", "💰", "#22c55e"),
         ("Nómina", "income", "💼", "#22c55e"),
+        ("Bizum", "transfer", "📲", "#06b6d4"),
         ("Transferencia Entrante", "income", "⬇️", "#64748b"),
         ("Transferencia Saliente", "expense", "⬆️", "#64748b"),
         ("Transferencia Interna", "internal", "🔄", "#94a3b8"),
@@ -262,6 +122,109 @@ def rule_matches(keyword: str, field: Optional[str], check_text: str, mcc_code: 
     return kw in check_text
 
 
+class CategorizeResult(tuple):
+    """(category_id, is_auto_categorized, is_internal_transfer) con `.source` aparte,
+    para que el desempaquetado de 3 valores de siempre siga funcionando."""
+    source: str
+
+    def __new__(cls, category_id, is_auto, is_internal, source):
+        obj = super().__new__(cls, (category_id, is_auto, is_internal))
+        obj.source = source
+        return obj
+
+
+# Fuentes fiables: no piden revisión. El resto (mcc, type, fallback, ai) sí.
+STRONG_SOURCES = ("rule", "history", "catalog")
+# Tipos cuyo significado no depende del comercio (un dividendo de Apple no es "Software").
+_STRONG_TYPES = {"INTEREST_PAYMENT", "DIVIDEND", "STOCKPERK", "BENEFITS_SAVEBACK", "BUY", "SELL", "TAX"}
+_TRANSFER_TYPES = {"TRANSFER_INBOUND", "TRANSFER_INSTANT_INBOUND", "TRANSFER_OUTBOUND", "TRANSFER_INSTANT_OUTBOUND"}
+# Categorías que no enseñan nada del comercio: no cuentan como historial.
+GENERIC_CATEGORIES = {
+    "Sin categorizar", "Compra con Tarjeta", "Compra Internacional", "Transferencia Entrante",
+    "Transferencia Saliente", "Transferencia Interna", "Ingreso",
+}
+
+
+_GATEWAY_KEYS = {"paypal", "bizum", "sumup", "stripe", "redsys", "google pay", "apple pay"}
+
+
+def is_bizum(name: Optional[str], description: Optional[str]) -> bool:
+    return "bizum" in f"{name or ''} {description or ''}".lower()
+
+
+def _cats_by_name(db: Session, user_id: int) -> dict:
+    """{nombre normalizado: id}; las del usuario tapan a las del sistema. Cacheado por sesión."""
+    cache = db.info.setdefault("_cat_names", {})
+    if user_id not in cache:
+        from .merchants import norm
+        out: dict = {}
+        rows = db.query(models.Category.id, models.Category.name, models.Category.user_id).filter(
+            (models.Category.user_id == None) | (models.Category.user_id == user_id)  # noqa: E711
+        ).all()
+        for cid, name, uid in sorted(rows, key=lambda r: r[2] is not None):
+            out[norm(name)] = cid
+        cache[user_id] = out
+    return cache[user_id]
+
+
+def resolve_category(db: Session, user_id: int, names) -> Optional[int]:
+    """Primera categoría existente de la cadena (del usuario o del sistema)."""
+    from .merchants import norm
+    by = _cats_by_name(db, user_id)
+    for n in names or []:
+        cid = by.get(norm(n))
+        if cid:
+            return cid
+    return None
+
+
+def merchant_history(db: Session, user_id: int) -> dict:
+    """{(clave de comercio, signo): category_id} con la categoría que el usuario más ha puesto a mano."""
+    cache = db.info.setdefault("_merchant_history", {})
+    if user_id in cache:
+        return cache[user_id]
+    from collections import Counter, defaultdict
+    from .merchants import merchant_key
+    generic = {
+        cid for (cid,) in db.query(models.Category.id).filter(models.Category.name.in_(GENERIC_CATEGORIES)).all()
+    }
+    T = models.Transaction
+    rows = db.query(T.name, T.amount, T.category_id).filter(
+        T.user_id == user_id,
+        T.category_id != None,  # noqa: E711
+        T.is_auto_categorized == False,  # noqa: E712
+        (T.is_ai_categorized == False) | (T.is_ai_categorized == None),  # noqa: E711,E712
+        (T.is_internal_transfer == False) | (T.is_internal_transfer == None),  # noqa: E711,E712
+        T.type.notin_(list(_STRONG_TYPES)),
+    ).all()
+    counts: dict = defaultdict(Counter)
+    for name, amount, cid in rows:
+        if not name or cid in generic:
+            continue
+        counts[(merchant_key(name), (amount or 0) >= 0)][cid] += 1
+    # Solo se aprende un hábito claro: varias elecciones y casi todas iguales.
+    # Una marca conocida pide más (un Bizum o una compra puntual "de viaje" no
+    # deben arrastrar al resto), y las pasarelas no dicen nada del comercio.
+    from .merchants import brand, match_brand
+    out = {}
+    for (key, sign), c in counts.items():
+        if key in _GATEWAY_KEYS:
+            continue
+        cid, n = c.most_common(1)[0]
+        total = sum(c.values())
+        need = 3 if (brand(key) or match_brand(key)) else 2
+        if n >= need and n * 3 >= total * 2:
+            out[(key, sign)] = cid
+    cache[user_id] = out
+    return out
+
+
+def forget_history(db: Session):
+    """Olvida la caché de historial y categorías (tras cambiar categorías a mano)."""
+    db.info.pop("_merchant_history", None)
+    db.info.pop("_cat_names", None)
+
+
 def auto_categorize(
     db: Session,
     user_id: int,
@@ -272,13 +235,15 @@ def auto_categorize(
     counterparty_name: Optional[str],
     amount: float,
     user_own_name: Optional[str] = None,
-) -> Tuple[Optional[int], bool, bool]:
+) -> CategorizeResult:
     """
-    Returns (category_id, is_auto_categorized, is_internal_transfer)
+    Returns (category_id, is_auto_categorized, is_internal_transfer) con `.source`.
+    Orden: regla -> tipo fuerte -> traspaso propio -> historial -> marca -> palabra -> MCC -> tipo -> fallback.
     """
+    from .merchants import brand_category_names, match_brand, match_keyword, merchant_key
     _load_mcc()
 
-    # 1. Check user-defined rules (keyword match)
+    # 1. Reglas del usuario
     rules = (
         db.query(models.CategoryRule)
         .filter(models.CategoryRule.user_id == user_id)
@@ -286,20 +251,26 @@ def auto_categorize(
         .all()
     )
     check_text = " ".join(filter(None, [tx_name, tx_description])).lower()
+    rule_types = dict(db.query(models.Category.id, models.Category.type).filter(
+        models.Category.id.in_({r.category_id for r in rules})).all()) if rules else {}
     for rule in rules:
+        # Una regla de ingresos no categoriza gastos ni al revés (mismo nombre
+        # en una nómina y en un envío propio, por ejemplo).
+        ctype = getattr(rule_types.get(rule.category_id), "value", rule_types.get(rule.category_id))
+        if (ctype == "income" and (amount or 0) < 0) or (ctype == "expense" and (amount or 0) > 0):
+            continue
         if rule_matches(rule.keyword, rule.field, check_text, mcc_code):
-            return rule.category_id, True, False
+            return CategorizeResult(rule.category_id, True, False, "rule")
 
-    # 1.5 Check default system keyword rules (keyword match)
-    for kw, cat_name in _DEFAULT_KEYWORD_MAP:
-        if kw in check_text:
-            cat = _get_system_cat_by_name(db, cat_name)
-            if cat:
-                return cat.id, True, False
+    # 2. Tipos que no dependen del comercio
+    if tx_type in _STRONG_TYPES and tx_type in TYPE_MAP:
+        cat = _get_system_cat_by_name(db, TYPE_MAP[tx_type][0])
+        if cat:
+            return CategorizeResult(cat.id, True, False, "type")
 
-    # 2. Internal transfer detection
-    # Only flag as internal if the username has ≥2 words (full name) OR the counterparty
-    # name is an exact match — avoids false positives with single-word usernames like "Enrique"
+    # 3. Traspaso entre cuentas propias.
+    # Only flag as internal if the username has >=2 words (full name) OR the counterparty
+    # name is an exact match - avoids false positives with single-word usernames like "Enrique"
     if user_own_name and counterparty_name:
         own_lower = user_own_name.lower().strip()
         cp_lower = counterparty_name.lower().strip()
@@ -312,22 +283,49 @@ def auto_categorize(
         if is_internal:
             cat_name = "Transferencia Entrante" if amount > 0 else "Transferencia Saliente"
             cat = _get_system_cat_by_name(db, cat_name)
-            return (cat.id if cat else None), True, True
+            return CategorizeResult((cat.id if cat else None), True, True, "type")
 
-    # 3. MCC code lookup
+    # Bizum: siempre en su categoría, entre o salga, sea a quien sea.
+    if is_bizum(tx_name, tx_description):
+        cid = resolve_category(db, user_id, ["Bizum"])
+        if cid:
+            return CategorizeResult(cid, True, False, "catalog")
+
+    label = tx_name or counterparty_name
+    # 4. Lo que el usuario suele poner a este comercio
+    if label:
+        cid = merchant_history(db, user_id).get((merchant_key(label), (amount or 0) >= 0))
+        if cid:
+            return CategorizeResult(cid, True, False, "history")
+
+    # Bizums y transferencias a personas: el catálogo y las palabras no aplican.
+    if tx_type not in _TRANSFER_TYPES:
+        # 5. Marca conocida
+        bid = match_brand(tx_name) or match_brand(counterparty_name)
+        if bid:
+            cid = resolve_category(db, user_id, brand_category_names(bid))
+            if cid:
+                return CategorizeResult(cid, True, False, "catalog")
+        # 6. Palabra genérica (bar, farmacia, hotel...) en nombre o descripción
+        names = match_keyword(" ".join(filter(None, [tx_name, tx_description])))
+        cid = resolve_category(db, user_id, names) if names else None
+        if cid:
+            return CategorizeResult(cid, True, False, "catalog")
+
+    # 7. Código MCC
     if mcc_code and mcc_code in _MCC_DATA:
         mcc_info = _MCC_DATA[mcc_code]
         cat = _get_system_cat_by_name(db, mcc_info["name"])
         if cat:
-            return cat.id, True, False
+            return CategorizeResult(cat.id, True, False, "mcc")
 
-    # 4. Transaction type map
+    # 8. Tipo de movimiento
     if tx_type in TYPE_MAP:
         cat_name, _ = TYPE_MAP[tx_type]
         cat = _get_system_cat_by_name(db, cat_name)
         if cat:
-            return cat.id, True, False
+            return CategorizeResult(cat.id, True, False, "type")
 
-    # 5. Fallback
+    # 9. Fallback
     cat = _get_system_cat_by_name(db, "Sin categorizar")
-    return (cat.id if cat else None), False, False
+    return CategorizeResult((cat.id if cat else None), False, False, "fallback")

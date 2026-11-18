@@ -66,8 +66,8 @@ export function accountName(source: string | null | undefined): string {
 }
 
 /** Título visible de un movimiento. */
-export function txTitle(tx: Pick<Transaction, 'name' | 'description' | 'counterparty_name'>): string {
-  return (tx.name || tx.counterparty_name || tx.description || 'Sin nombre').trim()
+export function txTitle(tx: Pick<Transaction, 'name' | 'description' | 'counterparty_name'> & { merchant?: Transaction['merchant'] }): string {
+  return (tx.merchant?.name || tx.name || tx.counterparty_name || tx.description || 'Sin nombre').trim()
 }
 
 /** Gasto, ingreso o traspaso, para el selector de la hoja de edición. */
@@ -79,8 +79,8 @@ export function txKind(tx: Pick<Transaction, 'amount' | 'is_internal_transfer'>)
 }
 
 const KIND_CATEGORY_TYPES: Record<TxKind, string[]> = {
-  expense: ['expense'],
-  income: ['income'],
+  expense: ['expense', 'transfer'],
+  income: ['income', 'transfer'],
   transfer: ['transfer', 'internal', 'investment'],
 }
 
@@ -385,17 +385,31 @@ export function typeKey(current: string, key: string): string {
   return int === '0' ? key : current + key
 }
 
+/** Orígenes de categoría automática que no piden revisión. */
+const STRONG_SOURCES = ['rule', 'history', 'catalog']
+
 /** Días durante los que un movimiento recién llegado cuenta como "nuevo". */
 export const NEW_DAYS = 21
 
 /** Movimiento recién llegado cuya categoría se puso sola (o no tiene) y nadie ha revisado aún. */
 export function needsReview(
-  tx: Pick<Transaction, 'is_auto_categorized' | 'is_ai_categorized' | 'category_id' | 'is_internal_transfer' | 'type'> & { created_at?: string | null; is_manual?: boolean | null; split_parent_id?: number | null },
+  tx: Pick<Transaction, 'is_auto_categorized' | 'is_ai_categorized' | 'category_id' | 'is_internal_transfer' | 'type'> & { created_at?: string | null; is_manual?: boolean | null; split_parent_id?: number | null; category_source?: string | null },
   now: number = Date.now(),
 ): boolean {
   if (tx.is_internal_transfer || tx.is_manual || tx.split_parent_id || tx.type === 'BUY' || tx.type === 'SELL') return false
   if (!(tx.is_auto_categorized || tx.is_ai_categorized || tx.category_id == null)) return false
+  // Regla del usuario, su propio historial o una marca conocida: fiable, no hace falta revisar.
+  if (tx.is_auto_categorized && !tx.is_ai_categorized && tx.category_id != null && STRONG_SOURCES.includes(tx.category_source ?? '')) return false
   if (!tx.created_at) return false
   const t = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(tx.created_at) ? tx.created_at : `${tx.created_at}Z`)
   return Number.isFinite(t) && now - t < NEW_DAYS * 86400_000
+}
+
+/** Categorías ordenadas por cuántos movimientos tienen (las más usadas primero);
+ *  a igualdad, se respeta el orden de antes. */
+export function byUsage<T extends { id: number }>(cats: T[], usage: Record<string, number> | undefined): T[] {
+  if (!usage) return cats
+  return cats.map((c, i) => [c, usage[c.id] ?? 0, i] as const)
+    .sort((a, b) => b[1] - a[1] || a[2] - b[2])
+    .map(([c]) => c)
 }

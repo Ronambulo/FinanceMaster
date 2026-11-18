@@ -212,11 +212,46 @@ export const dashApi = {
     request<{ ok: boolean }>(`/dashboard/insights/${id}/read`, { method: 'PATCH' }),
   refreshInsights: () =>
     request<{ ok: boolean }>('/dashboard/insights/refresh', { method: 'POST' }),
+  cycleClose: (start: string, end: string) =>
+    request<CycleClose>(`/dashboard/cycle-close?start=${start}&end=${end}`),
+}
+
+export interface CycleFigures { start: string; end: string; income: number; spent: number; saved: number }
+export interface CycleRise { category_id: number | null; name: string; icon: string | null; color: string; amount: number; previous: number; diff: number }
+export interface CycleClose extends CycleFigures { previous: CycleFigures; top_rises: CycleRise[] }
+
+// Notificaciones push
+export const pushApi = {
+  key: () => request<{ key: string }>('/push/key'),
+  status: (endpoint?: string) =>
+    request<{ devices: number; this_device: boolean }>(`/push/status${endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : ''}`),
+  subscribe: (sub: PushSubscriptionJSON, device: string) =>
+    request<{ ok: boolean }>('/push/subscribe', { method: 'POST', body: JSON.stringify({ ...sub, device }) }),
+  unsubscribe: (endpoint: string) =>
+    request<{ ok: boolean }>('/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) }),
+  test: () => request<{ sent: number; failed: number }>('/push/test', { method: 'POST' }),
+}
+
+// Gastos compartidos
+export interface TxShare { id: number; transaction_id: number; person: string; amount: number; settled: boolean; tx_name: string | null; tx_date: string | null }
+export interface SharePerson { person: string; owed: number; settled: number; count: number }
+export interface SharesSummary { total_owed: number; people: SharePerson[]; items: TxShare[] }
+export const shareApi = {
+  list: () => request<SharesSummary>('/shares'),
+  forTx: (txId: number) => request<TxShare[]>(`/shares/tx/${txId}`),
+  setForTx: (txId: number, shares: { person: string; amount: number }[]) =>
+    request<TxShare[]>(`/shares/tx/${txId}`, { method: 'PUT', body: JSON.stringify({ shares }) }),
+  settle: (id: number, settled: boolean) =>
+    request<TxShare>(`/shares/${id}/settle`, { method: 'POST', body: JSON.stringify({ settled }) }),
+  settlePerson: (person: string) =>
+    request<{ settled: number }>('/shares/settle-person', { method: 'POST', body: JSON.stringify({ person }) }),
 }
 
 // Categories
 export const catApi = {
   list: () => request<Category[]>('/categories'),
+  recategorizePreview: () => request<{ count: number }>('/merchants/recategorize/preview'),
+  recategorizeApply: () => request<{ updated: number; ai: number }>('/merchants/recategorize/apply', { method: 'POST' }),
   create: (data: Partial<Category>) =>
     request<Category>('/categories', { method: 'POST', body: JSON.stringify(data) }),
   update: (id: number, data: Partial<Category>) =>
@@ -328,6 +363,7 @@ export interface User { id: number; email: string; username: string; display_nam
 export interface AdminUser extends User { is_active: boolean; last_login_at?: string | null; tx_count?: number; account_count?: number }
 export interface Category { id: number; user_id: number | null; name: string; icon: string; color: string; type: string; is_system: boolean }
 export interface CategoryRule { id: number; keyword: string; category_id: number; field: string; priority: number; category: Category }
+export interface Merchant { key: string; name: string; brand?: string | null; color?: string | null; logo?: string | null }
 export interface Transaction {
   id: number; external_id: string | null; date: string; datetime: string | null
   type: string; account_category: string | null; asset_class: string | null
@@ -335,14 +371,14 @@ export interface Transaction {
   amount: number; fee: number | null; tax: number | null; currency: string
   description: string | null; counterparty_name: string | null; mcc_code: string | null
   category_id: number | null; category: Category | null
-  is_auto_categorized: boolean; is_ai_categorized: boolean; is_internal_transfer: boolean; exclude_from_stats: boolean; is_pending: boolean; recurring_group_id: number | null
+  is_auto_categorized: boolean; is_ai_categorized: boolean; category_source?: string | null; merchant?: Merchant | null; is_internal_transfer: boolean; exclude_from_stats: boolean; is_pending: boolean; recurring_group_id: number | null
   link_group_id: number | null; is_link_primary: boolean; effective_amount: number | null; linked_transactions: Transaction[] | null
   source?: string | null
   note?: string | null; split_parent_id?: number | null; split_count?: number; is_manual?: boolean | null; split_parts?: { category_id: number | null; amount: number }[] | null
   created_at?: string | null
 }
 export type TxGroupBy = 'category' | 'merchant' | 'account' | 'day' | 'month'
-export interface TxGroup { key: string; label: string; income: number; expense: number; count: number; icon: string | null; color: string | null; category_name?: string | null }
+export interface TxGroup { key: string; label: string; income: number; expense: number; count: number; icon: string | null; color: string | null; category_name?: string | null; merchant?: Merchant | null }
 export interface PreviousCategory { id: number; category_id: number | null; is_auto_categorized: boolean; is_ai_categorized?: boolean }
 export interface BulkCategoryResult { updated: number; previous: PreviousCategory[]; rule_ids: number[] }
 export interface TransactionListResponse { items: Transaction[]; total: number; page: number; page_size: number; income_sum: number; expense_sum: number }
@@ -361,16 +397,16 @@ export interface ImportPreview {
   skipped: string[]
 }
 export interface AmountOption { amount: number; count: number; last_date: string }
-export interface RecurringGroup { id: number; normalized_name: string; display_name: string; avg_amount: number | null; amount_is_manual: boolean; period_days: number | null; category_id: number | null; category: Category | null; next_expected_date: string | null; is_active: boolean; is_dismissed?: boolean | null; transaction_count: number; amount_options: AmountOption[] }
+export interface RecurringGroup { id: number; normalized_name: string; display_name: string; avg_amount: number | null; amount_is_manual: boolean; period_days: number | null; category_id: number | null; category: Category | null; next_expected_date: string | null; is_active: boolean; is_dismissed?: boolean | null; transaction_count: number; amount_options: AmountOption[]; merchant?: Merchant | null }
 export interface Debt { id: number; name: string; description: string | null; total_amount: number; direction: 'I_OWE' | 'OWED_TO_ME'; due_date: string | null; is_settled: boolean; paid_amount: number; remaining_amount: number; payments: DebtPayment[] }
 export interface DebtPayment { id: number; amount: number; payment_date: string; transaction_id: number | null; note: string | null }
-export interface Goal { id: number; name: string; type: 'PERCENT' | 'EURO_TARGET'; target_amount: number | null; target_percent: number | null; category: string | null; deadline: string | null; current_amount: number; is_active: boolean; progress_pct: number }
+export interface Goal { id: number; name: string; type: 'PERCENT' | 'EURO_TARGET'; target_amount: number | null; target_percent: number | null; category: string | null; deadline: string | null; current_amount: number; is_active: boolean; progress_pct: number; auto_mode?: 'amount' | 'percent' | 'off' | null; auto_value?: number | null }
 export interface SavingsAllocation { month: string; savings_pct: number; investment_pct: number; expenses_pct: number }
 export interface DashboardOverview { balance: number; income_month: number; expenses_month: number; savings_month: number; income_total: number; expenses_total: number; interest_month: number; interest_total: number }
 export interface CategoryBreakdown { category_id: number | null; category_name: string; category_color: string; category_icon: string; total: number; count: number }
 export interface MonthlyTrend { month: string; income: number; expenses: number; savings: number }
-export interface UpcomingRecurring { id: number; display_name: string; avg_amount: number; next_expected_date: string | null; days_until: number | null; category: Category | null }
-export interface PendingRecurring { group_id: number; display_name: string; avg_amount: number; category_name: string; category_color: string; category_icon: string; next_expected_date: string | null }
+export interface UpcomingRecurring { id: number; display_name: string; avg_amount: number; next_expected_date: string | null; days_until: number | null; category: Category | null; merchant?: Merchant | null }
+export interface PendingRecurring { group_id: number; display_name: string; avg_amount: number; category_name: string; category_color: string; category_icon: string; next_expected_date: string | null; merchant?: Merchant | null }
 export interface TradeEvent { date: string; shares: number; price_eur: number; total_eur: number }
 export interface PortfolioPosition { symbol: string; name: string; asset_class: string; shares: number; avg_buy_price: number; total_invested: number; realized_pnl: number; dividends_received: number; first_purchase_date: string | null; buy_dates: string[]; sell_dates: string[]; buy_events: TradeEvent[]; sell_events: TradeEvent[]; current_price: number | null; market_value: number | null; unrealized_pnl: number | null; unrealized_pnl_pct: number | null; is_manual?: boolean; manual_id?: number | null; broker?: string | null; asset_class_auto?: string | null; asset_class_manual?: boolean }
 export interface StockSearchResult { ticker: string; name: string; exchange: string; currency: string; type_disp: string }

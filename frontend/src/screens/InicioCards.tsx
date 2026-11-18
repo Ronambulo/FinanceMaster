@@ -33,7 +33,7 @@ export function PendingCard({ pc, start, end }: { pc?: boolean; start: string; e
         </div>
         {list.slice(0, 3).map(g => (
           <div key={g.group_id} style={{ display: 'grid', gridTemplateColumns: '32px minmax(0, 1fr) auto', gap: 10, alignItems: 'center', padding: '8px 0 0' }}>
-            <MerchantTile name={g.display_name} category={g.category_name} type="expense" size={32} />
+            <MerchantTile name={g.display_name} merchant={g.merchant} category={g.category_name} type="expense" size={32} />
             <span style={{ minWidth: 0 }}>
               <span style={{ display: 'block', fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.display_name}</span>
               {g.next_expected_date && <span style={{ display: 'block', fontSize: 12, color: C.muted, fontWeight: 600 }}>{weekdayDay(g.next_expected_date)}</span>}

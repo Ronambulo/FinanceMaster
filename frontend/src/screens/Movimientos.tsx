@@ -249,7 +249,7 @@ export default function Movimientos() {
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <label style={{ width: 300, height: 42, boxSizing: 'border-box', borderRadius: 14, background: C.card, display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px 0 14px', color: C.muted, boxShadow: 'var(--sh-card)' }}>
               <Icon name="search" size={17} />
-              <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar movimientos" aria-label="Buscar"
+              <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, nota o importe" aria-label="Buscar"
                 style={{ flex: 1, minWidth: 0, border: 0, background: 'transparent', color: C.text, font: `600 14px ${FONT}`, outline: 'none' }} />
               <span style={{ fontSize: 12, fontWeight: 800, background: C.field, borderRadius: 8, padding: '3px 7px', color: C.text }}>Ctrl K</span>
             </label>
@@ -302,7 +302,7 @@ export default function Movimientos() {
       </div>
         <div style={selected ? { opacity: 0.35, pointerEvents: 'none', transition: 'opacity .15s' } : { transition: 'opacity .15s' }} aria-hidden={selected ? true : undefined}>
           <div style={{ margin: '14px 16px 0', display: 'flex', gap: 8 }}>
-            <SearchBox value={search} onChange={setSearch} placeholder="Buscar movimientos" />
+            <SearchBox value={search} onChange={setSearch} placeholder="Buscar por nombre, nota o importe" />
             {!ultra && <RoundBtn icon="filter" label="Filtros" onClick={() => setSheet('filters')}
               {...(filters.categoryIds.length || filters.min || filters.max ? { bg: C.soft, color: C.accentText } : {})} />}
           </div>
@@ -587,7 +587,7 @@ function MerchantGroup({ g }: { g: SectionGroup }) {
   const money = useMoney()
   return (
     <Link to={`/comercio/${encodeURIComponent(g.label)}`} style={{ display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) auto 18px', gap: 12, alignItems: 'center', padding: '10px 0', color: C.text }}>
-      <MerchantTile name={g.label} category={g.category_name} />
+      <MerchantTile name={g.label} merchant={g.merchant} category={g.category_name} />
       <span style={{ minWidth: 0 }}>
         <span style={{ display: 'block', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.label}</span>
         <span style={{ display: 'block', fontSize: 12, color: C.muted, fontWeight: 600 }}>{countLabel(g.count)}</span>
@@ -693,7 +693,7 @@ function FiltersSheet({ open, onClose, value, onApply, search, categories, accou
     enabled: open,
   })
   const set = (patch: Partial<MovFilters>) => setD(x => ({ ...x, ...patch }))
-  const cats = categories.filter(c => (d.kind === 'income' ? c.type === 'income' : d.kind === 'expense' ? c.type === 'expense' : c.type === 'expense' || c.type === 'income'))
+  const cats = categories.filter(c => c.type === 'transfer' || (d.kind === 'income' ? c.type === 'income' : d.kind === 'expense' ? c.type === 'expense' : c.type === 'expense' || c.type === 'income'))
   // Las elegidas siempre se ven aunque la lista esté plegada.
   const shown = allCats ? cats : [...cats.slice(0, CAT_PREVIEW), ...cats.slice(CAT_PREVIEW).filter(c => d.categoryIds.includes(c.id))]
   const kinds: [FilterKind, string][] = [['', 'Todo'], ['expense', 'Gastos'], ['income', 'Ingresos'], ['transfer', 'Traspasos']]

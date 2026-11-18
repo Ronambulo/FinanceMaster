@@ -117,6 +117,8 @@ class Transaction(Base):
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True, index=True)
     is_auto_categorized = Column(Boolean, default=False)
     is_ai_categorized = Column(Boolean, default=False)
+    # De dónde salió la categoría automática: rule, history, catalog, mcc, type, fallback, ai.
+    category_source = Column(String, nullable=True)
     is_internal_transfer = Column(Boolean, default=False)
     exclude_from_stats = Column(Boolean, default=False)
     is_pending = Column(Boolean, nullable=True, default=False)
@@ -133,6 +135,17 @@ class Transaction(Base):
     # manual… (claves de bank_connectors.BANK_LABELS). NULL = desconocido.
     source = Column(String, nullable=True)
     created_at = Column(DateTime, default=_dt.utcnow)
+
+    @property
+    def merchant(self):
+        """Comercio reconocido (nombre limpio, marca, color y logo) para pintar el movimiento."""
+        from .services.merchants import merchant_info
+        info = merchant_info(self.name)
+        # Lo que entra por transferencia (p. ej. la carga de Pluxee que paga
+        # "ORANGE ESPAGNE") no es una compra en esa marca: sin logo ni color.
+        if info.get("brand") and self.type in ("TRANSFER_INBOUND", "TRANSFER_INSTANT_INBOUND", "CUSTOMER_INPAYMENT"):
+            info = {**info, "brand": None, "color": None, "logo": None}
+        return info
 
     __table_args__ = (
         UniqueConstraint("user_id", "external_id", name="uq_user_external_id"),
@@ -174,6 +187,11 @@ class RecurringGroup(Base):
     user = relationship("User", back_populates="recurring_groups")
     transactions = relationship("Transaction", back_populates="recurring_group")
     category = relationship("Category", foreign_keys=[category_id])
+
+    @property
+    def merchant(self):
+        from .services.merchants import merchant_info
+        return merchant_info(self.display_name or self.normalized_name)
 
 
 class Debt(Base):
@@ -218,6 +236,9 @@ class Goal(Base):
     current_amount = Column(Float, default=0.0)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=_dt.utcnow)
+    # Aportación automática con cada nómina: None/"off", "amount" (euros) o "percent" (% de la nómina)
+    auto_mode = Column(String, nullable=True)
+    auto_value = Column(Float, nullable=True)
 
     user = relationship("User", back_populates="goals")
 
@@ -432,3 +453,37 @@ class Invite(Base):
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
     used_by = Column(Integer, nullable=True)
+
+
+class PushSubscription(Base):
+    """Un dispositivo suscrito a notificaciones push (Web Push / VAPID)."""
+    __tablename__ = "push_subscriptions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    endpoint = Column(Text, nullable=False, unique=True)
+    p256dh = Column(String, nullable=False)
+    auth = Column(String, nullable=False)
+    device = Column(String, nullable=True)
+    created_at = Column(DateTime, default=_dt.utcnow)
+
+
+class EventLog(Base):
+    """Marca de algo que ya se hizo una vez (aviso enviado, aportación hecha),
+    para no repetirlo en la siguiente pasada del programador."""
+    __tablename__ = "event_log"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    key = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, default=_dt.utcnow)
+
+
+class TransactionShare(Base):
+    """Parte de un gasto que paga otra persona (gastos compartidos)."""
+    __tablename__ = "transaction_shares"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=False, index=True)
+    person = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    settled = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=_dt.utcnow)
