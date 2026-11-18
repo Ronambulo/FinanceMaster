@@ -347,6 +347,7 @@
 "name": "Amazon Fresh",
 "cat": "Supermercado",
 "color": "#ff9900",
+"icon": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4a/Amazon_icon.svg/330px-Amazon_icon.svg.png",
 "domain": "amazon.es",
 "aliases": [
 "amazon fresh"
@@ -357,7 +358,6 @@
 "name": "Bell Food Group",
 "cat": "Supermercado",
 "color": "#d0021b",
-"domain": "bellfoodgroup.com",
 "aliases": [
 "bell food group",
 "bell food"
@@ -2529,6 +2529,7 @@
 "name": "Amazon",
 "cat": "Compras Varias",
 "color": "#ff9900",
+"icon": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4a/Amazon_icon.svg/330px-Amazon_icon.svg.png",
 "domain": "amazon.es",
 "aliases": [
 "amazon",
