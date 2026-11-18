@@ -6,6 +6,7 @@ import tempfile
 
 _tmpdir = tempfile.mkdtemp(prefix="fm-tests-")
 os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(_tmpdir, "test.db")
+os.environ["FM_DISABLE_BACKGROUND"] = "1"
 
 import itertools  # noqa: E402
 

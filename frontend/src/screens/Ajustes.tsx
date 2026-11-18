@@ -12,10 +12,13 @@ import { useAuthStore } from '@/store/auth'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { usePreferencesStore } from '@/store/preferences'
 import { usePrivacyStore } from '@/store/privacy'
-import { CURRENCIES, MODULES, MONTH_START_MAX, type CatIcons, type UltraModuleId, type Currency, type ModuleId } from '@/lib/preferences'
+import { CURRENCIES, MODULES, MONTH_START_MAX, NOTIFY_KINDS, type NotifyKind, type CatIcons, type UltraModuleId, type Currency, type ModuleId } from '@/lib/preferences'
 import type { ThemeMode } from '@/lib/theme'
 import { LOCK_CHOICES, getLockMinutes, lockLabel, setLockMinutes, type LockMinutes } from '@/lib/autolock'
 import { lastAccessShort } from '@/lib/admin'
+import { disablePush, enablePush, pushState, readPushEnv, type PushState } from '@/lib/push'
+import { isIos, isStandalone } from '@/app/pwa'
+import { pushApi } from '@/lib/api'
 import { creationOptions, credentialToJSON, getDevicePasskey, isCancel, passkeySupported, setDevicePasskey } from '@/lib/passkey'
 import {
   ACCENTS, TEXT_SIZES, getAccent, getHideOnOpen, getReduceMotion, getTextSize,
@@ -35,9 +38,9 @@ const errText = (e: unknown, fb = 'No se pudo completar') => (e instanceof Error
 const VERSION = (pkg as { version?: string }).version ?? '1.0.0'
 const LAST_BACKUP_KEY = 'fm-last-backup'
 
-export type SecId = 'perfil' | 'modo' | 'apariencia' | 'categorias' | 'integraciones' | 'atajos' | 'datos' | 'seguridad' | 'diagnostico'
+export type SecId = 'perfil' | 'modo' | 'apariencia' | 'avisos' | 'categorias' | 'integraciones' | 'atajos' | 'datos' | 'seguridad' | 'diagnostico'
 const TITLES: Record<SecId, string> = {
-  perfil: 'Perfil', modo: 'Modo y módulos', apariencia: 'Apariencia', categorias: 'Categorías y reglas',
+  perfil: 'Perfil', modo: 'Modo y módulos', apariencia: 'Apariencia', avisos: 'Notificaciones', categorias: 'Categorías y reglas',
   integraciones: 'Integraciones', atajos: 'Atajos de iPhone', datos: 'Datos y copias', seguridad: 'Seguridad', diagnostico: 'Uso y diagnóstico',
 }
 const PC_TITLES: Record<SecId, string> = {
@@ -136,6 +139,7 @@ function Body({ sec }: { sec: SecId }) {
     case 'perfil': return <PerfilBody />
     case 'modo': return <ModoBody />
     case 'apariencia': return <AparienciaBody />
+    case 'avisos': return <AvisosBody />
     case 'categorias': return <CategoriasBody />
     case 'integraciones': return <IntegracionesBody />
     case 'atajos': return <AtajosCard />
@@ -182,6 +186,7 @@ function Hub() {
         <Rows>
           <SetRow icon="sliders" title="Modo y módulos" sub={`${prefs.ui_mode === 'ultra' ? 'Ultra simple' : 'Normal'} · ${on} módulos`} to="/ajustes/modo" />
           <SetRow icon="color-palette" title="Apariencia" sub={`${THEME_NAME[prefs.theme]} · ${accent}`} to="/ajustes/apariencia" />
+          <SetRow icon="notification-bell" title="Notificaciones" to="/ajustes/avisos" />
         </Rows>
       </Section>
 
@@ -223,6 +228,7 @@ export function UltraAjustes() {
         <Rows>
           <SetRow icon="sliders" title="Modo" to="/ajustes/modo" trail={val('Ultra simple')} />
           <SetRow icon="color-palette" title="Tema" to="/ajustes/apariencia" trail={val(THEME_NAME[prefs.theme])} />
+          <SetRow icon="notification-bell" title="Notificaciones" to="/ajustes/avisos" />
           <SetRow icon="tag" title="Categorías" to="/ajustes/categorias" />
           <SetRow icon="upload" title="Importar" to="/importar" />
         </Rows>
@@ -251,6 +257,7 @@ const PC_NAV: { group: string; items: NavItem[] }[] = [
     { id: 'perfil', label: 'Perfil', icon: 'user-profile' },
     { id: 'modo', label: 'Nivel de la app', icon: 'universal' },
     { id: 'apariencia', label: 'Apariencia', icon: 'color-palette' },
+    { id: 'avisos', label: 'Notificaciones', icon: 'notification-bell' },
   ] },
   { group: 'Dinero', items: [
     { id: 'categorias', label: 'Categorías', icon: 'tag' },
@@ -399,6 +406,7 @@ const MODULE_ROWS: { id: ModuleId; title: string; icon: AnyIcon }[] = [
   { id: 'debts', title: 'Deudas', icon: 'receipt' },
   { id: 'achievements', title: 'Logros', icon: 'trophy' },
   { id: 'ai', title: 'Asistente IA', icon: 'sparkle' },
+  { id: 'shared', title: 'Gastos compartidos', icon: 'group' },
 ]
 const ULTRA_ROWS: { id: UltraModuleId; title: string; icon: AnyIcon }[] = [
   { id: 'debts', title: 'Deudas', icon: 'receipt' },
@@ -445,6 +453,72 @@ function ModoBody() {
           </Rows>
         </Group>
       )}
+    </>
+  )
+}
+
+// ── Notificaciones ──────────────────────────────────────────────────────────
+const NOTIFY_ICONS: Record<NotifyKind, AnyIcon> = { recurring: 'repeat', budget: 'pie', payroll: 'cat-nomina' }
+
+function AvisosBody() {
+  const prefs = usePreferencesStore(s => s.prefs)
+  const update = usePreferencesStore(s => s.update)
+  const qc = useQueryClient()
+  const env = useQuery({ queryKey: ['push-env'], queryFn: () => readPushEnv(isIos(), isStandalone()), staleTime: 0 })
+  const [busy, setBusy] = useState(false)
+  const state: PushState | undefined = env.data ? pushState(env.data) : undefined
+  const refresh = () => qc.invalidateQueries({ queryKey: ['push-env'] })
+
+  const toggle = async (on: boolean) => {
+    setBusy(true)
+    try {
+      if (on) {
+        const st = await enablePush()
+        if (st === 'denied') toast('Las notificaciones están bloqueadas en este navegador', { error: true })
+        else if (st === 'on') toast('Notificaciones activadas')
+      } else {
+        await disablePush()
+        toast('Notificaciones desactivadas en este dispositivo')
+      }
+    } catch (e) {
+      toast(errText(e, 'No se pudieron activar'), { error: true })
+    } finally {
+      setBusy(false)
+      refresh()
+    }
+  }
+  const test = async () => {
+    try {
+      const r = await pushApi.test()
+      toast(r.sent ? 'Aviso de prueba enviado' : 'No se pudo enviar el aviso', { error: !r.sent })
+    } catch (e) { toast(errText(e), { error: true }) }
+  }
+
+  let note: ReactNode = null
+  if (state === 'needsInstall') note = <>En iPhone los avisos solo llegan con la app en la pantalla de inicio: en Safari, toca Compartir y luego <b>Añadir a pantalla de inicio</b>, y ábrela desde ahí.</>
+  else if (state === 'unsupported') note = 'Este navegador no admite notificaciones.'
+  else if (state === 'denied') note = 'Las notificaciones están bloqueadas. Permítelas en los ajustes del navegador para este sitio y vuelve aquí.'
+
+  return (
+    <>
+      <Group title="Este dispositivo">
+        {!state ? <div style={{ padding: 16 }}><Skeleton h={22} /></div> : (
+          <Rows>
+            <ToggleRow icon="notification-bell" title="Recibir notificaciones" on={state === 'on'}
+              disabled={busy || state === 'needsInstall' || state === 'unsupported' || state === 'denied'} onChange={toggle} />
+            {state === 'on' && <SetRow icon="send-up" title="Enviar aviso de prueba" onClick={test} trail={<span />} />}
+          </Rows>
+        )}
+        {note && <p style={{ margin: 0, padding: '0 16px 16px', fontSize: 13, lineHeight: 1.45, ...muted }}>{note}</p>}
+      </Group>
+      <Group title="Avisarme de">
+        <Rows>
+          {(Object.keys(NOTIFY_KINDS) as NotifyKind[]).map(k => (
+            <ToggleRow key={k} icon={NOTIFY_ICONS[k]} title={NOTIFY_KINDS[k]} on={prefs.notify[k]}
+              onChange={v => update({ notify: { [k]: v } })} />
+          ))}
+        </Rows>
+      </Group>
     </>
   )
 }
@@ -570,6 +644,18 @@ function CategoriasBody() {
   const cats = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const usage = useQuery({ queryKey: ['category-usage'], queryFn: catApi.usage })
   const rules = useQuery({ queryKey: ['category-rules'], queryFn: catApi.listRules })
+  const pending = useQuery({ queryKey: ['recategorize-preview'], queryFn: catApi.recategorizePreview })
+  const recat = useMutation({
+    mutationFn: catApi.recategorizeApply,
+    onSuccess: r => {
+      const n = r.updated + r.ai
+      toast(n ? `${n} ${n === 1 ? 'movimiento categorizado' : 'movimientos categorizados'}` : 'Todo al día')
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['recategorize-preview'] })
+      qc.invalidateQueries({ queryKey: ['category-usage'] })
+    },
+    onError: e => toast(errText(e, 'No se pudo revisar'), { error: true }),
+  })
   const [editing, setEditing] = useState<Category | null>(null)
   const creating = useCatUi(s => s.creating)
   const setCreating = (v: boolean) => useCatUi.getState().set({ creating: v })
@@ -599,6 +685,12 @@ function CategoriasBody() {
             </Rows>
           )}
       </Group>
+      {(pending.data?.count ?? 0) > 0 && (
+        <Group>
+          <SetRow icon="sparkle" title="Revisar movimientos sin categoría" onClick={() => !recat.isPending && recat.mutate()}
+            trail={<span style={{ ...muted, fontWeight: 700 }}>{recat.isPending ? '…' : pending.data!.count}</span>} />
+        </Group>
+      )}
       {ruleGroups.length > 0 && (
         <Group title="Reglas automáticas">
           <Rows>

@@ -24,7 +24,7 @@ import { allNav, isActive, moreNav, primaryNav, type NavIcon, type NavItem } fro
 export const NAV_ICON: Record<NavIcon, AnyIcon> = {
   home: 'home', list: 'text-unordered', wallet: 'bank-card', plan: 'compass', settings: 'settings', more: 'dots',
   'chart-up': 'cat-inversion', repeat: 'repeat', target: 'safe-open', debt: 'receipt', calendar: 'calendar',
-  trophy: 'trophy', tags: 'tag', import: 'upload', shield: 'shield-security', sparkle: 'sparkle',
+  trophy: 'trophy', tags: 'tag', import: 'upload', shield: 'shield-security', sparkle: 'sparkle', group: 'group',
 }
 
 export function useIsPC() {

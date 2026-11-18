@@ -3,15 +3,13 @@ import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { catApi, txApi, type Transaction } from '@/lib/api'
-import { accountName, averageTicket, countLabel, dayLabel, merchantBars, merchantCycleBars, monthKey, monthName, monthRange, recentMonths, txNet, txTitle } from '@/lib/movements'
+import { accountName, averageTicket, countLabel, dayLabel, merchantBars, merchantCycleBars, monthKey, monthName, monthRange, recentMonths, txNet } from '@/lib/movements'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 import { useIsPC } from '@/app/Shell'
 import { CatTile } from '@/ui/Icon'
 import { BackBtn, C, Divider, Empty, Label, RoundBtn, Section, Sheet, SheetOption, Skeleton, useMoney } from '@/ui/kit'
-import { TxRow } from '@/ui/tx'
+import { MerchantTile, TxRow } from '@/ui/tx'
 import { CatSheet } from './Movimientos'
-
-const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
 
 export default function Comercio() {
   const { name: raw = '' } = useParams()
@@ -30,20 +28,16 @@ export default function Comercio() {
   const from = recentMonths(today, 6).slice(-1)[0] ?? cur
   const txs = useQuery({
     queryKey: ['transactions', 'merchant', name],
-    queryFn: () => txApi.list({ search: name, page: 1, page_size: 200 }),
+    queryFn: () => txApi.list({ merchant: name, page: 1, page_size: 200 }),
   })
   const byMonth = useQuery({
     queryKey: ['transactions', 'groups', 'month', 'merchant', name, from],
-    queryFn: () => txApi.groups('month', { search: name, date_from: monthRange(from).date_from }),
+    queryFn: () => txApi.groups('month', { merchant: name, date_from: monthRange(from).date_from }),
     enabled: !cycle.loading && !cycles.length,
   })
   const categories = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
 
-  const items = useMemo(() => {
-    const all = txs.data?.items ?? []
-    const exact = all.filter(t => norm(txTitle(t)) === norm(name))
-    return exact.length ? exact : all
-  }, [txs.data, name])
+  const items = useMemo(() => txs.data?.items ?? [], [txs.data])
   const curCycle = cycles[cycles.length - 1]
   const month = curCycle
     ? items.filter(t => t.date >= curCycle.start && t.date <= curCycle.end)
@@ -52,12 +46,15 @@ export default function Comercio() {
   const bars = cycles.length ? merchantCycleBars(items, cycles) : merchantBars(byMonth.data ?? [], today)
   const latest = items[0]
   const cat = latest?.category
+  const merchant = latest?.merchant
+  const title = merchant?.name || name
 
   const header = (
     <header style={{ padding: pc ? 0 : '18px 16px 0', display: 'flex', alignItems: 'center', gap: 12 }}>
       <BackBtn />
+      {merchant && <MerchantTile name={title} merchant={merchant} category={cat?.name} type={cat?.type} size={pc ? 44 : 40} />}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <h1 style={{ margin: 0, fontSize: pc ? 28 : 22, fontWeight: 800, letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</h1>
+        <h1 style={{ margin: 0, fontSize: pc ? 28 : 22, fontWeight: 800, letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</h1>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <RoundBtn icon="dots" label="Más opciones" bg={C.card} onClick={() => setMenu(true)} />
@@ -122,7 +119,7 @@ export default function Comercio() {
         </>
       )}
 
-      <Sheet open={menu} onClose={() => setMenu(false)} title={name}>
+      <Sheet open={menu} onClose={() => setMenu(false)} title={title}>
         <SheetOption icon="text-unordered" title="Ver en Movimientos" onClick={() => nav(`/transacciones?q=${encodeURIComponent(name)}&periodo=`)} />
         {latest && !latest.is_internal_transfer && <SheetOption icon="tag" title="Cambiar categoría" onClick={() => { setMenu(false); setCatFor([latest]) }} />}
       </Sheet>

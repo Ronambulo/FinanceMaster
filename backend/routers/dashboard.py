@@ -225,6 +225,7 @@ def upcoming_recurring(
             next_expected_date=g.next_expected_date,
             days_until=days_until,
             category=schemas.CategoryOut.model_validate(g.category) if g.category else None,
+            merchant=g.merchant,
         ))
     return result
 
@@ -265,6 +266,7 @@ def pending_recurring(
                 category_color=cat.color if cat else "#94a3b8",
                 category_icon=cat.icon if cat else "💳",
                 next_expected_date=g.next_expected_date,
+                merchant=g.merchant,
             ))
     return result
 
@@ -694,3 +696,74 @@ def accounts(
         out.append(acc)
     out.sort(key=lambda a: (-abs(a["balance"]), a["label"]))
     return out
+
+
+# ── Cierre de un periodo (se abre desde el aviso de nómina) ──────────────────
+
+def _period_figures(db: Session, user_id: int, start: date, end: date):
+    net_amount = func.coalesce(models.Transaction.effective_amount, models.Transaction.amount)
+    base = db.query(models.Transaction).filter(
+        models.Transaction.user_id == user_id,
+        models.Transaction.account_category == "CASH",
+        models.Transaction.is_internal_transfer == False,  # noqa: E712
+        models.Transaction.exclude_from_stats == False,  # noqa: E712
+        models.Transaction.date >= start,
+        models.Transaction.date <= end,
+    )
+    income = base.filter(models.Transaction.type.in_(INCOME_TYPES)).with_entities(func.sum(func.abs(net_amount))).scalar() or 0.0
+    by_cat = dict(
+        base.filter(models.Transaction.type.in_(EXPENSE_TYPES))
+        .with_entities(models.Transaction.category_id, func.sum(func.abs(net_amount)))
+        .group_by(models.Transaction.category_id).all()
+    )
+    spent = sum(by_cat.values())
+    return round(income, 2), round(spent, 2), by_cat
+
+
+@router.get("/cycle-close")
+def cycle_close(
+    start: date,
+    end: date,
+    current_user: models.User = Depends(auth.get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Resumen de un periodo cerrado frente al anterior: ingresos, gasto,
+    ahorro y las categorías que más subieron."""
+    from ..services import cycles as cyc
+    if end < start or (end - start).days > 120:
+        raise HTTPException(400, "Periodo no válido")
+    prev = next((c for c in cyc.cycles(db, current_user) if c.end == start - timedelta(days=1)), None)
+    if prev:
+        p_start, p_end = prev.start, prev.end
+    else:
+        p_end = start - timedelta(days=1)
+        p_start = p_end - (end - start)
+
+    income, spent, cats = _period_figures(db, current_user.id, start, end)
+    p_income, p_spent, p_cats = _period_figures(db, current_user.id, p_start, p_end)
+
+    rises = []
+    for cat_id, amount in cats.items():
+        diff = amount - p_cats.get(cat_id, 0.0)
+        if diff >= 1:
+            rises.append((diff, cat_id, amount))
+    rises.sort(key=lambda r: r[0], reverse=True)
+    top = []
+    for diff, cat_id, amount in rises[:3]:
+        cat = db.get(models.Category, cat_id) if cat_id else None
+        top.append({
+            "category_id": cat_id,
+            "name": cat.name if cat else "Sin categoría",
+            "icon": cat.icon if cat else None,
+            "color": cat.color if cat else "#94a3b8",
+            "amount": round(amount, 2),
+            "previous": round(p_cats.get(cat_id, 0.0), 2),
+            "diff": round(diff, 2),
+        })
+    return {
+        "start": start, "end": end,
+        "income": income, "spent": spent, "saved": round(income - spent, 2),
+        "previous": {"start": p_start, "end": p_end, "income": p_income, "spent": p_spent,
+                     "saved": round(p_income - p_spent, 2)},
+        "top_rises": top,
+    }

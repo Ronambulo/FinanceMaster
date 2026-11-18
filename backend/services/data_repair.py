@@ -89,7 +89,7 @@ def _fix_misfiled_trades(db: Session) -> int:
                 tx.symbol = entry[0]
         if tx.is_auto_categorized:
             try:
-                cat_id, is_auto, _ = auto_categorize(
+                cat_id, is_auto, _ = _res = auto_categorize(
                     db=db,
                     user_id=tx.user_id,
                     tx_type=new_type,
@@ -103,6 +103,7 @@ def _fix_misfiled_trades(db: Session) -> int:
                 if cat_id:
                     tx.category_id = cat_id
                     tx.is_auto_categorized = is_auto
+                    tx.category_source = _res.source
             except Exception:
                 log.warning("No se pudo recategorizar la transacción %s", tx.id)
         fixed += 1
@@ -182,7 +183,7 @@ def ensure_saveback_credits(db: Session, user_id: int | None = None) -> int:
 
         category_id = None
         try:
-            category_id, _, _ = auto_categorize(
+            category_id, _, _ = _res = auto_categorize(
                 db=db,
                 user_id=tx.user_id,
                 tx_type="BENEFITS_SAVEBACK",

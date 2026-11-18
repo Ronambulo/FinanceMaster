@@ -6,7 +6,7 @@ import { isModuleOn, type ModuleId, type Preferences } from './preferences'
 export type NavIcon =
   | 'home' | 'list' | 'wallet' | 'plan' | 'settings' | 'more'
   | 'chart-up' | 'repeat' | 'target' | 'debt' | 'calendar' | 'trophy'
-  | 'tags' | 'import' | 'shield' | 'sparkle'
+  | 'tags' | 'import' | 'shield' | 'sparkle' | 'group'
 
 export interface NavItem {
   id: string
@@ -30,6 +30,7 @@ const MORE: { item: NavItem; module?: ModuleId }[] = [
   { item: { id: 'goals', label: 'Objetivos', to: '/objetivos', icon: 'target' }, module: 'goals' },
   { item: { id: 'debts', label: 'Deudas', to: '/deudas', icon: 'debt' }, module: 'debts' },
   { item: { id: 'monthly', label: 'Mes a mes', to: '/monthly', icon: 'calendar' }, module: 'monthly' },
+  { item: { id: 'shared', label: 'Compartidos', to: '/compartidos', icon: 'group' }, module: 'shared' },
   { item: { id: 'achievements', label: 'Logros', to: '/logros', icon: 'trophy' }, module: 'achievements' },
   { item: { id: 'ai', label: 'Asistente', to: '/chat', icon: 'sparkle' }, module: 'ai' },
   { item: { id: 'categories', label: 'Categorías', to: '/ajustes/categorias', icon: 'tags' } },

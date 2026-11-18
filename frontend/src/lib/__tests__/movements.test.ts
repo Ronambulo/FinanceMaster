@@ -174,17 +174,29 @@ describe('filtros de movimientos', () => {
   })
 })
 
-import { chipDate, keypadInput, longDateTime, ruleFor, shortDate } from '../movements'
+import { chipDate, cleanAmount, clockTime, keypadInput, longDateTime, ruleFor, shortDate, toServerTime, txTime } from '../movements'
 
 describe('editar / añadir', () => {
   it('fechas cortas y largas', () => {
     expect(shortDate('2026-11-17')).toBe('17 nov')
-    expect(longDateTime('2026-11-17', '2026-11-17T13:42:00')).toBe('Martes 17 nov · 13:42')
+    // El servidor guarda UTC sin zona; se enseña en hora local.
+    const utc = new Date(2026, 10, 17, 13, 42).toISOString().replace('Z', '')
+    expect(longDateTime('2026-11-17', utc)).toBe('Martes 17 nov · 13:42')
+    expect(longDateTime('2026-11-17', '2026-11-17T00:00:00')).toBe('Martes 17 nov')
     expect(longDateTime('2026-11-17', null)).toBe('Martes 17 nov')
     const today = new Date(2026, 10, 17)
     expect(chipDate('2026-11-17', today)).toBe('Hoy')
     expect(chipDate('2026-11-16', today)).toBe('Ayer')
     expect(chipDate('2026-11-02', today)).toBe('2 nov')
+  })
+  it('hora y teclado del sistema', () => {
+    expect(clockTime(new Date(2026, 0, 1, 9, 5))).toBe('09:05')
+    expect(txTime(null)).toBe('')
+    const iso = toServerTime('2026-11-17', '14:32')
+    expect(txTime(iso.replace('Z', ''))).toBe('14:32')
+    expect(cleanAmount('12.5')).toBe('12,5')
+    expect(cleanAmount('1a2,345')).toBe('12,34')
+    expect(cleanAmount(',5')).toBe('0,5')
   })
   it('teclado numérico', () => {
     let t = ''

@@ -200,7 +200,7 @@ function NextCharge({ pc, next }: { pc?: boolean; next: NonNullable<ReturnType<t
   return (
     <section style={{ ...cardBox(pc), padding: pc ? '18px 24px' : '14px 18px' }}>
       <Link to="/recurrentes" style={{ display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) auto', gap: 12, alignItems: 'center', padding: 0, color: C.text }}>
-        <MerchantTile name={next.display_name} category={next.category?.name} type={next.category?.type} />
+        <MerchantTile name={next.display_name} merchant={next.merchant} category={next.category?.name} type={next.category?.type} />
         <span style={{ minWidth: 0 }}>
           <span style={{ display: 'block', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{next.display_name}</span>
           <span style={{ display: 'block', fontSize: 12, color: C.muted, fontWeight: 600 }}>{weekdayDay(next.next_expected_date!)} · próximo cargo</span>

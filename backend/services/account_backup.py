@@ -44,6 +44,7 @@ TABLES: List[Tuple[str, Type[models.Base]]] = [
     ("savings_allocations", models.SavingsAllocation),
     ("manual_positions", models.ManualPosition),
     ("asset_type_overrides", models.AssetTypeOverride),
+    ("transaction_shares", models.TransactionShare),
 ]
 
 LABELS = {
@@ -59,6 +60,7 @@ LABELS = {
     "savings_allocations": "Reparto de ahorro",
     "manual_positions": "Posiciones manuales",
     "asset_type_overrides": "Tipos de activo",
+    "transaction_shares": "Gastos compartidos",
 }
 
 # Columna -> tabla a la que apunta (para reescribir ids al restaurar)
@@ -69,6 +71,7 @@ FKS: Dict[str, Dict[str, str]] = {
     "category_rules": {"category_id": "categories"},
     "budgets": {"category_id": "categories"},
     "debt_payments": {"debt_id": "debts", "transaction_id": "transactions"},
+    "transaction_shares": {"transaction_id": "transactions"},
 }
 
 # Columnas que apuntan a la propia tabla (se reescriben tras insertarla)
@@ -194,7 +197,7 @@ def _wipe(db: Session, uid: int) -> None:
     """Borra todo lo que la copia va a reemplazar, en orden inverso de dependencias."""
     debt_ids = select(models.Debt.id).where(models.Debt.user_id == uid)
     db.query(models.DebtPayment).filter(models.DebtPayment.debt_id.in_(debt_ids)).delete(synchronize_session=False)
-    for model in (models.Debt, models.Goal, models.SavingsAllocation, models.ManualPosition, models.AssetTypeOverride,
+    for model in (models.TransactionShare, models.Debt, models.Goal, models.SavingsAllocation, models.ManualPosition, models.AssetTypeOverride,
                   models.Budget, models.CategoryRule, models.Transaction, models.TransactionLink,
                   models.RecurringGroup, models.Insight):
         db.query(model).filter(model.user_id == uid).delete(synchronize_session=False)
@@ -254,6 +257,8 @@ def restore(db: Session, uid: int, doc: Dict[str, Any]) -> Dict[str, int]:
                     vals["is_system"] = False
                 if key == "category_rules" and not vals.get("category_id"):
                     continue            # categoría que no venía en la copia
+                if key == "transaction_shares" and not vals.get("transaction_id"):
+                    continue            # movimiento que no venía en la copia
                 if key == "debt_payments":
                     if not vals.get("debt_id"):
                         continue        # deuda que no venía en la copia

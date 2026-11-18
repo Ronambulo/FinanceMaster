@@ -2,12 +2,12 @@ import logging
 from datetime import date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
-from sqlalchemy import case, func, or_
+from sqlalchemy import and_, case, func, or_, select, true
 from sqlalchemy.orm import Session, aliased, joinedload
 from sqlalchemy.exc import IntegrityError
 from .. import models, schemas, auth
-from ..database import get_db
-from ..services.categorizer import auto_categorize
+from ..database import fold, get_db
+from ..services.categorizer import auto_categorize, forget_history
 from ..services.recurring_detector import detect_recurring
 
 log = logging.getLogger(__name__)
@@ -28,7 +28,69 @@ EXPENSE_TYPES = {
 INVESTMENT_TYPES = {"BUY", "SELL"}
 
 
-def _build_query(db, user_id, search, category_id, tx_type, type_group, date_from, date_to, account_cat, with_joins=True, source=None, hide_transfers=False, category_ids=None, amount_min=None, amount_max=None):
+def _search_amount(search: str) -> Optional[float]:
+    """Importe escrito en la búsqueda ("12,50", "12.5", "-3", "1.234,56 €"), o None."""
+    t = search.strip().replace("€", "").replace(" ", "").lstrip("+-")
+    if not t or not any(ch.isdigit() for ch in t):
+        return None
+    if "," in t:
+        t = t.replace(".", "").replace(",", ".")
+    elif t.count(".") > 1:
+        t = t.replace(".", "")
+    try:
+        return round(float(t), 2)
+    except ValueError:
+        return None
+
+
+def _like(text: str) -> str:
+    t = fold(text).replace("\\", "\\\\").replace("%", "\%").replace("_", "\_")
+    return f"%{t}%"
+
+
+def _text_cond(T, token: str):
+    """El token aparece en el nombre, descripción, nota, contraparte o categoría (sin acentos)."""
+    pat = _like(token)
+    cats = select(models.Category.id).where(func.fold(models.Category.name).like(pat, escape="\\"))
+    return or_(*(func.fold(col).like(pat, escape="\\")
+                 for col in (T.name, T.description, T.note, T.counterparty_name)),
+               T.category_id.in_(cats))
+
+
+def _amount_cond(T, amt: float):
+    net = func.coalesce(T.effective_amount, T.amount)
+    return (func.abs(func.round(T.amount, 2)) == amt) | (func.abs(func.round(net, 2)) == amt)
+
+
+def _row_search_cond(T, search: str):
+    """Todas las palabras deben aparecer (en cualquier orden y campo); un importe
+    escrito ("12,50", "-3", "1.234,56 €") busca también por importe exacto."""
+    amt = _search_amount(search)
+    if amt is not None:
+        return _text_cond(T, search.strip()) | _amount_cond(T, amt)
+    conds = []
+    for tok in search.split():
+        tok = tok.strip("€")
+        if not tok:
+            continue
+        a = _search_amount(tok)
+        conds.append(_text_cond(T, tok) | _amount_cond(T, a) if a is not None else _text_cond(T, tok))
+    return and_(*conds) if conds else true()
+
+
+def _search_cond(search: str, user_id: Optional[int] = None):
+    """Coincide el propio movimiento o cualquiera de los fusionados con él, para
+    que buscar algo que quedó dentro de una fusión encuentre la fusión."""
+    T = models.Transaction
+    cond = _row_search_cond(T, search)
+    M = aliased(T)
+    inner = select(M.link_group_id).where(M.link_group_id.isnot(None), _row_search_cond(M, search))
+    if user_id is not None:
+        inner = inner.where(M.user_id == user_id)
+    return cond | (T.link_group_id.isnot(None) & T.link_group_id.in_(inner))
+
+
+def _build_query(db, user_id, search, category_id, tx_type, type_group, date_from, date_to, account_cat, with_joins=True, source=None, hide_transfers=False, category_ids=None, amount_min=None, amount_max=None, merchant=None):
     if with_joins:
         q = (
             db.query(models.Transaction)
@@ -38,10 +100,9 @@ def _build_query(db, user_id, search, category_id, tx_type, type_group, date_fro
     else:
         q = db.query(models.Transaction).filter(models.Transaction.user_id == user_id)
     if search:
-        q = q.filter(
-            models.Transaction.name.ilike(f"%{search}%") |
-            models.Transaction.description.ilike(f"%{search}%")
-        )
+        q = q.filter(_search_cond(search, user_id))
+    if merchant:
+        q = q.filter(models.Transaction.name.in_(_merchant_names(db, user_id, merchant) or [""]))
     if category_id == 0:
         # 0 = "Sin categoría"
         q = q.filter(models.Transaction.category_id.is_(None))
@@ -113,16 +174,23 @@ def _source_cond(T, sources):
     return or_(*conds)
 
 
-MANUAL_ONLY_FIELDS = ("amount", "date", "type", "source")
+MANUAL_ONLY_FIELDS = ("amount", "date", "datetime", "type", "source")
 
 
 def is_manual(tx: models.Transaction) -> bool:
     return bool(tx.is_manual) or tx.source == "manual" or (tx.source is None and tx.external_id is None)
 
 
-def merchant_key(name: Optional[str]) -> str:
-    """Clave con la que se agrupan los movimientos de un mismo comercio."""
-    return " ".join((name or "").split()).lower()
+from ..services.merchants import merchant_info, merchant_key  # noqa: E402  (clave de comercio compartida)
+
+
+def _merchant_names(db, user_id: int, merchant: str) -> list[str]:
+    """Nombres exactos de los movimientos del usuario que son el mismo comercio."""
+    key = merchant_key(merchant)
+    names = db.query(models.Transaction.name).filter(
+        models.Transaction.user_id == user_id, models.Transaction.name.isnot(None),
+    ).distinct().all()
+    return [n for (n,) in names if merchant_key(n) == key]
 
 
 def _check_category(db: Session, user_id: int, category_id: int) -> models.Category:
@@ -149,14 +217,15 @@ def list_transactions(
     category_ids: Optional[str] = None,
     amount_min: Optional[float] = None,
     amount_max: Optional[float] = None,
+    merchant: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
-    q = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=True, source=source, hide_transfers=hide_transfers, category_ids=category_ids, amount_min=amount_min, amount_max=amount_max)
+    q = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=True, source=source, hide_transfers=hide_transfers, category_ids=category_ids, amount_min=amount_min, amount_max=amount_max, merchant=merchant)
     # Aggregate sums without joins (more efficient); netted for linked/merged groups
-    aq = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=False, source=source, hide_transfers=hide_transfers, category_ids=category_ids, amount_min=amount_min, amount_max=amount_max)
+    aq = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=False, source=source, hide_transfers=hide_transfers, category_ids=category_ids, amount_min=amount_min, amount_max=amount_max, merchant=merchant)
     aq = aq.filter(models.Transaction.type.notin_(INVESTMENT_TYPES))
     net_amount = func.coalesce(models.Transaction.effective_amount, models.Transaction.amount)
     income_expr = func.sum(case((models.Transaction.amount > 0, net_amount), else_=0))
@@ -219,6 +288,7 @@ def group_transactions(
     category_ids: Optional[str] = None,
     amount_min: Optional[float] = None,
     amount_max: Optional[float] = None,
+    merchant: Optional[str] = None,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -229,20 +299,21 @@ def group_transactions(
         raise HTTPException(422, f"Agrupación no válida: {by}")
     from ..services.bank_connectors import BANK_LABELS
 
-    q = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=True, source=source, hide_transfers=hide_transfers, category_ids=category_ids, amount_min=amount_min, amount_max=amount_max)
+    q = _build_query(db, current_user.id, search, category_id, type, type_group, date_from, date_to, account_category, with_joins=True, source=source, hide_transfers=hide_transfers, category_ids=category_ids, amount_min=amount_min, amount_max=amount_max, merchant=merchant)
     q = q.filter(models.Transaction.type.notin_(INVESTMENT_TYPES))
 
     groups: dict[str, schemas.TransactionGroup] = {}
     for tx in q.order_by(models.Transaction.date.desc()).all():
         cat_name = None
+        info = None
         if by == "category":
             cat = tx.category
             key = str(cat.id) if cat else "none"
             label = cat.name if cat else "Sin categoría"
             icon, color = (cat.icon, cat.color) if cat else (None, None)
         elif by == "merchant":
-            label = (tx.name or tx.description or "Sin nombre").strip()
-            key = merchant_key(label)
+            info = merchant_info(tx.name or tx.description or "Sin nombre")
+            label, key = info["name"], info["key"]
             icon = color = None
             cat_name = tx.category.name if tx.category else None
         elif by == "account":
@@ -259,7 +330,8 @@ def group_transactions(
         g = groups.get(key)
         if g is None:
             g = groups[key] = schemas.TransactionGroup(key=key, label=label, icon=icon, color=color,
-                                                       category_name=cat_name if by == "merchant" else None)
+                                                       category_name=cat_name if by == "merchant" else None,
+                                                       merchant=info)
         net = tx.effective_amount if tx.effective_amount is not None else tx.amount
         if tx.amount > 0:
             g.income += net
@@ -278,6 +350,32 @@ def group_transactions(
     return out
 
 
+def _same_merchant_others(db, user_id: int, sources, exclude: set) -> list:
+    """Movimientos del mismo comercio que se pueden arrastrar al cambiar la categoría:
+    solo del mismo sentido (un cobro no arrastra a los envíos) y que el usuario no
+    haya dejado ya en una categoría concreta (una nómina no se pisa con "Ingreso")."""
+    from ..services.categorizer import GENERIC_CATEGORIES
+    signs: dict = {}
+    for t in sources:
+        k = merchant_key(t.name)
+        if k:
+            signs.setdefault(k, set()).add(t.amount >= 0)
+    if not signs:
+        return []
+    generic = {cid for (cid,) in db.query(models.Category.id).filter(
+        models.Category.name.in_(GENERIC_CATEGORIES)).all()}
+    out = []
+    for t in db.query(models.Transaction).filter(
+        models.Transaction.user_id == user_id, models.Transaction.name.isnot(None),
+    ):
+        if t.id in exclude or (t.amount >= 0) not in signs.get(merchant_key(t.name), ()):
+            continue
+        confirmed = not t.is_auto_categorized and not t.is_ai_categorized             and t.category_id is not None and t.category_id not in generic
+        if not confirmed:
+            out.append(t)
+    return out
+
+
 @router.get("/{tx_id}/similar")
 def similar_transactions(
     tx_id: int,
@@ -293,15 +391,8 @@ def similar_transactions(
     key = merchant_key(tx.name)
     if not key:
         return {"merchant": None, "count": 0}
-    others = [
-        t for t in db.query(models.Transaction).filter(
-            models.Transaction.user_id == current_user.id,
-            models.Transaction.id != tx.id,
-            models.Transaction.name.isnot(None),
-        )
-        if merchant_key(t.name) == key
-    ]
-    return {"merchant": tx.name.strip(), "count": len(others)}
+    others = _same_merchant_others(db, current_user.id, [tx], {tx.id})
+    return {"merchant": merchant_info(tx.name)["name"], "count": len(others)}
 
 
 @router.post("/bulk-category", response_model=schemas.BulkCategoryResult)
@@ -321,9 +412,8 @@ def bulk_category(
 
     merchants = {merchant_key(t.name): t.name.strip() for t in targets.values() if merchant_key(t.name)}
     if data.include_same_merchant and merchants:
-        for t in base.filter(models.Transaction.name.isnot(None)):
-            if t.id not in targets and merchant_key(t.name) in merchants:
-                targets[t.id] = t
+        for t in _same_merchant_others(db, current_user.id, list(targets.values()), set(targets)):
+            targets[t.id] = t
 
     previous = [
         schemas.PreviousCategory(
@@ -337,6 +427,8 @@ def bulk_category(
         t.category_id = data.category_id
         t.is_auto_categorized = False
         t.is_ai_categorized = False
+        t.category_source = "manual"
+    forget_history(db)
 
     rule_ids: list[int] = []
     if data.create_rule:
@@ -503,7 +595,7 @@ def create_transfer(
         raise HTTPException(400, "Elige dos cuentas distintas")
     label = lambda k: BANK_LABELS.get(k) or {"manual": "Efectivo"}.get(k, k)
     note = (data.note or "").strip() or None
-    common = dict(user_id=current_user.id, date=data.date, currency="EUR", account_category="CASH",
+    common = dict(user_id=current_user.id, date=data.date, datetime=data.datetime, currency="EUR", account_category="CASH",
                   is_auto_categorized=False, is_manual=True, is_internal_transfer=True, note=note)
     out = models.Transaction(type="TRANSFER_OUTBOUND", amount=-amount, source=src,
                              name=f"A {label(dst)}", **common)
@@ -543,7 +635,7 @@ def create_quick_transaction(
         category_id = cat.id if cat else None
 
     if category_id is None:
-        category_id, is_auto, _ = auto_categorize(
+        category_id, is_auto, _ = _res = auto_categorize(
             db=db,
             user_id=current_user.id,
             tx_type=tx_type,
@@ -566,6 +658,7 @@ def create_quick_transaction(
         currency="EUR",
         category_id=category_id,
         is_auto_categorized=is_auto,
+        category_source=_res.source if is_auto else None,
         is_internal_transfer=False,
         source="manual",
         is_manual=True,
@@ -602,6 +695,9 @@ def update_transaction(
             tx.is_ai_categorized = False
         if "is_auto_categorized" not in updates:
             tx.is_auto_categorized = False
+        if "is_auto_categorized" not in updates and "is_ai_categorized" not in updates:
+            tx.category_source = "manual"
+        forget_history(db)
     for k, v in updates.items():
         setattr(tx, k, v)
     db.commit()
@@ -694,6 +790,7 @@ def split_transaction(
     tx.category_id = first.category_id
     tx.is_auto_categorized = False
     tx.is_ai_categorized = False
+    tx.category_source = "manual"
     if len(parts) > 1:
         tx.effective_amount = round(sign * first.amount, 2)
         for p in parts[1:]:
@@ -734,6 +831,7 @@ def delete_transaction(
         _dissolve_link_group(db, tx.link_group_id)
         db.flush()
     _clear_split(db, tx)
+    db.query(models.TransactionShare).filter(models.TransactionShare.transaction_id == tx.id).delete(synchronize_session=False)
     db.delete(tx)
     db.commit()
     return {"ok": True}
@@ -906,7 +1004,7 @@ async def import_csv(
             updated += 1
             continue
 
-        category_id, is_auto, is_internal = auto_categorize(
+        category_id, is_auto, is_internal = _res = auto_categorize(
             db=db,
             user_id=current_user.id,
             tx_type=row["type"],
@@ -917,13 +1015,15 @@ async def import_csv(
             amount=row["amount"],
             user_own_name=current_user.username,
         )
+        cat_source = _res.source
         if key in chosen and (chosen[key] is None or chosen[key] in own_cats):
-            category_id, is_auto = chosen[key], False
+            category_id, is_auto, cat_source = chosen[key], False, "manual"
 
         tx = models.Transaction(
             user_id=current_user.id,
             category_id=category_id,
             is_auto_categorized=is_auto,
+            category_source=cat_source,
             is_internal_transfer=is_internal,
             source=detected_bank,
             **row,
@@ -955,5 +1055,7 @@ async def import_csv(
         detect_recurring(db, current_user.id)
     except Exception:
         log.exception("CSV import: fallo la detección de recurrentes (user_id=%s)", current_user.id)
+    from ..services.recategorize import kick
+    kick(current_user.id, min_gap=0)
 
     return {**schemas.ImportResult(imported=imported, skipped_duplicates=skipped, errors=errors).model_dump(), "updated": updated, "detected_bank": detected_bank}

@@ -1,0 +1,5088 @@
+{
+"version": 1,
+"brands": [
+{
+"id": "mercadona",
+"name": "Mercadona",
+"cat": "Supermercado",
+"color": "#00a650",
+"domain": "mercadona.es",
+"aliases": [
+"Mercadona"
+]
+},
+{
+"id": "carrefour",
+"name": "Carrefour",
+"cat": "Supermercado",
+"color": "#004e9e",
+"domain": "carrefour.es",
+"aliases": [
+"carrefour market",
+"carrefour express",
+"carrefour city",
+"Carrefour"
+]
+},
+{
+"id": "lidl",
+"name": "Lidl",
+"cat": "Supermercado",
+"color": "#0050aa",
+"domain": "lidl.es",
+"aliases": [
+"Lidl"
+]
+},
+{
+"id": "aldi",
+"name": "Aldi",
+"cat": "Supermercado",
+"color": "#00005f",
+"domain": "aldi.es",
+"aliases": [
+"Aldi"
+]
+},
+{
+"id": "dia",
+"name": "Dia",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "dia.es",
+"aliases": [
+"dia",
+"dia supermercado",
+"dia market",
+"dia maxi",
+"supermercados dia"
+],
+"strict": true
+},
+{
+"id": "alcampo",
+"name": "Alcampo",
+"cat": "Supermercado",
+"color": "#e2001a",
+"domain": "alcampo.es",
+"aliases": [
+"auchan",
+"Alcampo"
+]
+},
+{
+"id": "eroski",
+"name": "Eroski",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "eroski.es",
+"aliases": [
+"Eroski"
+]
+},
+{
+"id": "consum",
+"name": "Consum",
+"cat": "Supermercado",
+"color": "#f28c00",
+"domain": "consum.es",
+"aliases": [
+"Consum"
+]
+},
+{
+"id": "hipercor",
+"name": "Hipercor",
+"cat": "Supermercado",
+"color": "#00843d",
+"domain": "hipercor.es",
+"aliases": [
+"Hipercor"
+]
+},
+{
+"id": "supercor",
+"name": "Supercor",
+"cat": "Supermercado",
+"color": "#00843d",
+"domain": "supercor.es",
+"aliases": [
+"Supercor"
+]
+},
+{
+"id": "bm",
+"name": "BM Supermercados",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "bmsupermercados.es",
+"aliases": [
+"bm supermercados"
+]
+},
+{
+"id": "ahorramas",
+"name": "Ahorramas",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "ahorramas.com",
+"aliases": [
+"Ahorramas"
+]
+},
+{
+"id": "caprabo",
+"name": "Caprabo",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "caprabo.com",
+"aliases": [
+"Caprabo"
+]
+},
+{
+"id": "condis",
+"name": "Condis",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "condis.es",
+"aliases": [
+"Condis"
+]
+},
+{
+"id": "bonpreu",
+"name": "Bonpreu",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "bonpreuesclat.cat",
+"aliases": [
+"bonpreu",
+"esclat"
+]
+},
+{
+"id": "gadis",
+"name": "Gadis",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "gadis.es",
+"aliases": [
+"Gadis"
+]
+},
+{
+"id": "froiz",
+"name": "Froiz",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "froiz.com",
+"aliases": [
+"Froiz"
+]
+},
+{
+"id": "masymas",
+"name": "masymas",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "masymas.com",
+"aliases": [
+"mas y mas",
+"masymas"
+]
+},
+{
+"id": "lupa",
+"name": "Lupa",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "lupa.es",
+"aliases": [
+"supermercados lupa",
+"lupa"
+],
+"strict": true
+},
+{
+"id": "coviran",
+"name": "Covirán",
+"cat": "Supermercado",
+"color": "#00843d",
+"domain": "coviran.es",
+"aliases": [
+"coviran",
+"Covirán"
+]
+},
+{
+"id": "spar",
+"name": "Spar",
+"cat": "Supermercado",
+"color": "#00843d",
+"domain": "spar.es",
+"aliases": [
+"Spar"
+],
+"strict": true
+},
+{
+"id": "simply",
+"name": "Simply",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "simply.es",
+"aliases": [
+"Simply"
+],
+"strict": true
+},
+{
+"id": "eroski-city",
+"name": "Eroski City",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "eroski.es",
+"aliases": [
+"Eroski City"
+]
+},
+{
+"id": "elcorteingles",
+"name": "El Corte Inglés",
+"cat": "Compras Varias",
+"color": "#00843d",
+"domain": "elcorteingles.es",
+"icon": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/02/Logo_Corte_Ingl%C3%A9s.svg/330px-Logo_Corte_Ingl%C3%A9s.svg.png",
+"aliases": [
+"el corte ingles",
+"corte ingles",
+"eci",
+"El Corte Inglés"
+]
+},
+{
+"id": "primaprix",
+"name": "Primaprix",
+"cat": "Supermercado",
+"color": "#e4007c",
+"domain": "primaprix.es",
+"aliases": [
+"Primaprix"
+]
+},
+{
+"id": "family-cash",
+"name": "Family Cash",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "familycash.es",
+"aliases": [
+"Family Cash"
+]
+},
+{
+"id": "hiperdino",
+"name": "HiperDino",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "hiperdino.es",
+"aliases": [
+"HiperDino"
+]
+},
+{
+"id": "mas",
+"name": "Supermercados MAS",
+"cat": "Supermercado",
+"color": "#00843d",
+"domain": "supermercadosmas.com",
+"aliases": [
+"supermercados mas"
+]
+},
+{
+"id": "el-jamon",
+"name": "El Jamón",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "supermercadoseljamon.com",
+"aliases": [
+"supermercados el jamon",
+"El Jamón"
+]
+},
+{
+"id": "costco",
+"name": "Costco",
+"cat": "Supermercado",
+"color": "#005daa",
+"domain": "costco.es",
+"aliases": [
+"Costco"
+]
+},
+{
+"id": "makro",
+"name": "Makro",
+"cat": "Supermercado",
+"color": "#003d7d",
+"domain": "makro.es",
+"aliases": [
+"Makro"
+]
+},
+{
+"id": "sanchez-romero",
+"name": "Sánchez Romero",
+"cat": "Supermercado",
+"color": "#00543c",
+"domain": "sanchez-romero.com",
+"aliases": [
+"Sánchez Romero"
+]
+},
+{
+"id": "amazon-fresh",
+"name": "Amazon Fresh",
+"cat": "Supermercado",
+"color": "#ff9900",
+"icon": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4a/Amazon_icon.svg/330px-Amazon_icon.svg.png",
+"domain": "amazon.es",
+"aliases": [
+"amazon fresh"
+]
+},
+{
+"id": "bell-food",
+"name": "Bell Food Group",
+"cat": "Supermercado",
+"color": "#d0021b",
+"aliases": [
+"bell food group",
+"bell food"
+]
+},
+{
+"id": "oxxo",
+"name": "Oxxo",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "oxxo.com",
+"aliases": [
+"Oxxo"
+]
+},
+{
+"id": "7eleven",
+"name": "7-Eleven",
+"cat": "Supermercado",
+"color": "#008163",
+"domain": "7-eleven.com",
+"aliases": [
+"7 eleven",
+"seven eleven",
+"7-Eleven"
+]
+},
+{
+"id": "tiendas-ara",
+"name": "Tiendas Ara",
+"cat": "Supermercado",
+"color": "#e30613",
+"domain": "ara.es",
+"aliases": [
+"Tiendas Ara"
+]
+},
+{
+"id": "casa-ametller",
+"name": "Casa Ametller",
+"cat": "Supermercado",
+"color": "#7ab51d",
+"domain": "casaametller.cat",
+"aliases": [
+"ametller origen",
+"Casa Ametller"
+]
+},
+{
+"id": "mcdonalds",
+"name": "McDonald's",
+"cat": "Comida Rápida",
+"color": "#da291c",
+"domain": "mcdonalds.es",
+"aliases": [
+"mcdonalds",
+"mc donalds",
+"mcdonald",
+"mcd",
+"McDonald's"
+]
+},
+{
+"id": "burgerking",
+"name": "Burger King",
+"cat": "Comida Rápida",
+"color": "#d62300",
+"domain": "burgerking.es",
+"aliases": [
+"burger king",
+"bk"
+]
+},
+{
+"id": "kfc",
+"name": "KFC",
+"cat": "Comida Rápida",
+"color": "#a3080c",
+"domain": "kfc.es",
+"aliases": [
+"KFC"
+]
+},
+{
+"id": "telepizza",
+"name": "Telepizza",
+"cat": "Comida Rápida",
+"color": "#e30613",
+"domain": "telepizza.es",
+"aliases": [
+"Telepizza"
+]
+},
+{
+"id": "dominos",
+"name": "Domino's Pizza",
+"cat": "Comida Rápida",
+"color": "#006491",
+"domain": "dominospizza.es",
+"aliases": [
+"dominos",
+"domino s",
+"dominos pizza",
+"Domino's Pizza"
+]
+},
+{
+"id": "papajohns",
+"name": "Papa John's",
+"cat": "Comida Rápida",
+"color": "#148257",
+"domain": "papajohns.es",
+"aliases": [
+"papa johns",
+"papa john",
+"papa johns pizza",
+"Papa John's"
+]
+},
+{
+"id": "pizzahut",
+"name": "Pizza Hut",
+"cat": "Comida Rápida",
+"color": "#ee3124",
+"domain": "pizzahut.es",
+"aliases": [
+"pizza hut"
+]
+},
+{
+"id": "fosters",
+"name": "Foster's Hollywood",
+"cat": "Restaurante",
+"color": "#c8102e",
+"domain": "fostershollywood.es",
+"aliases": [
+"fosters hollywood",
+"foster s hollywood",
+"fosters",
+"Foster's Hollywood"
+]
+},
+{
+"id": "goiko",
+"name": "Goiko",
+"cat": "Comida Rápida",
+"color": "#000000",
+"domain": "goiko.com",
+"aliases": [
+"goiko grill",
+"Goiko"
+]
+},
+{
+"id": "tgb",
+"name": "TGB",
+"cat": "Comida Rápida",
+"color": "#000000",
+"domain": "thegoodburger.com",
+"aliases": [
+"the good burger",
+"tgb"
+]
+},
+{
+"id": "popeyes",
+"name": "Popeyes",
+"cat": "Comida Rápida",
+"color": "#f26522",
+"domain": "popeyes.es",
+"aliases": [
+"Popeyes"
+]
+},
+{
+"id": "tacobell",
+"name": "Taco Bell",
+"cat": "Comida Rápida",
+"color": "#702082",
+"domain": "tacobell.es",
+"aliases": [
+"taco bell"
+]
+},
+{
+"id": "subway",
+"name": "Subway",
+"cat": "Comida Rápida",
+"color": "#008c15",
+"domain": "subway.com",
+"aliases": [
+"Subway"
+]
+},
+{
+"id": "fiveguys",
+"name": "Five Guys",
+"cat": "Comida Rápida",
+"color": "#c8102e",
+"domain": "fiveguys.es",
+"aliases": [
+"five guys"
+]
+},
+{
+"id": "montaditos",
+"name": "100 Montaditos",
+"cat": "Comida Rápida",
+"color": "#004b23",
+"domain": "spain.100montaditos.com",
+"aliases": [
+"100 montaditos",
+"cien montaditos"
+]
+},
+{
+"id": "lizarran",
+"name": "Lizarran",
+"cat": "Bar / Cafetería",
+"color": "#8b0000",
+"domain": "lizarran.es",
+"aliases": [
+"Lizarran"
+]
+},
+{
+"id": "lasurena",
+"name": "La Sureña",
+"cat": "Bar / Cafetería",
+"color": "#004b8d",
+"domain": "lasurena.es",
+"aliases": [
+"la surena",
+"cerveceria la surena",
+"La Sureña"
+]
+},
+{
+"id": "vips",
+"name": "VIPS",
+"cat": "Restaurante",
+"color": "#e4002b",
+"domain": "vips.es",
+"aliases": [
+"vips",
+"cafeteria vips"
+]
+},
+{
+"id": "ginos",
+"name": "Ginos",
+"cat": "Restaurante",
+"color": "#00543c",
+"domain": "ginos.es",
+"aliases": [
+"Ginos"
+]
+},
+{
+"id": "tagliatella",
+"name": "La Tagliatella",
+"cat": "Restaurante",
+"color": "#8b0000",
+"domain": "latagliatella.es",
+"aliases": [
+"la tagliatella",
+"tagliatella"
+]
+},
+{
+"id": "rodilla",
+"name": "Rodilla",
+"cat": "Comida Rápida",
+"color": "#e30613",
+"domain": "rodilla.es",
+"aliases": [
+"Rodilla"
+],
+"strict": true
+},
+{
+"id": "pans",
+"name": "Pans & Company",
+"cat": "Comida Rápida",
+"color": "#e30613",
+"domain": "pansandcompany.com",
+"aliases": [
+"pans company",
+"pans & company"
+]
+},
+{
+"id": "llaollao",
+"name": "llaollao",
+"cat": "Bar / Cafetería",
+"color": "#8dc63f",
+"domain": "llaollaoweb.com",
+"icon": "https://llaollaoweb.com/wp-content/uploads/2026/08/cropped-cropped-cropped-FAVICON-192x192.png",
+"aliases": [
+"llaollao"
+]
+},
+{
+"id": "starbucks",
+"name": "Starbucks",
+"cat": "Bar / Cafetería",
+"color": "#00704a",
+"domain": "starbucks.es",
+"aliases": [
+"Starbucks"
+]
+},
+{
+"id": "granier",
+"name": "Granier",
+"cat": "Bar / Cafetería",
+"color": "#8b5a2b",
+"domain": "granierpanes.com",
+"aliases": [
+"panes granier",
+"granier"
+]
+},
+{
+"id": "santagloria",
+"name": "Santagloria",
+"cat": "Bar / Cafetería",
+"color": "#000000",
+"domain": "santagloria.com",
+"aliases": [
+"Santagloria"
+]
+},
+{
+"id": "tim-hortons",
+"name": "Tim Hortons",
+"cat": "Bar / Cafetería",
+"color": "#c8102e",
+"domain": "timhortons.es",
+"aliases": [
+"tim hortons"
+]
+},
+{
+"id": "dunkin",
+"name": "Dunkin'",
+"cat": "Bar / Cafetería",
+"color": "#ff671f",
+"domain": "dunkin.es",
+"aliases": [
+"dunkin donuts",
+"dunkin coffee",
+"dunkin",
+"Dunkin'"
+]
+},
+{
+"id": "costa-coffee",
+"name": "Costa Coffee",
+"cat": "Bar / Cafetería",
+"color": "#6d1f37",
+"domain": "costa.co.uk",
+"aliases": [
+"costa coffee"
+]
+},
+{
+"id": "manolo-bakes",
+"name": "Manolo Bakes",
+"cat": "Bar / Cafetería",
+"color": "#000000",
+"domain": "manolobakes.com",
+"aliases": [
+"manolo bakes"
+]
+},
+{
+"id": "panaria",
+"name": "Panaria",
+"cat": "Bar / Cafetería",
+"color": "#e30613",
+"domain": "panaria.es",
+"aliases": [
+"Panaria"
+]
+},
+{
+"id": "cafe-de-indias",
+"name": "Café de Indias",
+"cat": "Bar / Cafetería",
+"color": "#4b2e1e",
+"domain": "cafedeindias.es",
+"aliases": [
+"cafe de indias",
+"Café de Indias"
+]
+},
+{
+"id": "la-mafia",
+"name": "La Mafia se sienta a la mesa",
+"cat": "Restaurante",
+"color": "#000000",
+"domain": "lamafia.es",
+"aliases": [
+"la mafia se sienta a la mesa"
+]
+},
+{
+"id": "udon",
+"name": "UDON",
+"cat": "Restaurante",
+"color": "#e30613",
+"domain": "udon.es",
+"aliases": [
+"UDON"
+]
+},
+{
+"id": "wok",
+"name": "Wok to Walk",
+"cat": "Comida Rápida",
+"color": "#e30613",
+"domain": "woktowalk.com",
+"aliases": [
+"wok to walk"
+]
+},
+{
+"id": "sushishop",
+"name": "Sushi Shop",
+"cat": "Restaurante",
+"color": "#000000",
+"domain": "sushishop.eu",
+"aliases": [
+"sushi shop"
+]
+},
+{
+"id": "muerde-la-pasta",
+"name": "Muerde la Pasta",
+"cat": "Restaurante",
+"color": "#e30613",
+"domain": "muerdelapasta.com",
+"aliases": [
+"muerde la pasta"
+]
+},
+{
+"id": "canas-y-tapas",
+"name": "Cañas y Tapas",
+"cat": "Bar / Cafetería",
+"color": "#8b0000",
+"domain": "canasytapas.com",
+"aliases": [
+"canas y tapas",
+"Cañas y Tapas"
+]
+},
+{
+"id": "lateral",
+"name": "Lateral",
+"cat": "Restaurante",
+"color": "#000000",
+"domain": "lateral.com",
+"aliases": [
+"Lateral"
+],
+"strict": true
+},
+{
+"id": "honest-greens",
+"name": "Honest Greens",
+"cat": "Restaurante",
+"color": "#2e7d32",
+"domain": "honestgreens.com",
+"aliases": [
+"honest greens"
+]
+},
+{
+"id": "vezzo",
+"name": "Vezzo",
+"cat": "Comida Rápida",
+"color": "#e30613",
+"domain": "vezzo.es",
+"icon": "https://www.vezzo.es/vezzo.png",
+"aliases": [
+"Vezzo"
+]
+},
+{
+"id": "hundred",
+"name": "Hundred Burgers",
+"cat": "Comida Rápida",
+"color": "#000000",
+"domain": "hundredburgers.com",
+"aliases": [
+"hundred",
+"hundred burgers"
+],
+"strict": true
+},
+{
+"id": "beefcious",
+"name": "Beefcious",
+"cat": "Restaurante",
+"color": "#000000",
+"domain": "beefcious.es",
+"aliases": [
+"Beefcious"
+]
+},
+{
+"id": "eurest",
+"name": "Eurest",
+"cat": "Restaurante",
+"color": "#003d7c",
+"domain": "eurest.es",
+"aliases": [
+"Eurest"
+]
+},
+{
+"id": "selecta",
+"name": "Selecta",
+"cat": "Comida Rápida",
+"color": "#e30613",
+"domain": "selecta.com",
+"aliases": [
+"Selecta"
+]
+},
+{
+"id": "glovo",
+"name": "Glovo",
+"cat": "Comida a domicilio|Comida Rápida",
+"color": "#ffc244",
+"domain": "glovoapp.com",
+"aliases": [
+"glovo"
+]
+},
+{
+"id": "justeat",
+"name": "Just Eat",
+"cat": "Comida a domicilio|Comida Rápida",
+"color": "#ff8000",
+"domain": "just-eat.es",
+"aliases": [
+"just eat",
+"justeat"
+]
+},
+{
+"id": "ubereats",
+"name": "Uber Eats",
+"cat": "Comida a domicilio|Comida Rápida",
+"color": "#06c167",
+"domain": "ubereats.com",
+"aliases": [
+"uber eats",
+"ubereats"
+]
+},
+{
+"id": "deliveroo",
+"name": "Deliveroo",
+"cat": "Comida a domicilio|Comida Rápida",
+"color": "#00ccbc",
+"domain": "deliveroo.es",
+"aliases": [
+"Deliveroo"
+]
+},
+{
+"id": "tgtg",
+"name": "Too Good To Go",
+"cat": "Comida a domicilio|Comida Rápida",
+"color": "#00615f",
+"domain": "toogoodtogo.com",
+"aliases": [
+"too good to go",
+"toogoodtogo"
+]
+},
+{
+"id": "uber",
+"name": "Uber",
+"cat": "Taxi / Uber",
+"color": "#000000",
+"domain": "uber.com",
+"aliases": [
+"uber",
+"uber trip",
+"uber bv"
+]
+},
+{
+"id": "cabify",
+"name": "Cabify",
+"cat": "Taxi / Uber",
+"color": "#7145d6",
+"domain": "cabify.com",
+"aliases": [
+"Cabify"
+]
+},
+{
+"id": "bolt",
+"name": "Bolt",
+"cat": "Taxi / Uber",
+"color": "#34d186",
+"domain": "bolt.eu",
+"aliases": [
+"bolt",
+"bolt eu",
+"bolt ride"
+],
+"strict": true
+},
+{
+"id": "freenow",
+"name": "FREE NOW",
+"cat": "Taxi / Uber",
+"color": "#d4004c",
+"domain": "free-now.com",
+"aliases": [
+"free now",
+"freenow",
+"mytaxi"
+]
+},
+{
+"id": "lime",
+"name": "Lime",
+"cat": "Transporte Público",
+"color": "#00dd00",
+"domain": "li.me",
+"aliases": [
+"lime",
+"lime ride"
+],
+"strict": true
+},
+{
+"id": "dott",
+"name": "Dott",
+"cat": "Transporte Público",
+"color": "#00a8e8",
+"domain": "ridedott.com",
+"aliases": [
+"dott"
+],
+"strict": true
+},
+{
+"id": "tier",
+"name": "TIER",
+"cat": "Transporte Público",
+"color": "#0e1a50",
+"domain": "tier.app",
+"aliases": [
+"tier"
+],
+"strict": true
+},
+{
+"id": "bicimad",
+"name": "BiciMAD",
+"cat": "Transporte Público",
+"color": "#e30613",
+"domain": "bicimad.com",
+"aliases": [
+"BiciMAD"
+]
+},
+{
+"id": "renfe",
+"name": "Renfe",
+"cat": "Transporte Público",
+"color": "#8a1538",
+"domain": "renfe.com",
+"aliases": [
+"renfe",
+"venta billetes renfe",
+"renfe viajeros"
+]
+},
+{
+"id": "iryo",
+"name": "iryo",
+"cat": "Transporte Público",
+"color": "#d7001e",
+"domain": "iryo.eu",
+"aliases": [
+"iryo"
+]
+},
+{
+"id": "ouigo",
+"name": "OUIGO",
+"cat": "Transporte Público",
+"color": "#e5007d",
+"domain": "ouigo.com",
+"aliases": [
+"OUIGO"
+]
+},
+{
+"id": "alsa",
+"name": "Alsa",
+"cat": "Transporte Público",
+"color": "#e30613",
+"domain": "alsa.es",
+"aliases": [
+"Alsa"
+]
+},
+{
+"id": "avanza",
+"name": "Avanza",
+"cat": "Transporte Público",
+"color": "#004b9b",
+"domain": "avanzabus.com",
+"aliases": [
+"avanza bus",
+"Avanza"
+],
+"strict": true
+},
+{
+"id": "blablacar",
+"name": "BlaBlaCar",
+"cat": "Transporte Público",
+"color": "#00aff5",
+"domain": "blablacar.es",
+"aliases": [
+"BlaBlaCar"
+]
+},
+{
+"id": "flixbus",
+"name": "FlixBus",
+"cat": "Transporte Público",
+"color": "#73d700",
+"domain": "flixbus.es",
+"aliases": [
+"FlixBus"
+]
+},
+{
+"id": "crtm",
+"name": "Consorcio de Transportes de Madrid",
+"cat": "Transporte Público",
+"color": "#e30613",
+"domain": "crtm.es",
+"aliases": [
+"crtm",
+"consorcio regional de transportes",
+"consorcio transportes",
+"Consorcio de Transportes de Madrid"
+]
+},
+{
+"id": "metro-madrid",
+"name": "Metro de Madrid",
+"cat": "Transporte Público",
+"color": "#e30613",
+"domain": "metromadrid.es",
+"aliases": [
+"metro de madrid",
+"metro madrid"
+]
+},
+{
+"id": "emt",
+"name": "EMT Madrid",
+"cat": "Transporte Público",
+"color": "#004b9b",
+"domain": "emtmadrid.es",
+"aliases": [
+"emt madrid",
+"emt"
+],
+"strict": true
+},
+{
+"id": "metro-ligero",
+"name": "Metro Ligero Oeste",
+"cat": "Transporte Público",
+"color": "#00843d",
+"domain": "metroligero-oeste.es",
+"aliases": [
+"metro ligero oeste",
+"metro ligero"
+]
+},
+{
+"id": "tmb",
+"name": "TMB",
+"cat": "Transporte Público",
+"color": "#e30613",
+"domain": "tmb.cat",
+"aliases": [
+"tmb"
+],
+"strict": true
+},
+{
+"id": "metro-bilbao",
+"name": "Metro Bilbao",
+"cat": "Transporte Público",
+"color": "#e30613",
+"domain": "metrobilbao.eus",
+"aliases": [
+"metro bilbao"
+]
+},
+{
+"id": "metrovalencia",
+"name": "Metrovalencia",
+"cat": "Transporte Público",
+"color": "#e30613",
+"domain": "metrovalencia.es",
+"aliases": [
+"Metrovalencia"
+]
+},
+{
+"id": "ryanair",
+"name": "Ryanair",
+"cat": "Vuelos",
+"color": "#073590",
+"domain": "ryanair.com",
+"aliases": [
+"Ryanair"
+]
+},
+{
+"id": "iberia",
+"name": "Iberia",
+"cat": "Vuelos",
+"color": "#d7192d",
+"domain": "iberia.com",
+"aliases": [
+"iberia",
+"iberia express"
+]
+},
+{
+"id": "vueling",
+"name": "Vueling",
+"cat": "Vuelos",
+"color": "#ffcc00",
+"domain": "vueling.com",
+"aliases": [
+"Vueling"
+]
+},
+{
+"id": "aireuropa",
+"name": "Air Europa",
+"cat": "Vuelos",
+"color": "#002f6c",
+"domain": "aireuropa.com",
+"aliases": [
+"air europa"
+]
+},
+{
+"id": "easyjet",
+"name": "easyJet",
+"cat": "Vuelos",
+"color": "#ff6600",
+"domain": "easyjet.com",
+"aliases": [
+"easyJet"
+]
+},
+{
+"id": "binter",
+"name": "Binter",
+"cat": "Vuelos",
+"color": "#00a0e1",
+"domain": "bintercanarias.com",
+"aliases": [
+"binter"
+]
+},
+{
+"id": "volotea",
+"name": "Volotea",
+"cat": "Vuelos",
+"color": "#e4007c",
+"domain": "volotea.com",
+"aliases": [
+"Volotea"
+]
+},
+{
+"id": "lufthansa",
+"name": "Lufthansa",
+"cat": "Vuelos",
+"color": "#05164d",
+"domain": "lufthansa.com",
+"aliases": [
+"Lufthansa"
+]
+},
+{
+"id": "airfrance",
+"name": "Air France",
+"cat": "Vuelos",
+"color": "#002157",
+"domain": "airfrance.es",
+"aliases": [
+"air france"
+]
+},
+{
+"id": "klm",
+"name": "KLM",
+"cat": "Vuelos",
+"color": "#00a1de",
+"domain": "klm.es",
+"aliases": [
+"klm"
+],
+"strict": true
+},
+{
+"id": "wizzair",
+"name": "Wizz Air",
+"cat": "Vuelos",
+"color": "#c6007e",
+"domain": "wizzair.com",
+"aliases": [
+"wizz air",
+"wizzair"
+]
+},
+{
+"id": "tap",
+"name": "TAP Air Portugal",
+"cat": "Vuelos",
+"color": "#00a650",
+"domain": "flytap.com",
+"aliases": [
+"tap air portugal",
+"tap portugal"
+]
+},
+{
+"id": "aena",
+"name": "Aena",
+"cat": "Viaje|Viajes|Hotel",
+"color": "#000000",
+"domain": "aena.es",
+"aliases": [
+"Aena"
+]
+},
+{
+"id": "booking",
+"name": "Booking.com",
+"cat": "Hotel",
+"color": "#003580",
+"domain": "booking.com",
+"aliases": [
+"booking com",
+"booking",
+"Booking.com"
+]
+},
+{
+"id": "airbnb",
+"name": "Airbnb",
+"cat": "Hotel",
+"color": "#ff5a5f",
+"domain": "airbnb.es",
+"aliases": [
+"Airbnb"
+]
+},
+{
+"id": "expedia",
+"name": "Expedia",
+"cat": "Viaje|Viajes|Hotel",
+"color": "#00355f",
+"domain": "expedia.es",
+"aliases": [
+"Expedia"
+]
+},
+{
+"id": "edreams",
+"name": "eDreams",
+"cat": "Viaje|Viajes|Hotel",
+"color": "#002f87",
+"domain": "edreams.es",
+"aliases": [
+"eDreams"
+]
+},
+{
+"id": "skyscanner",
+"name": "Skyscanner",
+"cat": "Viaje|Viajes|Hotel",
+"color": "#0770e3",
+"domain": "skyscanner.es",
+"aliases": [
+"Skyscanner"
+]
+},
+{
+"id": "trivago",
+"name": "trivago",
+"cat": "Hotel",
+"color": "#007fad",
+"domain": "trivago.es",
+"aliases": [
+"trivago"
+]
+},
+{
+"id": "nh",
+"name": "NH Hotels",
+"cat": "Hotel",
+"color": "#000000",
+"domain": "nh-hotels.com",
+"aliases": [
+"nh hotel",
+"nh hotels"
+]
+},
+{
+"id": "melia",
+"name": "Meliá",
+"cat": "Hotel",
+"color": "#000000",
+"domain": "melia.com",
+"aliases": [
+"melia",
+"Meliá"
+]
+},
+{
+"id": "barcelo",
+"name": "Barceló",
+"cat": "Hotel",
+"color": "#00366e",
+"domain": "barcelo.com",
+"aliases": [
+"barcelo",
+"Barceló"
+]
+},
+{
+"id": "ibis",
+"name": "ibis",
+"cat": "Hotel",
+"color": "#e2001a",
+"domain": "ibis.com",
+"aliases": [
+"ibis"
+],
+"strict": true
+},
+{
+"id": "hostelworld",
+"name": "Hostelworld",
+"cat": "Hotel",
+"color": "#ff6600",
+"domain": "hostelworld.com",
+"aliases": [
+"Hostelworld"
+]
+},
+{
+"id": "paradores",
+"name": "Paradores",
+"cat": "Hotel",
+"color": "#8b0000",
+"domain": "parador.es",
+"aliases": [
+"parador",
+"paradores"
+]
+},
+{
+"id": "repsol",
+"name": "Repsol",
+"cat": "Gasolinera",
+"color": "#ff7f00",
+"domain": "repsol.es",
+"aliases": [
+"repsol",
+"guia repsol",
+"waylet"
+]
+},
+{
+"id": "cepsa",
+"name": "Moeve",
+"cat": "Gasolinera",
+"color": "#e30613",
+"domain": "moeveglobal.com",
+"aliases": [
+"cepsa",
+"moeve"
+]
+},
+{
+"id": "galp",
+"name": "Galp",
+"cat": "Gasolinera",
+"color": "#f26522",
+"domain": "galp.com",
+"aliases": [
+"galp"
+],
+"strict": true
+},
+{
+"id": "bp",
+"name": "BP",
+"cat": "Gasolinera",
+"color": "#009900",
+"domain": "bp.com",
+"aliases": [
+"bp oil",
+"bp estacion",
+"BP"
+],
+"strict": true
+},
+{
+"id": "shell",
+"name": "Shell",
+"cat": "Gasolinera",
+"color": "#ffd500",
+"domain": "shell.es",
+"aliases": [
+"shell"
+],
+"strict": true
+},
+{
+"id": "plenoil",
+"name": "Plenoil",
+"cat": "Gasolinera",
+"color": "#e30613",
+"domain": "plenoil.es",
+"aliases": [
+"Plenoil"
+]
+},
+{
+"id": "ballenoil",
+"name": "Ballenoil",
+"cat": "Gasolinera",
+"color": "#004b9b",
+"domain": "ballenoil.es",
+"aliases": [
+"Ballenoil"
+]
+},
+{
+"id": "petroprix",
+"name": "Petroprix",
+"cat": "Gasolinera",
+"color": "#e30613",
+"domain": "petroprix.com",
+"aliases": [
+"Petroprix"
+]
+},
+{
+"id": "petronor",
+"name": "Petronor",
+"cat": "Gasolinera",
+"color": "#e30613",
+"domain": "petronor.com",
+"aliases": [
+"Petronor"
+]
+},
+{
+"id": "avia",
+"name": "AVIA",
+"cat": "Gasolinera",
+"color": "#e30613",
+"domain": "avia.es",
+"aliases": [
+"avia"
+],
+"strict": true
+},
+{
+"id": "disa",
+"name": "DISA",
+"cat": "Gasolinera",
+"color": "#e30613",
+"domain": "disagrupo.es",
+"aliases": [
+"disa"
+],
+"strict": true
+},
+{
+"id": "netflix",
+"name": "Netflix",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#e50914",
+"domain": "netflix.com",
+"aliases": [
+"Netflix"
+]
+},
+{
+"id": "spotify",
+"name": "Spotify",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#1db954",
+"domain": "spotify.com",
+"aliases": [
+"Spotify"
+]
+},
+{
+"id": "hbo",
+"name": "Max",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#002be7",
+"domain": "max.com",
+"aliases": [
+"hbo",
+"hbo max",
+"max com",
+"Max"
+]
+},
+{
+"id": "disney",
+"name": "Disney+",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#113ccf",
+"domain": "disneyplus.com",
+"aliases": [
+"disney plus",
+"disney+",
+"disneyplus"
+]
+},
+{
+"id": "primevideo",
+"name": "Prime Video",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#00a8e1",
+"domain": "primevideo.com",
+"aliases": [
+"prime video",
+"amazon prime",
+"amzn prime"
+]
+},
+{
+"id": "appletv",
+"name": "Apple TV+",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#000000",
+"domain": "tv.apple.com",
+"aliases": [
+"apple tv",
+"Apple TV+"
+]
+},
+{
+"id": "movistarplus",
+"name": "Movistar Plus+",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#019df4",
+"domain": "movistarplus.es",
+"aliases": [
+"movistar plus",
+"Movistar Plus+"
+]
+},
+{
+"id": "filmin",
+"name": "Filmin",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#000000",
+"domain": "filmin.es",
+"aliases": [
+"Filmin"
+]
+},
+{
+"id": "dazn",
+"name": "DAZN",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#000000",
+"domain": "dazn.com",
+"aliases": [
+"DAZN"
+]
+},
+{
+"id": "youtube",
+"name": "YouTube",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#ff0000",
+"domain": "youtube.com",
+"aliases": [
+"youtube premium",
+"youtube",
+"google youtube"
+]
+},
+{
+"id": "twitch",
+"name": "Twitch",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#9146ff",
+"domain": "twitch.tv",
+"aliases": [
+"Twitch"
+]
+},
+{
+"id": "crunchyroll",
+"name": "Crunchyroll",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#f47521",
+"domain": "crunchyroll.com",
+"aliases": [
+"Crunchyroll"
+]
+},
+{
+"id": "audible",
+"name": "Audible",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#f8991c",
+"domain": "audible.es",
+"aliases": [
+"Audible"
+]
+},
+{
+"id": "deezer",
+"name": "Deezer",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#a238ff",
+"domain": "deezer.com",
+"aliases": [
+"Deezer"
+]
+},
+{
+"id": "tidal",
+"name": "TIDAL",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#000000",
+"domain": "tidal.com",
+"aliases": [
+"tidal"
+],
+"strict": true
+},
+{
+"id": "skyshowtime",
+"name": "SkyShowtime",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#000000",
+"domain": "skyshowtime.com",
+"aliases": [
+"SkyShowtime"
+]
+},
+{
+"id": "atresplayer",
+"name": "atresplayer",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#ff6600",
+"domain": "atresplayer.com",
+"aliases": [
+"atresplayer"
+]
+},
+{
+"id": "patreon",
+"name": "Patreon",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#ff424d",
+"domain": "patreon.com",
+"aliases": [
+"Patreon"
+]
+},
+{
+"id": "onlyfans",
+"name": "OnlyFans",
+"cat": "Suscripciones|Entretenimiento",
+"color": "#00aff0",
+"domain": "onlyfans.com",
+"aliases": [
+"OnlyFans"
+]
+},
+{
+"id": "steam",
+"name": "Steam",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#171a21",
+"domain": "store.steampowered.com",
+"icon": "https://store.steampowered.com/favicon.ico",
+"aliases": [
+"steam",
+"steampowered",
+"valve"
+]
+},
+{
+"id": "epicgames",
+"name": "Epic Games",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#2a2a2a",
+"domain": "epicgames.com",
+"aliases": [
+"epic games"
+]
+},
+{
+"id": "playstation",
+"name": "PlayStation",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#003791",
+"domain": "playstation.com",
+"aliases": [
+"playstation",
+"sony interactive",
+"psn"
+]
+},
+{
+"id": "nintendo",
+"name": "Nintendo",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#e60012",
+"domain": "nintendo.es",
+"aliases": [
+"Nintendo"
+]
+},
+{
+"id": "xbox",
+"name": "Xbox",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#107c10",
+"domain": "xbox.com",
+"aliases": [
+"xbox",
+"microsoft xbox"
+]
+},
+{
+"id": "eneba",
+"name": "Eneba",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#4a00e0",
+"domain": "eneba.com",
+"aliases": [
+"Eneba"
+]
+},
+{
+"id": "instantgaming",
+"name": "Instant Gaming",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#ff5400",
+"domain": "instant-gaming.com",
+"aliases": [
+"instant gaming"
+]
+},
+{
+"id": "g2a",
+"name": "G2A",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#f05f00",
+"domain": "g2a.com",
+"aliases": [
+"G2A"
+]
+},
+{
+"id": "battlenet",
+"name": "Battle.net",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#148eff",
+"domain": "battle.net",
+"aliases": [
+"battle net",
+"blizzard",
+"Battle.net"
+]
+},
+{
+"id": "riot",
+"name": "Riot Games",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#d13639",
+"domain": "riotgames.com",
+"aliases": [
+"riot games"
+]
+},
+{
+"id": "ea",
+"name": "EA",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#ff4747",
+"domain": "ea.com",
+"aliases": [
+"electronic arts",
+"ea games",
+"EA"
+],
+"strict": true
+},
+{
+"id": "ubisoft",
+"name": "Ubisoft",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#000000",
+"domain": "ubisoft.com",
+"aliases": [
+"Ubisoft"
+]
+},
+{
+"id": "roblox",
+"name": "Roblox",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#000000",
+"domain": "roblox.com",
+"aliases": [
+"Roblox"
+]
+},
+{
+"id": "tebex",
+"name": "Tebex",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#000000",
+"domain": "tebex.io",
+"aliases": [
+"Tebex"
+]
+},
+{
+"id": "game",
+"name": "GAME",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#e30613",
+"domain": "game.es",
+"aliases": [
+"game stores",
+"game espana",
+"GAME"
+],
+"strict": true
+},
+{
+"id": "gog",
+"name": "GOG",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#86328a",
+"domain": "gog.com",
+"aliases": [
+"gog com",
+"GOG"
+],
+"strict": true
+},
+{
+"id": "humble",
+"name": "Humble Bundle",
+"cat": "Videojuegos|Entretenimiento",
+"color": "#cc2929",
+"domain": "humblebundle.com",
+"aliases": [
+"humble bundle"
+]
+},
+{
+"id": "cinesa",
+"name": "Cinesa",
+"cat": "Entretenimiento",
+"color": "#e30613",
+"domain": "cinesa.es",
+"aliases": [
+"Cinesa"
+]
+},
+{
+"id": "yelmo",
+"name": "Yelmo Cines",
+"cat": "Entretenimiento",
+"color": "#ffcc00",
+"domain": "yelmocines.es",
+"aliases": [
+"yelmo",
+"Yelmo Cines"
+]
+},
+{
+"id": "kinepolis",
+"name": "Kinépolis",
+"cat": "Entretenimiento",
+"color": "#004b9b",
+"domain": "kinepolis.es",
+"aliases": [
+"kinepolis",
+"Kinépolis"
+]
+},
+{
+"id": "ocine",
+"name": "Ocine",
+"cat": "Entretenimiento",
+"color": "#e30613",
+"domain": "ocine.es",
+"aliases": [
+"Ocine"
+]
+},
+{
+"id": "cines-renoir",
+"name": "Cines Renoir",
+"cat": "Entretenimiento",
+"color": "#000000",
+"domain": "cinesrenoir.com",
+"aliases": [
+"renoir",
+"Cines Renoir"
+]
+},
+{
+"id": "ticketmaster",
+"name": "Ticketmaster",
+"cat": "Entretenimiento",
+"color": "#026cdf",
+"domain": "ticketmaster.es",
+"aliases": [
+"Ticketmaster"
+]
+},
+{
+"id": "entradas",
+"name": "Entradas.com",
+"cat": "Entretenimiento",
+"color": "#e30613",
+"domain": "entradas.com",
+"aliases": [
+"entradas com",
+"Entradas.com"
+]
+},
+{
+"id": "eventbrite",
+"name": "Eventbrite",
+"cat": "Entretenimiento",
+"color": "#f05537",
+"domain": "eventbrite.es",
+"aliases": [
+"Eventbrite"
+]
+},
+{
+"id": "fever",
+"name": "Fever",
+"cat": "Entretenimiento",
+"color": "#0011ff",
+"domain": "feverup.com",
+"aliases": [
+"fever",
+"feverup"
+],
+"strict": true
+},
+{
+"id": "xceed",
+"name": "Xceed",
+"cat": "Entretenimiento",
+"color": "#000000",
+"domain": "xceed.me",
+"aliases": [
+"Xceed"
+]
+},
+{
+"id": "dice",
+"name": "DICE",
+"cat": "Entretenimiento",
+"color": "#000000",
+"domain": "dice.fm",
+"aliases": [
+"dice fm",
+"DICE"
+],
+"strict": true
+},
+{
+"id": "atrapalo",
+"name": "Atrápalo",
+"cat": "Entretenimiento",
+"color": "#e4007c",
+"domain": "atrapalo.com",
+"aliases": [
+"atrapalo",
+"Atrápalo"
+]
+},
+{
+"id": "parque-warner",
+"name": "Parque Warner",
+"cat": "Entretenimiento",
+"color": "#004b9b",
+"domain": "parquewarner.com",
+"aliases": [
+"parque warner"
+]
+},
+{
+"id": "portaventura",
+"name": "PortAventura",
+"cat": "Entretenimiento",
+"color": "#e30613",
+"domain": "portaventuraworld.com",
+"aliases": [
+"portaventura"
+]
+},
+{
+"id": "casino-gran-madrid",
+"name": "Casino Gran Madrid",
+"cat": "Entretenimiento",
+"color": "#000000",
+"domain": "casinogranmadrid.es",
+"aliases": [
+"casino gran madrid"
+]
+},
+{
+"id": "bam-karaoke",
+"name": "BAM Karaoke Box",
+"cat": "Entretenimiento",
+"color": "#e4007c",
+"domain": "bamkaraokebox.com",
+"aliases": [
+"bam karaoke",
+"BAM Karaoke Box"
+]
+},
+{
+"id": "loterias",
+"name": "Loterías y Apuestas",
+"cat": "Entretenimiento",
+"color": "#004b9b",
+"domain": "loteriasyapuestas.es",
+"aliases": [
+"loterias y apuestas",
+"loterias",
+"Loterías y Apuestas"
+]
+},
+{
+"id": "once",
+"name": "ONCE",
+"cat": "Entretenimiento",
+"color": "#00843d",
+"domain": "juegosonce.es",
+"aliases": [
+"juegos once",
+"ONCE"
+],
+"strict": true
+},
+{
+"id": "bet365",
+"name": "bet365",
+"cat": "Entretenimiento",
+"color": "#126e51",
+"domain": "bet365.es",
+"aliases": [
+"bet365"
+]
+},
+{
+"id": "apple",
+"name": "Apple",
+"cat": "Software y Apps",
+"color": "#000000",
+"domain": "apple.com",
+"aliases": [
+"apple com bill",
+"apple",
+"itunes",
+"apple services",
+"app store"
+]
+},
+{
+"id": "google",
+"name": "Google",
+"cat": "Software y Apps",
+"color": "#4285f4",
+"domain": "google.com",
+"aliases": [
+"google",
+"google play",
+"google one",
+"google storage",
+"google payment"
+]
+},
+{
+"id": "microsoft",
+"name": "Microsoft",
+"cat": "Software y Apps",
+"color": "#00a4ef",
+"domain": "microsoft.com",
+"aliases": [
+"microsoft",
+"msft",
+"microsoft 365",
+"office 365"
+]
+},
+{
+"id": "anthropic",
+"name": "Anthropic",
+"cat": "Software y Apps",
+"color": "#d97757",
+"domain": "anthropic.com",
+"aliases": [
+"anthropic",
+"claude ai",
+"claude"
+]
+},
+{
+"id": "openai",
+"name": "OpenAI",
+"cat": "Software y Apps",
+"color": "#10a37f",
+"domain": "openai.com",
+"aliases": [
+"openai",
+"chatgpt"
+]
+},
+{
+"id": "github",
+"name": "GitHub",
+"cat": "Software y Apps",
+"color": "#181717",
+"domain": "github.com",
+"aliases": [
+"GitHub"
+]
+},
+{
+"id": "namecheap",
+"name": "Namecheap",
+"cat": "Software y Apps",
+"color": "#de3723",
+"domain": "namecheap.com",
+"aliases": [
+"Namecheap"
+]
+},
+{
+"id": "digitalocean",
+"name": "DigitalOcean",
+"cat": "Software y Apps",
+"color": "#0080ff",
+"domain": "digitalocean.com",
+"aliases": [
+"digital ocean",
+"digitalocean"
+]
+},
+{
+"id": "aws",
+"name": "Amazon Web Services",
+"cat": "Software y Apps",
+"color": "#ff9900",
+"domain": "aws.amazon.com",
+"aliases": [
+"amazon web services",
+"aws emea",
+"aws"
+],
+"strict": true
+},
+{
+"id": "cloudflare",
+"name": "Cloudflare",
+"cat": "Software y Apps",
+"color": "#f38020",
+"domain": "cloudflare.com",
+"aliases": [
+"Cloudflare"
+]
+},
+{
+"id": "vercel",
+"name": "Vercel",
+"cat": "Software y Apps",
+"color": "#000000",
+"domain": "vercel.com",
+"aliases": [
+"Vercel"
+]
+},
+{
+"id": "hetzner",
+"name": "Hetzner",
+"cat": "Software y Apps",
+"color": "#d50c2d",
+"domain": "hetzner.com",
+"aliases": [
+"Hetzner"
+]
+},
+{
+"id": "ovh",
+"name": "OVHcloud",
+"cat": "Software y Apps",
+"color": "#123f6d",
+"domain": "ovhcloud.com",
+"aliases": [
+"ovh",
+"ovhcloud"
+]
+},
+{
+"id": "ionos",
+"name": "IONOS",
+"cat": "Software y Apps",
+"color": "#003d8f",
+"domain": "ionos.es",
+"aliases": [
+"1&1 ionos",
+"ionos"
+]
+},
+{
+"id": "godaddy",
+"name": "GoDaddy",
+"cat": "Software y Apps",
+"color": "#1bdbdb",
+"domain": "godaddy.com",
+"aliases": [
+"GoDaddy"
+]
+},
+{
+"id": "dropbox",
+"name": "Dropbox",
+"cat": "Software y Apps",
+"color": "#0061ff",
+"domain": "dropbox.com",
+"aliases": [
+"Dropbox"
+]
+},
+{
+"id": "notion",
+"name": "Notion",
+"cat": "Software y Apps",
+"color": "#000000",
+"domain": "notion.so",
+"aliases": [
+"Notion"
+]
+},
+{
+"id": "adobe",
+"name": "Adobe",
+"cat": "Software y Apps",
+"color": "#fa0f00",
+"domain": "adobe.com",
+"aliases": [
+"Adobe"
+]
+},
+{
+"id": "canva",
+"name": "Canva",
+"cat": "Software y Apps",
+"color": "#00c4cc",
+"domain": "canva.com",
+"aliases": [
+"Canva"
+]
+},
+{
+"id": "figma",
+"name": "Figma",
+"cat": "Software y Apps",
+"color": "#f24e1e",
+"domain": "figma.com",
+"aliases": [
+"Figma"
+]
+},
+{
+"id": "jetbrains",
+"name": "JetBrains",
+"cat": "Software y Apps",
+"color": "#000000",
+"domain": "jetbrains.com",
+"aliases": [
+"JetBrains"
+]
+},
+{
+"id": "slack",
+"name": "Slack",
+"cat": "Software y Apps",
+"color": "#4a154b",
+"domain": "slack.com",
+"aliases": [
+"Slack"
+]
+},
+{
+"id": "zoom",
+"name": "Zoom",
+"cat": "Software y Apps",
+"color": "#2d8cff",
+"domain": "zoom.us",
+"aliases": [
+"zoom us",
+"zoom video",
+"Zoom"
+],
+"strict": true
+},
+{
+"id": "nordvpn",
+"name": "NordVPN",
+"cat": "Software y Apps",
+"color": "#4687ff",
+"domain": "nordvpn.com",
+"aliases": [
+"NordVPN"
+]
+},
+{
+"id": "expressvpn",
+"name": "ExpressVPN",
+"cat": "Software y Apps",
+"color": "#da3940",
+"domain": "expressvpn.com",
+"aliases": [
+"ExpressVPN"
+]
+},
+{
+"id": "proton",
+"name": "Proton",
+"cat": "Software y Apps",
+"color": "#6d4aff",
+"domain": "proton.me",
+"aliases": [
+"proton ag",
+"protonmail",
+"Proton"
+]
+},
+{
+"id": "1password",
+"name": "1Password",
+"cat": "Software y Apps",
+"color": "#0572ec",
+"domain": "1password.com",
+"aliases": [
+"1Password"
+]
+},
+{
+"id": "duolingo",
+"name": "Duolingo",
+"cat": "Educación",
+"color": "#58cc02",
+"domain": "duolingo.com",
+"aliases": [
+"Duolingo"
+]
+},
+{
+"id": "udemy",
+"name": "Udemy",
+"cat": "Educación",
+"color": "#a435f0",
+"domain": "udemy.com",
+"aliases": [
+"Udemy"
+]
+},
+{
+"id": "coursera",
+"name": "Coursera",
+"cat": "Educación",
+"color": "#0056d2",
+"domain": "coursera.org",
+"aliases": [
+"Coursera"
+]
+},
+{
+"id": "domestika",
+"name": "Domestika",
+"cat": "Educación",
+"color": "#e30613",
+"domain": "domestika.org",
+"aliases": [
+"Domestika"
+]
+},
+{
+"id": "platzi",
+"name": "Platzi",
+"cat": "Educación",
+"color": "#98ca3f",
+"domain": "platzi.com",
+"aliases": [
+"Platzi"
+]
+},
+{
+"id": "linkedin",
+"name": "LinkedIn",
+"cat": "Software y Apps",
+"color": "#0a66c2",
+"domain": "linkedin.com",
+"aliases": [
+"LinkedIn"
+]
+},
+{
+"id": "paypal",
+"name": "PayPal",
+"cat": "Compras Varias",
+"color": "#003087",
+"domain": "paypal.com",
+"aliases": [
+"paypal"
+]
+},
+{
+"id": "amazon",
+"name": "Amazon",
+"cat": "Compras Varias",
+"color": "#ff9900",
+"icon": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4a/Amazon_icon.svg/330px-Amazon_icon.svg.png",
+"domain": "amazon.es",
+"aliases": [
+"amazon",
+"amzn",
+"amazon mktplace",
+"amazon marketplace",
+"amazon eu"
+]
+},
+{
+"id": "aliexpress",
+"name": "AliExpress",
+"cat": "Compras Varias",
+"color": "#e62e04",
+"domain": "aliexpress.com",
+"aliases": [
+"AliExpress"
+]
+},
+{
+"id": "alipay",
+"name": "Alipay",
+"cat": "Compras Varias",
+"color": "#1677ff",
+"domain": "alipay.com",
+"aliases": [
+"Alipay"
+]
+},
+{
+"id": "temu",
+"name": "Temu",
+"cat": "Compras Varias",
+"color": "#fb7701",
+"domain": "temu.com",
+"aliases": [
+"Temu"
+]
+},
+{
+"id": "shein",
+"name": "SHEIN",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "shein.com",
+"aliases": [
+"SHEIN"
+]
+},
+{
+"id": "ebay",
+"name": "eBay",
+"cat": "Compras Varias",
+"color": "#e53238",
+"domain": "ebay.es",
+"aliases": [
+"ebay"
+],
+"strict": true
+},
+{
+"id": "wallapop",
+"name": "Wallapop",
+"cat": "Compras Varias",
+"color": "#13c1ac",
+"domain": "wallapop.com",
+"aliases": [
+"Wallapop"
+]
+},
+{
+"id": "vinted",
+"name": "Vinted",
+"cat": "Ropa",
+"color": "#09b1ba",
+"domain": "vinted.es",
+"aliases": [
+"Vinted"
+]
+},
+{
+"id": "miravia",
+"name": "Miravia",
+"cat": "Compras Varias",
+"color": "#ff3c00",
+"domain": "miravia.es",
+"aliases": [
+"Miravia"
+]
+},
+{
+"id": "etsy",
+"name": "Etsy",
+"cat": "Compras Varias",
+"color": "#f1641e",
+"domain": "etsy.com",
+"aliases": [
+"Etsy"
+]
+},
+{
+"id": "zalando",
+"name": "Zalando",
+"cat": "Ropa",
+"color": "#ff6900",
+"domain": "zalando.es",
+"aliases": [
+"Zalando"
+]
+},
+{
+"id": "asos",
+"name": "ASOS",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "asos.com",
+"aliases": [
+"ASOS"
+]
+},
+{
+"id": "primor",
+"name": "Primor",
+"cat": "Peluquería|Belleza|Cuidado personal|Compras Varias",
+"color": "#e4007c",
+"domain": "primor.eu",
+"aliases": [
+"Primor"
+]
+},
+{
+"id": "druni",
+"name": "Druni",
+"cat": "Peluquería|Belleza|Cuidado personal|Compras Varias",
+"color": "#e4007c",
+"domain": "druni.es",
+"aliases": [
+"Druni"
+]
+},
+{
+"id": "sephora",
+"name": "Sephora",
+"cat": "Peluquería|Belleza|Cuidado personal|Compras Varias",
+"color": "#000000",
+"domain": "sephora.es",
+"aliases": [
+"Sephora"
+]
+},
+{
+"id": "douglas",
+"name": "Douglas",
+"cat": "Peluquería|Belleza|Cuidado personal|Compras Varias",
+"color": "#9bdcd2",
+"domain": "douglas.es",
+"aliases": [
+"Douglas"
+]
+},
+{
+"id": "kiko",
+"name": "KIKO Milano",
+"cat": "Peluquería|Belleza|Cuidado personal|Compras Varias",
+"color": "#000000",
+"domain": "kikocosmetics.com",
+"aliases": [
+"kiko milano",
+"kiko"
+]
+},
+{
+"id": "rituals",
+"name": "Rituals",
+"cat": "Peluquería|Belleza|Cuidado personal|Compras Varias",
+"color": "#000000",
+"domain": "rituals.com",
+"aliases": [
+"Rituals"
+]
+},
+{
+"id": "lush",
+"name": "Lush",
+"cat": "Peluquería|Belleza|Cuidado personal|Compras Varias",
+"color": "#000000",
+"domain": "lush.com",
+"aliases": [
+"lush"
+],
+"strict": true
+},
+{
+"id": "the-body-shop",
+"name": "The Body Shop",
+"cat": "Peluquería|Belleza|Cuidado personal|Compras Varias",
+"color": "#004236",
+"domain": "thebodyshop.com",
+"aliases": [
+"the body shop"
+]
+},
+{
+"id": "clarel",
+"name": "Clarel",
+"cat": "Peluquería|Belleza|Cuidado personal|Compras Varias",
+"color": "#e4007c",
+"domain": "clarel.es",
+"aliases": [
+"clarel"
+]
+},
+{
+"id": "arenal",
+"name": "Arenal",
+"cat": "Peluquería|Belleza|Cuidado personal|Compras Varias",
+"color": "#e4007c",
+"domain": "arenal.com",
+"aliases": [
+"arenal perfumerias",
+"Arenal"
+],
+"strict": true
+},
+{
+"id": "zara",
+"name": "Zara",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "zara.com",
+"aliases": [
+"zara"
+],
+"strict": true
+},
+{
+"id": "bershka",
+"name": "Bershka",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "bershka.com",
+"aliases": [
+"Bershka"
+]
+},
+{
+"id": "pullbear",
+"name": "Pull&Bear",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "pullandbear.com",
+"aliases": [
+"pull and bear",
+"pull bear",
+"pull&bear",
+"pull & bear"
+]
+},
+{
+"id": "stradivarius",
+"name": "Stradivarius",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "stradivarius.com",
+"aliases": [
+"Stradivarius"
+]
+},
+{
+"id": "massimodutti",
+"name": "Massimo Dutti",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "massimodutti.com",
+"aliases": [
+"massimo dutti"
+]
+},
+{
+"id": "oysho",
+"name": "Oysho",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "oysho.com",
+"aliases": [
+"Oysho"
+]
+},
+{
+"id": "lefties",
+"name": "Lefties",
+"cat": "Ropa",
+"color": "#e30613",
+"domain": "lefties.com",
+"aliases": [
+"Lefties"
+]
+},
+{
+"id": "mango",
+"name": "Mango",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "mango.com",
+"aliases": [
+"mango",
+"mango online",
+"mango outlet"
+],
+"strict": true
+},
+{
+"id": "hm",
+"name": "H&M",
+"cat": "Ropa",
+"color": "#e50010",
+"domain": "hm.com",
+"aliases": [
+"h&m",
+"h & m",
+"hm"
+],
+"strict": true
+},
+{
+"id": "primark",
+"name": "Primark",
+"cat": "Ropa",
+"color": "#0dafe5",
+"domain": "primark.com",
+"aliases": [
+"Primark"
+]
+},
+{
+"id": "uniqlo",
+"name": "Uniqlo",
+"cat": "Ropa",
+"color": "#ff0000",
+"domain": "uniqlo.com",
+"aliases": [
+"Uniqlo"
+]
+},
+{
+"id": "springfield",
+"name": "Springfield",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "myspringfield.com",
+"aliases": [
+"Springfield"
+]
+},
+{
+"id": "cortefiel",
+"name": "Cortefiel",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "cortefiel.com",
+"aliases": [
+"Cortefiel"
+]
+},
+{
+"id": "pedro-del-hierro",
+"name": "Pedro del Hierro",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "pedrodelhierro.com",
+"aliases": [
+"Pedro del Hierro"
+]
+},
+{
+"id": "women-secret",
+"name": "Women'secret",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "womensecret.com",
+"aliases": [
+"women secret",
+"womensecret",
+"Women'secret"
+]
+},
+{
+"id": "sfera",
+"name": "Sfera",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "sfera.com",
+"aliases": [
+"sfera"
+],
+"strict": true
+},
+{
+"id": "desigual",
+"name": "Desigual",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "desigual.com",
+"aliases": [
+"Desigual"
+]
+},
+{
+"id": "hollister",
+"name": "Hollister",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "hollisterco.com",
+"aliases": [
+"Hollister"
+]
+},
+{
+"id": "abercrombie",
+"name": "Abercrombie & Fitch",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "abercrombie.com",
+"aliases": [
+"abercrombie",
+"Abercrombie & Fitch"
+]
+},
+{
+"id": "tommy",
+"name": "Tommy Hilfiger",
+"cat": "Ropa",
+"color": "#00174f",
+"domain": "tommy.com",
+"aliases": [
+"tommy hilfiger"
+]
+},
+{
+"id": "levis",
+"name": "Levi's",
+"cat": "Ropa",
+"color": "#c41230",
+"domain": "levi.com",
+"aliases": [
+"levis",
+"levi s",
+"levi strauss",
+"Levi's"
+]
+},
+{
+"id": "calvinklein",
+"name": "Calvin Klein",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "calvinklein.es",
+"aliases": [
+"calvin klein"
+]
+},
+{
+"id": "lacoste",
+"name": "Lacoste",
+"cat": "Ropa",
+"color": "#004526",
+"domain": "lacoste.com",
+"aliases": [
+"Lacoste"
+]
+},
+{
+"id": "ralph-lauren",
+"name": "Ralph Lauren",
+"cat": "Ropa",
+"color": "#041e42",
+"domain": "ralphlauren.es",
+"aliases": [
+"ralph lauren",
+"polo ralph lauren"
+]
+},
+{
+"id": "c-a",
+"name": "C&A",
+"cat": "Ropa",
+"color": "#e30613",
+"domain": "c-and-a.com",
+"aliases": [
+"c&a",
+"c & a"
+],
+"strict": true
+},
+{
+"id": "kiabi",
+"name": "Kiabi",
+"cat": "Ropa",
+"color": "#00a9e0",
+"domain": "kiabi.es",
+"aliases": [
+"Kiabi"
+]
+},
+{
+"id": "tezenis",
+"name": "Tezenis",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "tezenis.com",
+"aliases": [
+"Tezenis"
+]
+},
+{
+"id": "calzedonia",
+"name": "Calzedonia",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "calzedonia.com",
+"aliases": [
+"Calzedonia"
+]
+},
+{
+"id": "intimissimi",
+"name": "Intimissimi",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "intimissimi.com",
+"aliases": [
+"Intimissimi"
+]
+},
+{
+"id": "parfois",
+"name": "Parfois",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "parfois.com",
+"aliases": [
+"Parfois"
+]
+},
+{
+"id": "pandora",
+"name": "Pandora",
+"cat": "Regalos|Compras Varias",
+"color": "#000000",
+"domain": "pandora.net",
+"aliases": [
+"pandora"
+],
+"strict": true
+},
+{
+"id": "tous",
+"name": "TOUS",
+"cat": "Regalos|Compras Varias",
+"color": "#000000",
+"domain": "tous.com",
+"aliases": [
+"tous"
+],
+"strict": true
+},
+{
+"id": "nike",
+"name": "Nike",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "nike.com",
+"aliases": [
+"nike"
+],
+"strict": true
+},
+{
+"id": "adidas",
+"name": "Adidas",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "adidas.es",
+"aliases": [
+"Adidas"
+]
+},
+{
+"id": "puma",
+"name": "Puma",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "puma.com",
+"aliases": [
+"puma"
+],
+"strict": true
+},
+{
+"id": "newbalance",
+"name": "New Balance",
+"cat": "Ropa",
+"color": "#cf0a2c",
+"domain": "newbalance.es",
+"aliases": [
+"new balance"
+]
+},
+{
+"id": "vans",
+"name": "Vans",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "vans.es",
+"aliases": [
+"vans"
+],
+"strict": true
+},
+{
+"id": "converse",
+"name": "Converse",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "converse.com",
+"aliases": [
+"Converse"
+]
+},
+{
+"id": "skechers",
+"name": "Skechers",
+"cat": "Ropa",
+"color": "#00529b",
+"domain": "skechers.es",
+"aliases": [
+"Skechers"
+]
+},
+{
+"id": "footlocker",
+"name": "Foot Locker",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "footlocker.es",
+"aliases": [
+"foot locker"
+]
+},
+{
+"id": "jdsports",
+"name": "JD Sports",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "jdsports.es",
+"aliases": [
+"jd sports"
+]
+},
+{
+"id": "snipes",
+"name": "Snipes",
+"cat": "Ropa",
+"color": "#000000",
+"domain": "snipes.com",
+"aliases": [
+"Snipes"
+]
+},
+{
+"id": "deichmann",
+"name": "Deichmann",
+"cat": "Ropa",
+"color": "#00843d",
+"domain": "deichmann.com",
+"aliases": [
+"Deichmann"
+]
+},
+{
+"id": "merkal",
+"name": "Merkal",
+"cat": "Ropa",
+"color": "#e30613",
+"domain": "merkal.com",
+"aliases": [
+"Merkal"
+]
+},
+{
+"id": "decathlon",
+"name": "Decathlon",
+"cat": "Deporte",
+"color": "#0082c3",
+"domain": "decathlon.es",
+"aliases": [
+"Decathlon"
+]
+},
+{
+"id": "sprinter",
+"name": "Sprinter",
+"cat": "Deporte",
+"color": "#e30613",
+"domain": "sprinter.es",
+"aliases": [
+"Sprinter"
+]
+},
+{
+"id": "forum-sport",
+"name": "Forum Sport",
+"cat": "Deporte",
+"color": "#e30613",
+"domain": "forumsport.com",
+"aliases": [
+"forum sport"
+]
+},
+{
+"id": "intersport",
+"name": "Intersport",
+"cat": "Deporte",
+"color": "#004b9b",
+"domain": "intersport.es",
+"aliases": [
+"Intersport"
+]
+},
+{
+"id": "basicfit",
+"name": "Basic-Fit",
+"cat": "Deporte",
+"color": "#ff7900",
+"domain": "basic-fit.com",
+"aliases": [
+"basic fit",
+"basicfit",
+"Basic-Fit"
+]
+},
+{
+"id": "mcfit",
+"name": "McFIT",
+"cat": "Deporte",
+"color": "#000000",
+"domain": "mcfit.com",
+"aliases": [
+"mcfit"
+]
+},
+{
+"id": "altafit",
+"name": "Altafit",
+"cat": "Deporte",
+"color": "#e30613",
+"domain": "altafitgymclub.com",
+"aliases": [
+"Altafit"
+]
+},
+{
+"id": "vivagym",
+"name": "VivaGym",
+"cat": "Deporte",
+"color": "#00d26a",
+"domain": "vivagym.es",
+"aliases": [
+"viva gym",
+"vivagym"
+]
+},
+{
+"id": "gofit",
+"name": "GO fit",
+"cat": "Deporte",
+"color": "#000000",
+"domain": "go-fit.es",
+"aliases": [
+"go fit",
+"gofit"
+]
+},
+{
+"id": "dreamfit",
+"name": "DreamFit",
+"cat": "Deporte",
+"color": "#e30613",
+"domain": "dreamfit.es",
+"aliases": [
+"DreamFit"
+]
+},
+{
+"id": "anytime",
+"name": "Anytime Fitness",
+"cat": "Deporte",
+"color": "#5e2a84",
+"domain": "anytimefitness.es",
+"aliases": [
+"anytime fitness"
+]
+},
+{
+"id": "synergym",
+"name": "Synergym",
+"cat": "Deporte",
+"color": "#e30613",
+"domain": "synergym.es",
+"aliases": [
+"Synergym"
+]
+},
+{
+"id": "metropolitan",
+"name": "Metropolitan",
+"cat": "Deporte",
+"color": "#000000",
+"domain": "clubmetropolitan.net",
+"aliases": [
+"club metropolitan",
+"Metropolitan"
+]
+},
+{
+"id": "wellhub",
+"name": "Wellhub",
+"cat": "Deporte",
+"color": "#d8385e",
+"domain": "wellhub.com",
+"aliases": [
+"wellhub",
+"gympass"
+]
+},
+{
+"id": "playtomic",
+"name": "Playtomic",
+"cat": "Deporte",
+"color": "#00205b",
+"domain": "playtomic.io",
+"aliases": [
+"Playtomic"
+]
+},
+{
+"id": "strava",
+"name": "Strava",
+"cat": "Deporte",
+"color": "#fc4c02",
+"domain": "strava.com",
+"aliases": [
+"Strava"
+]
+},
+{
+"id": "mediamarkt",
+"name": "MediaMarkt",
+"cat": "Electrónica",
+"color": "#df0000",
+"domain": "mediamarkt.es",
+"aliases": [
+"media markt",
+"mediamarkt"
+]
+},
+{
+"id": "fnac",
+"name": "Fnac",
+"cat": "Libros / Electrónica",
+"color": "#e1a925",
+"domain": "fnac.es",
+"aliases": [
+"Fnac"
+]
+},
+{
+"id": "pccomponentes",
+"name": "PcComponentes",
+"cat": "Electrónica",
+"color": "#ff6000",
+"domain": "pccomponentes.com",
+"aliases": [
+"pc componentes",
+"pccomponentes"
+]
+},
+{
+"id": "worten",
+"name": "Worten",
+"cat": "Electrónica",
+"color": "#e30613",
+"domain": "worten.es",
+"aliases": [
+"Worten"
+]
+},
+{
+"id": "apple-store",
+"name": "Apple Store",
+"cat": "Electrónica",
+"color": "#000000",
+"domain": "apple.com",
+"aliases": [
+"apple store"
+]
+},
+{
+"id": "xiaomi",
+"name": "Xiaomi",
+"cat": "Electrónica",
+"color": "#ff6900",
+"domain": "mi.com",
+"aliases": [
+"Xiaomi"
+]
+},
+{
+"id": "samsung",
+"name": "Samsung",
+"cat": "Electrónica",
+"color": "#1428a0",
+"domain": "samsung.com",
+"aliases": [
+"Samsung"
+]
+},
+{
+"id": "backmarket",
+"name": "Back Market",
+"cat": "Electrónica",
+"color": "#000000",
+"domain": "backmarket.es",
+"aliases": [
+"back market"
+]
+},
+{
+"id": "coolmod",
+"name": "Coolmod",
+"cat": "Electrónica",
+"color": "#00a0e3",
+"domain": "coolmod.com",
+"aliases": [
+"Coolmod"
+]
+},
+{
+"id": "alternate",
+"name": "Alternate",
+"cat": "Electrónica",
+"color": "#e30613",
+"domain": "alternate.es",
+"aliases": [
+"alternate"
+],
+"strict": true
+},
+{
+"id": "glorious",
+"name": "Glorious Gaming",
+"cat": "Electrónica",
+"color": "#000000",
+"domain": "gloriousgaming.com",
+"aliases": [
+"glorious gaming"
+]
+},
+{
+"id": "logitech",
+"name": "Logitech",
+"cat": "Electrónica",
+"color": "#00b8fc",
+"domain": "logitech.com",
+"aliases": [
+"Logitech"
+]
+},
+{
+"id": "casa-del-libro",
+"name": "Casa del Libro",
+"cat": "Libros / Electrónica",
+"color": "#00843d",
+"domain": "casadellibro.com",
+"aliases": [
+"casa del libro"
+]
+},
+{
+"id": "la-central",
+"name": "La Central",
+"cat": "Libros / Electrónica",
+"color": "#000000",
+"domain": "lacentral.com",
+"aliases": [
+"libreria la central",
+"La Central"
+]
+},
+{
+"id": "kindle",
+"name": "Kindle",
+"cat": "Libros / Electrónica",
+"color": "#ff9900",
+"domain": "amazon.es",
+"aliases": [
+"kindle"
+]
+},
+{
+"id": "ikea",
+"name": "IKEA",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#0058a3",
+"domain": "ikea.com",
+"aliases": [
+"IKEA"
+]
+},
+{
+"id": "leroymerlin",
+"name": "Leroy Merlin",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#78be20",
+"domain": "leroymerlin.es",
+"aliases": [
+"leroy merlin"
+]
+},
+{
+"id": "bricodepot",
+"name": "Brico Depôt",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#004b9b",
+"domain": "bricodepot.es",
+"aliases": [
+"brico depot",
+"Brico Depôt"
+]
+},
+{
+"id": "bricomart",
+"name": "Bricomart",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#e30613",
+"domain": "bricomart.es",
+"aliases": [
+"Bricomart"
+]
+},
+{
+"id": "bauhaus",
+"name": "Bauhaus",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#e30613",
+"domain": "bauhaus.es",
+"aliases": [
+"Bauhaus"
+]
+},
+{
+"id": "aki",
+"name": "AKI",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#e30613",
+"domain": "aki.es",
+"aliases": [
+"aki bricolaje",
+"AKI"
+],
+"strict": true
+},
+{
+"id": "maisons-du-monde",
+"name": "Maisons du Monde",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#000000",
+"domain": "maisonsdumonde.com",
+"aliases": [
+"maisons du monde"
+]
+},
+{
+"id": "jysk",
+"name": "JYSK",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#00447c",
+"domain": "jysk.es",
+"aliases": [
+"JYSK"
+]
+},
+{
+"id": "conforama",
+"name": "Conforama",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#e30613",
+"domain": "conforama.es",
+"aliases": [
+"Conforama"
+]
+},
+{
+"id": "zara-home",
+"name": "Zara Home",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#000000",
+"domain": "zarahome.com",
+"aliases": [
+"zara home"
+]
+},
+{
+"id": "hm-home",
+"name": "H&M Home",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#e50010",
+"domain": "hm.com",
+"aliases": [
+"h&m home"
+]
+},
+{
+"id": "tiger",
+"name": "Flying Tiger",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#e30613",
+"domain": "flyingtiger.com",
+"aliases": [
+"flying tiger"
+]
+},
+{
+"id": "normal",
+"name": "Normal",
+"cat": "Compras Varias",
+"color": "#000000",
+"domain": "normal.dk",
+"aliases": [
+"normal store",
+"Normal"
+],
+"strict": true
+},
+{
+"id": "action",
+"name": "Action",
+"cat": "Compras Varias",
+"color": "#0071ce",
+"domain": "action.com",
+"aliases": [
+"action"
+],
+"strict": true
+},
+{
+"id": "tedi",
+"name": "TEDi",
+"cat": "Compras Varias",
+"color": "#003d7c",
+"domain": "tedi.com",
+"aliases": [
+"tedi"
+],
+"strict": true
+},
+{
+"id": "casa",
+"name": "Casa",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#000000",
+"domain": "casashops.com",
+"aliases": [
+"casa shops",
+"Casa"
+],
+"strict": true
+},
+{
+"id": "el-corte-ingles-hogar",
+"name": "Sfera Hogar",
+"cat": "Casa|Hogar|Compras Varias",
+"color": "#000000",
+"domain": "elcorteingles.es",
+"aliases": [
+"sfera hogar"
+]
+},
+{
+"id": "tiendanimal",
+"name": "Tiendanimal",
+"cat": "Mascotas|Compras Varias",
+"color": "#00a650",
+"domain": "tiendanimal.es",
+"aliases": [
+"Tiendanimal"
+]
+},
+{
+"id": "kiwoko",
+"name": "Kiwoko",
+"cat": "Mascotas|Compras Varias",
+"color": "#8dc63f",
+"domain": "kiwoko.com",
+"aliases": [
+"Kiwoko"
+]
+},
+{
+"id": "zooplus",
+"name": "zooplus",
+"cat": "Mascotas|Compras Varias",
+"color": "#2c6f2c",
+"domain": "zooplus.es",
+"aliases": [
+"zooplus"
+]
+},
+{
+"id": "mascotaplanet",
+"name": "Mascotaplanet",
+"cat": "Mascotas|Compras Varias",
+"color": "#e30613",
+"domain": "mascotaplanet.com",
+"aliases": [
+"Mascotaplanet"
+]
+},
+{
+"id": "toysrus",
+"name": "Toys\"R\"Us",
+"cat": "Regalos|Compras Varias",
+"color": "#004c97",
+"domain": "toysrus.es",
+"aliases": [
+"toys r us",
+"toysrus",
+"Toys\"R\"Us"
+]
+},
+{
+"id": "imaginarium",
+"name": "Imaginarium",
+"cat": "Regalos|Compras Varias",
+"color": "#e30613",
+"domain": "imaginarium.es",
+"aliases": [
+"Imaginarium"
+]
+},
+{
+"id": "juguettos",
+"name": "Juguettos",
+"cat": "Regalos|Compras Varias",
+"color": "#e30613",
+"domain": "juguettos.com",
+"aliases": [
+"Juguettos"
+]
+},
+{
+"id": "interflora",
+"name": "Interflora",
+"cat": "Regalos|Compras Varias",
+"color": "#e30613",
+"domain": "interflora.es",
+"aliases": [
+"Interflora"
+]
+},
+{
+"id": "correos",
+"name": "Correos",
+"cat": "Compras Varias",
+"color": "#ffcd00",
+"domain": "correos.es",
+"aliases": [
+"Correos"
+]
+},
+{
+"id": "seur",
+"name": "SEUR",
+"cat": "Compras Varias",
+"color": "#e30613",
+"domain": "seur.com",
+"aliases": [
+"seur"
+],
+"strict": true
+},
+{
+"id": "mrw",
+"name": "MRW",
+"cat": "Compras Varias",
+"color": "#e30613",
+"domain": "mrw.es",
+"aliases": [
+"mrw"
+],
+"strict": true
+},
+{
+"id": "dhl",
+"name": "DHL",
+"cat": "Compras Varias",
+"color": "#ffcc00",
+"domain": "dhl.com",
+"aliases": [
+"dhl"
+],
+"strict": true
+},
+{
+"id": "ups",
+"name": "UPS",
+"cat": "Compras Varias",
+"color": "#351c15",
+"domain": "ups.com",
+"aliases": [
+"ups"
+],
+"strict": true
+},
+{
+"id": "inpost",
+"name": "InPost",
+"cat": "Compras Varias",
+"color": "#ffcd00",
+"domain": "inpost.es",
+"aliases": [
+"InPost"
+]
+},
+{
+"id": "movistar",
+"name": "Movistar",
+"cat": "Teléfono",
+"color": "#019df4",
+"domain": "movistar.es",
+"aliases": [
+"movistar",
+"telefonica"
+]
+},
+{
+"id": "vodafone",
+"name": "Vodafone",
+"cat": "Teléfono",
+"color": "#e60000",
+"domain": "vodafone.es",
+"aliases": [
+"Vodafone"
+]
+},
+{
+"id": "orange",
+"name": "Orange",
+"cat": "Teléfono",
+"color": "#ff7900",
+"domain": "orange.es",
+"aliases": [
+"orange espagne",
+"orange espana",
+"Orange"
+]
+},
+{
+"id": "yoigo",
+"name": "Yoigo",
+"cat": "Teléfono",
+"color": "#00b2a9",
+"domain": "yoigo.com",
+"aliases": [
+"Yoigo"
+]
+},
+{
+"id": "masmovil",
+"name": "MásMóvil",
+"cat": "Teléfono",
+"color": "#ffe600",
+"domain": "masmovil.es",
+"aliases": [
+"masmovil",
+"mas movil",
+"MásMóvil"
+]
+},
+{
+"id": "digi",
+"name": "DIGI",
+"cat": "Teléfono",
+"color": "#0069b4",
+"domain": "digimobil.es",
+"aliases": [
+"digi mobil",
+"digi spain",
+"digi"
+],
+"strict": true
+},
+{
+"id": "pepephone",
+"name": "Pepephone",
+"cat": "Teléfono",
+"color": "#e30613",
+"domain": "pepephone.com",
+"aliases": [
+"Pepephone"
+]
+},
+{
+"id": "simyo",
+"name": "Simyo",
+"cat": "Teléfono",
+"color": "#ff6600",
+"domain": "simyo.es",
+"aliases": [
+"Simyo"
+]
+},
+{
+"id": "lowi",
+"name": "Lowi",
+"cat": "Teléfono",
+"color": "#e4007c",
+"domain": "lowi.es",
+"aliases": [
+"Lowi"
+]
+},
+{
+"id": "o2",
+"name": "O2",
+"cat": "Teléfono",
+"color": "#0019a5",
+"domain": "o2online.es",
+"aliases": [
+"o2"
+],
+"strict": true
+},
+{
+"id": "jazztel",
+"name": "Jazztel",
+"cat": "Teléfono",
+"color": "#ff7900",
+"domain": "jazztel.com",
+"aliases": [
+"Jazztel"
+]
+},
+{
+"id": "finetwork",
+"name": "Finetwork",
+"cat": "Teléfono",
+"color": "#00a0e3",
+"domain": "finetwork.com",
+"aliases": [
+"Finetwork"
+]
+},
+{
+"id": "iberdrola",
+"name": "Iberdrola",
+"cat": "Suministros",
+"color": "#00a443",
+"domain": "iberdrola.es",
+"aliases": [
+"Iberdrola"
+]
+},
+{
+"id": "endesa",
+"name": "Endesa",
+"cat": "Suministros",
+"color": "#00a0e3",
+"domain": "endesa.com",
+"aliases": [
+"Endesa"
+]
+},
+{
+"id": "naturgy",
+"name": "Naturgy",
+"cat": "Suministros",
+"color": "#004571",
+"domain": "naturgy.es",
+"aliases": [
+"Naturgy"
+]
+},
+{
+"id": "totalenergies",
+"name": "TotalEnergies",
+"cat": "Suministros",
+"color": "#e30613",
+"domain": "totalenergies.es",
+"aliases": [
+"totalenergies",
+"total energies"
+]
+},
+{
+"id": "holaluz",
+"name": "Holaluz",
+"cat": "Suministros",
+"color": "#ff6c00",
+"domain": "holaluz.com",
+"aliases": [
+"Holaluz"
+]
+},
+{
+"id": "octopus",
+"name": "Octopus Energy",
+"cat": "Suministros",
+"color": "#e4007c",
+"domain": "octopusenergy.es",
+"aliases": [
+"octopus energy"
+]
+},
+{
+"id": "repsol-luz",
+"name": "Repsol Luz y Gas",
+"cat": "Suministros",
+"color": "#ff7f00",
+"domain": "repsol.es",
+"aliases": [
+"repsol luz",
+"Repsol Luz y Gas"
+]
+},
+{
+"id": "canal-isabel-ii",
+"name": "Canal de Isabel II",
+"cat": "Suministros",
+"color": "#0072bc",
+"domain": "canaldeisabelsegunda.es",
+"aliases": [
+"canal de isabel",
+"canal isabel",
+"Canal de Isabel II"
+]
+},
+{
+"id": "aguas-de-barcelona",
+"name": "Aguas de Barcelona",
+"cat": "Suministros",
+"color": "#0072bc",
+"domain": "aiguesdebarcelona.cat",
+"aliases": [
+"agbar",
+"aigues de barcelona",
+"Aguas de Barcelona"
+]
+},
+{
+"id": "mapfre",
+"name": "Mapfre",
+"cat": "Seguros",
+"color": "#e30613",
+"domain": "mapfre.es",
+"aliases": [
+"Mapfre"
+]
+},
+{
+"id": "mutua",
+"name": "Mutua Madrileña",
+"cat": "Seguros",
+"color": "#004b9b",
+"domain": "mutua.es",
+"aliases": [
+"mutua madrilena",
+"Mutua Madrileña"
+]
+},
+{
+"id": "axa",
+"name": "AXA",
+"cat": "Seguros",
+"color": "#00008f",
+"domain": "axa.es",
+"aliases": [
+"axa"
+],
+"strict": true
+},
+{
+"id": "allianz",
+"name": "Allianz",
+"cat": "Seguros",
+"color": "#003781",
+"domain": "allianz.es",
+"aliases": [
+"Allianz"
+]
+},
+{
+"id": "sanitas",
+"name": "Sanitas",
+"cat": "Médico",
+"color": "#00a9e0",
+"domain": "sanitas.es",
+"aliases": [
+"Sanitas"
+]
+},
+{
+"id": "adeslas",
+"name": "Adeslas",
+"cat": "Médico",
+"color": "#00a650",
+"domain": "adeslas.es",
+"aliases": [
+"Adeslas"
+]
+},
+{
+"id": "asisa",
+"name": "Asisa",
+"cat": "Médico",
+"color": "#004b9b",
+"domain": "asisa.es",
+"aliases": [
+"Asisa"
+]
+},
+{
+"id": "dkv",
+"name": "DKV",
+"cat": "Médico",
+"color": "#00843d",
+"domain": "dkv.es",
+"aliases": [
+"dkv"
+],
+"strict": true
+},
+{
+"id": "linea-directa",
+"name": "Línea Directa",
+"cat": "Seguros",
+"color": "#e30613",
+"domain": "lineadirecta.com",
+"aliases": [
+"linea directa",
+"Línea Directa"
+]
+},
+{
+"id": "genesis",
+"name": "Génesis",
+"cat": "Seguros",
+"color": "#004b9b",
+"domain": "genesis.es",
+"aliases": [
+"genesis seguros",
+"Génesis"
+]
+},
+{
+"id": "verti",
+"name": "Verti",
+"cat": "Seguros",
+"color": "#00a650",
+"domain": "verti.es",
+"aliases": [
+"Verti"
+]
+},
+{
+"id": "generali",
+"name": "Generali",
+"cat": "Seguros",
+"color": "#c21b17",
+"domain": "generali.es",
+"aliases": [
+"Generali"
+]
+},
+{
+"id": "zurich",
+"name": "Zurich",
+"cat": "Seguros",
+"color": "#2167ae",
+"domain": "zurich.es",
+"aliases": [
+"Zurich"
+]
+},
+{
+"id": "santalucia",
+"name": "Santalucía",
+"cat": "Seguros",
+"color": "#00843d",
+"domain": "santalucia.es",
+"aliases": [
+"santalucia",
+"santa lucia seguros",
+"Santalucía"
+]
+},
+{
+"id": "quironsalud",
+"name": "Quirónsalud",
+"cat": "Médico",
+"color": "#004b9b",
+"domain": "quironsalud.com",
+"aliases": [
+"quironsalud",
+"quiron",
+"Quirónsalud"
+]
+},
+{
+"id": "vithas",
+"name": "Vithas",
+"cat": "Médico",
+"color": "#004b9b",
+"domain": "vithas.es",
+"aliases": [
+"Vithas"
+]
+},
+{
+"id": "hm-hospitales",
+"name": "HM Hospitales",
+"cat": "Médico",
+"color": "#00843d",
+"domain": "hmhospitales.com",
+"aliases": [
+"hm hospitales"
+]
+},
+{
+"id": "vitaldent",
+"name": "Vitaldent",
+"cat": "Médico",
+"color": "#e4007c",
+"domain": "vitaldent.com",
+"aliases": [
+"Vitaldent"
+]
+},
+{
+"id": "dentix",
+"name": "Dentix",
+"cat": "Médico",
+"color": "#00a0e3",
+"domain": "dentix.es",
+"aliases": [
+"Dentix"
+]
+},
+{
+"id": "multiopticas",
+"name": "Multiópticas",
+"cat": "Médico",
+"color": "#e30613",
+"domain": "multiopticas.com",
+"aliases": [
+"multiopticas",
+"Multiópticas"
+]
+},
+{
+"id": "general-optica",
+"name": "General Óptica",
+"cat": "Médico",
+"color": "#004b9b",
+"domain": "generaloptica.es",
+"aliases": [
+"general optica",
+"General Óptica"
+]
+},
+{
+"id": "alain-afflelou",
+"name": "Alain Afflelou",
+"cat": "Médico",
+"color": "#e30613",
+"domain": "afflelou.es",
+"aliases": [
+"afflelou",
+"Alain Afflelou"
+]
+},
+{
+"id": "specsavers",
+"name": "Specsavers",
+"cat": "Médico",
+"color": "#00843d",
+"domain": "specsavers.es",
+"aliases": [
+"Specsavers"
+]
+},
+{
+"id": "doctoralia",
+"name": "Doctoralia",
+"cat": "Médico",
+"color": "#00c3a5",
+"domain": "doctoralia.es",
+"aliases": [
+"Doctoralia"
+]
+},
+{
+"id": "mifarma",
+"name": "Mifarma",
+"cat": "Farmacia",
+"color": "#00a650",
+"domain": "mifarma.es",
+"aliases": [
+"Mifarma"
+]
+},
+{
+"id": "promofarma",
+"name": "PromoFarma",
+"cat": "Farmacia",
+"color": "#00a0e3",
+"domain": "promofarma.com",
+"aliases": [
+"PromoFarma"
+]
+},
+{
+"id": "dosfarma",
+"name": "DosFarma",
+"cat": "Farmacia",
+"color": "#e30613",
+"domain": "dosfarma.com",
+"aliases": [
+"DosFarma"
+]
+},
+{
+"id": "atida",
+"name": "Atida",
+"cat": "Farmacia",
+"color": "#00a650",
+"domain": "atida.com",
+"aliases": [
+"atida"
+]
+},
+{
+"id": "cm-sanchinarro",
+"name": "CM Sanchinarro",
+"cat": "Médico",
+"color": "#000000",
+"domain": null,
+"aliases": [
+"cm sanchinarro"
+]
+},
+{
+"id": "parclick",
+"name": "Parclick",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#00a0e3",
+"domain": "parclick.com",
+"aliases": [
+"Parclick"
+]
+},
+{
+"id": "telpark",
+"name": "Telpark",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#e30613",
+"domain": "telpark.com",
+"aliases": [
+"Telpark"
+]
+},
+{
+"id": "empark",
+"name": "Empark",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#004b9b",
+"domain": "empark.com",
+"aliases": [
+"Empark"
+]
+},
+{
+"id": "saba",
+"name": "Saba",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#e30613",
+"domain": "saba.es",
+"aliases": [
+"saba"
+],
+"strict": true
+},
+{
+"id": "elparking",
+"name": "ElParking",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#00b2a9",
+"domain": "elparking.com",
+"aliases": [
+"elparking"
+]
+},
+{
+"id": "via-t",
+"name": "Bip&Drive",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#e30613",
+"domain": "bipandgo.com",
+"aliases": [
+"bip drive",
+"bip&drive",
+"bip & drive"
+]
+},
+{
+"id": "itv",
+"name": "ITV",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#004b9b",
+"domain": null,
+"aliases": [
+"itv"
+],
+"strict": true
+},
+{
+"id": "norauto",
+"name": "Norauto",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#004b9b",
+"domain": "norauto.es",
+"aliases": [
+"Norauto"
+]
+},
+{
+"id": "midas",
+"name": "Midas",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#ffcd00",
+"domain": "midas.es",
+"aliases": [
+"midas"
+],
+"strict": true
+},
+{
+"id": "feu-vert",
+"name": "Feu Vert",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#00843d",
+"domain": "feuvert.es",
+"aliases": [
+"feu vert"
+]
+},
+{
+"id": "mister-auto",
+"name": "Mister Auto",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#e30613",
+"domain": "mister-auto.es",
+"aliases": [
+"mister auto"
+]
+},
+{
+"id": "oscaro",
+"name": "Oscaro",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#e30613",
+"domain": "oscaro.es",
+"aliases": [
+"Oscaro"
+]
+},
+{
+"id": "racc",
+"name": "RACC",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#ffcd00",
+"domain": "racc.es",
+"aliases": [
+"racc"
+],
+"strict": true
+},
+{
+"id": "race",
+"name": "RACE",
+"cat": "Coche|Parking|Compras Varias",
+"color": "#004b9b",
+"domain": "race.es",
+"aliases": [
+"real automovil club",
+"race"
+],
+"strict": true
+},
+{
+"id": "zity",
+"name": "Zity",
+"cat": "Transporte Público",
+"color": "#00b2a9",
+"domain": "zity.eco",
+"aliases": [
+"zity"
+],
+"strict": true
+},
+{
+"id": "share-now",
+"name": "SHARE NOW",
+"cat": "Transporte Público",
+"color": "#00a0e3",
+"domain": "share-now.com",
+"aliases": [
+"share now"
+]
+},
+{
+"id": "wible",
+"name": "Wible",
+"cat": "Transporte Público",
+"color": "#00a650",
+"domain": "wible.es",
+"aliases": [
+"wible"
+],
+"strict": true
+},
+{
+"id": "sixt",
+"name": "Sixt",
+"cat": "Viaje|Viajes|Hotel",
+"color": "#ff5f00",
+"domain": "sixt.es",
+"aliases": [
+"sixt"
+],
+"strict": true
+},
+{
+"id": "europcar",
+"name": "Europcar",
+"cat": "Viaje|Viajes|Hotel",
+"color": "#00a650",
+"domain": "europcar.es",
+"aliases": [
+"Europcar"
+]
+},
+{
+"id": "hertz",
+"name": "Hertz",
+"cat": "Viaje|Viajes|Hotel",
+"color": "#ffd100",
+"domain": "hertz.es",
+"aliases": [
+"hertz"
+],
+"strict": true
+},
+{
+"id": "avis",
+"name": "Avis",
+"cat": "Viaje|Viajes|Hotel",
+"color": "#d4002a",
+"domain": "avis.es",
+"aliases": [
+"avis"
+],
+"strict": true
+},
+{
+"id": "goldcar",
+"name": "Goldcar",
+"cat": "Viaje|Viajes|Hotel",
+"color": "#ffcd00",
+"domain": "goldcar.es",
+"aliases": [
+"Goldcar"
+]
+},
+{
+"id": "trade-republic",
+"name": "Trade Republic",
+"cat": "Comisiones|Bancos",
+"color": "#000000",
+"domain": "traderepublic.com",
+"aliases": [
+"trade republic"
+]
+},
+{
+"id": "revolut",
+"name": "Revolut",
+"cat": "Comisiones|Bancos",
+"color": "#000000",
+"domain": "revolut.com",
+"aliases": [
+"Revolut"
+]
+},
+{
+"id": "cashzone",
+"name": "Cashzone",
+"cat": "Efectivo|Retirada de efectivo|Cajero",
+"color": "#e30613",
+"domain": "cashzone.es",
+"aliases": [
+"Cashzone"
+]
+},
+{
+"id": "euronet",
+"name": "Euronet",
+"cat": "Efectivo|Retirada de efectivo|Cajero",
+"color": "#004b9b",
+"domain": "euronetworldwide.com",
+"aliases": [
+"euronet"
+]
+},
+{
+"id": "unicef",
+"name": "UNICEF",
+"cat": "Donaciones|ONG",
+"color": "#1cabe2",
+"domain": "unicef.es",
+"aliases": [
+"UNICEF"
+]
+},
+{
+"id": "cruz-roja",
+"name": "Cruz Roja",
+"cat": "Donaciones|ONG",
+"color": "#e30613",
+"domain": "cruzroja.es",
+"aliases": [
+"cruz roja"
+]
+},
+{
+"id": "msf",
+"name": "Médicos Sin Fronteras",
+"cat": "Donaciones|ONG",
+"color": "#e30613",
+"domain": "msf.es",
+"aliases": [
+"medicos sin fronteras",
+"Médicos Sin Fronteras"
+]
+},
+{
+"id": "wikipedia",
+"name": "Wikipedia",
+"cat": "Donaciones|ONG",
+"color": "#000000",
+"domain": "wikipedia.org",
+"aliases": [
+"wikimedia",
+"Wikipedia"
+]
+},
+{
+"id": "estanco",
+"name": "Estanco",
+"cat": "Tabaco|Compras Varias",
+"color": "#8b5a2b",
+"domain": null,
+"aliases": [
+"expendeduria",
+"estanco"
+]
+},
+{
+"id": "lottery",
+"name": "Lotería",
+"cat": "Entretenimiento",
+"color": "#004b9b",
+"domain": null,
+"aliases": [
+"administracion de loteria",
+"Lotería"
+]
+}
+],
+"keywords": [
+{
+"words": [
+"restaurante",
+"asador",
+"marisqueria",
+"arroceria",
+"trattoria",
+"brasserie",
+"bistro",
+"mesón",
+"meson",
+"taqueria",
+"ramen",
+"sushi",
+"izakaya",
+"tapas",
+"taperia",
+"steakhouse",
+"grill",
+"pasta"
+],
+"cat": "Restaurante"
+},
+{
+"words": [
+"pizzeria",
+"pizza",
+"kebab",
+"doner",
+"burger",
+"hamburgueseria",
+"bocateria",
+"bocadillos",
+"shawarma",
+"falafel",
+"vending",
+"take away"
+],
+"cat": "Comida Rápida"
+},
+{
+"words": [
+"bar",
+"cerveceria",
+"cafeteria",
+"cafe",
+"coffee",
+"taberna",
+"tasca",
+"pub",
+"cocteleria",
+"coctel",
+"cocktail",
+"churreria",
+"heladeria",
+"pasteleria",
+"panaderia",
+"horno",
+"bakery",
+"brunch",
+"tetería",
+"teteria",
+"vinoteca"
+],
+"cat": "Bar / Cafetería"
+},
+{
+"words": [
+"supermercado",
+"supermercados",
+"super mercado",
+"mini mercado",
+"minimercado",
+"mini market",
+"minimarket",
+"alimentacion",
+"autoservicio",
+"fruteria",
+"carniceria",
+"pescaderia",
+"charcuteria",
+"ultramarinos",
+"grocery",
+"mercado municipal",
+"hipermercado"
+],
+"cat": "Supermercado"
+},
+{
+"words": [
+"hotel",
+"hostal",
+"hostel",
+"pension",
+"apartamentos",
+"apartahotel",
+"albergue",
+"camping",
+"motel"
+],
+"cat": "Hotel"
+},
+{
+"words": [
+"farmacia",
+"parafarmacia",
+"pharmacy"
+],
+"cat": "Farmacia"
+},
+{
+"words": [
+"clinica",
+"hospital",
+"dentista",
+"dental",
+"fisioterapia",
+"fisio",
+"podologo",
+"psicologo",
+"optica",
+"veterinario",
+"veterinaria",
+"laboratorio",
+"policlinica",
+"centro medico"
+],
+"cat": "Médico"
+},
+{
+"words": [
+"gasolinera",
+"estacion de servicio",
+"carburantes",
+"area de servicio"
+],
+"cat": "Gasolinera"
+},
+{
+"words": [
+"taxi",
+"radio taxi",
+"teletaxi",
+"vtc"
+],
+"cat": "Taxi / Uber"
+},
+{
+"words": [
+"parking",
+"aparcamiento",
+"autopista",
+"peaje",
+"lavado",
+"taller",
+"neumaticos"
+],
+"cat": "Coche|Parking|Compras Varias"
+},
+{
+"words": [
+"gimnasio",
+"gym",
+"fitness",
+"crossfit",
+"padel",
+"piscina",
+"polideportivo",
+"yoga",
+"pilates",
+"escalada",
+"boxeo",
+"club deportivo"
+],
+"cat": "Deporte"
+},
+{
+"words": [
+"peluqueria",
+"barberia",
+"barber",
+"nail",
+"nails",
+"unas",
+"estetica",
+"beauty",
+"spa",
+"depilacion",
+"cosmetica",
+"perfumeria"
+],
+"cat": "Peluquería|Belleza|Cuidado personal|Compras Varias"
+},
+{
+"words": [
+"libreria",
+"papeleria",
+"books",
+"comics"
+],
+"cat": "Libros / Electrónica"
+},
+{
+"words": [
+"cine",
+"cines",
+"teatro",
+"museo",
+"karaoke",
+"discoteca",
+"concierto",
+"bolera",
+"escape room",
+"entradas"
+],
+"cat": "Entretenimiento"
+},
+{
+"words": [
+"ferreteria",
+"bricolaje",
+"muebles",
+"mobiliario",
+"decoracion",
+"drogueria",
+"floristeria",
+"jardineria"
+],
+"cat": "Casa|Hogar|Compras Varias"
+},
+{
+"words": [
+"academia",
+"colegio",
+"universidad",
+"facultad",
+"escuela",
+"instituto",
+"matricula"
+],
+"cat": "Educación"
+},
+{
+"words": [
+"tienda de ropa",
+"moda",
+"zapateria",
+"calzados",
+"boutique"
+],
+"cat": "Ropa"
+},
+{
+"words": [
+"estanco",
+"tabacos",
+"tabaco"
+],
+"cat": "Tabaco|Compras Varias"
+},
+{
+"words": [
+"retirada de efectivo",
+"cajero",
+"atm",
+"cash withdrawal"
+],
+"cat": "Efectivo|Retirada de efectivo|Cajero"
+},
+{
+"words": [
+"billete",
+"billetes",
+"autobus",
+"autobuses",
+"ferrocarril",
+"cercanias",
+"tranvia",
+"metro",
+"bus"
+],
+"cat": "Transporte Público"
+},
+{
+"words": [
+"mascotas",
+"pet shop"
+],
+"cat": "Mascotas|Compras Varias"
+},
+{
+"words": [
+"seguro",
+"seguros",
+"aseguradora"
+],
+"cat": "Seguros"
+},
+{
+"words": [
+"vuelo",
+"vuelos",
+"airlines",
+"airways",
+"aerolineas",
+"viajes"
+],
+"cat": "Vuelos"
+},
+{
+"words": [
+"software",
+"hosting",
+"google cloud"
+],
+"cat": "Software y Apps"
+},
+{
+"words": [
+"medico",
+"medica"
+],
+"cat": "Médico"
+},
+{
+"words": [
+"apartamento"
+],
+"cat": "Hotel"
+},
+{
+"words": [
+"barrika",
+"bertiz",
+"la pecera"
+],
+"cat": "Bar / Cafetería"
+},
+{
+"words": [
+"celicioso",
+"principe carlos",
+"sanabres",
+"sanabr"
+],
+"cat": "Restaurante"
+},
+{
+"words": [
+"deeventoss",
+"eventoss"
+],
+"cat": "Entretenimiento"
+}
+]
+}

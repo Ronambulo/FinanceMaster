@@ -844,6 +844,7 @@ def execute_tool(tool_name: str, tool_input: dict, db: Session, user_id: int) ->
         old_cat_name = tx.category.name if tx.category else "Sin categoría"
         tx.category_id = chosen_cat.id
         tx.is_ai_categorized = True
+        tx.category_source = "ai"
         tx.is_auto_categorized = False
         db.commit()
 
@@ -1216,6 +1217,7 @@ async def categorize_batch(
 
         tx.category_id = match.id
         tx.is_ai_categorized = True
+        tx.category_source = "ai"
         tx.is_auto_categorized = False
 
         results.append({

@@ -129,3 +129,24 @@ export function periodWords(isCycle: boolean) {
     : { isCycle, unit: 'mes', Unit: 'Mes', this: 'este mes', This: 'Este mes', last: 'Mes pasado', three: '3 meses', each: 'Mes a mes', none: 'Aún no hay meses' }
 }
 export type PeriodWords = ReturnType<typeof periodWords>
+
+/** Cambio de un importe frente al periodo anterior, en % redondeado (null si antes no había nada). */
+export function changePct(cur: number, prev: number): number | null {
+  if (!(prev > 0)) return null
+  return Math.round(((cur - prev) / prev) * 100)
+}
+
+/** "+12 %", "−5 %" o "igual". */
+export function changeText(pct: number): string {
+  if (pct === 0) return 'igual'
+  return `${pct > 0 ? '+' : '−'}${Math.abs(pct)} %`
+}
+
+const ISO_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/** Fechas del enlace del aviso de nómina; null si faltan o no tienen sentido. */
+export function parseCloseRange(start: string | null, end: string | null): { start: string; end: string } | null {
+  if (!start || !end || !ISO_RE.test(start) || !ISO_RE.test(end)) return null
+  if (isNaN(parse(start).getTime()) || isNaN(parse(end).getTime()) || end < start) return null
+  return { start, end }
+}

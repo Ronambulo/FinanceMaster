@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { catApi, dashApi, txApi, type Category, type Transaction } from '@/lib/api'
-import { accountName, amountText, categoriesFor, isManualTx, kindToType, parseAmount, shortDate, signedAmount, txKind, type TxKind } from '@/lib/movements'
+import { accountName, amountText, categoriesFor, cleanAmount, isManualTx, kindToType, parseAmount, shortDate, signedAmount, toServerTime, txKind, txTime, type TxKind } from '@/lib/movements'
 import { useIsPC } from '@/app/Shell'
 import { BankLogo } from '@/ui/BankLogo'
 import { CatPickSheet } from '@/ui/CatPick'
@@ -43,11 +43,13 @@ function Form({ tx, pc }: { tx: Transaction; pc: boolean }) {
   const [catId, setCatId] = useState<number | null>(tx.category_id)
   const [source, setSource] = useState(tx.source || 'manual')
   const [date, setDate] = useState(tx.date.slice(0, 10))
+  const [time, setTime] = useState(txTime(tx.datetime))
   const [note, setNote] = useState(tx.note ?? '')
   const [exclude, setExclude] = useState(tx.exclude_from_stats)
   const [sheet, setSheet] = useState<'cat' | 'account' | null>(null)
   const [busy, setBusy] = useState(false)
   const dateRef = useRef<HTMLInputElement>(null)
+  const timeRef = useRef<HTMLInputElement>(null)
   const amountRef = useRef<HTMLInputElement>(null)
   const categories = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: dashApi.accounts, enabled: manual })
@@ -74,6 +76,7 @@ function Form({ tx, pc }: { tx: Transaction; pc: boolean }) {
       const type = kindToType(kind, tx.type)
       if (type !== tx.type) data.type = type
       if (date !== tx.date.slice(0, 10)) data.date = date
+      if (time && (date !== tx.date.slice(0, 10) || time !== txTime(tx.datetime))) data.datetime = toServerTime(date, time)
       if (source !== (tx.source || 'manual')) data.source = source
     }
     if (!Object.keys(data).length) { back(); return }
@@ -99,8 +102,7 @@ function Form({ tx, pc }: { tx: Transaction; pc: boolean }) {
   const pad = pc ? 0 : 16
   const sources = [...new Set([...(accounts.data ?? []).map(a => a.source).filter(s => s !== 'manual'), 'manual'])]
   const canSplit = kind !== 'transfer' && !tx.split_parent_id && !tx.link_group_id
-  const openDate = () => {
-    const el = dateRef.current
+  const openPicker = (el: HTMLInputElement | null) => {
     if (!el) return
     try { el.showPicker() } catch { el.focus(); el.click() }
   }
@@ -119,7 +121,7 @@ function Form({ tx, pc }: { tx: Transaction; pc: boolean }) {
       </div>
       <div style={{ margin: '18px 0 4px', display: 'flex', alignItems: 'baseline', justifyContent: 'center' }}>
         {manual ? (
-          <input ref={amountRef} aria-label="Importe" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d,.]/g, ''))}
+          <input ref={amountRef} aria-label="Importe" inputMode="decimal" value={amount} onChange={e => setAmount(cleanAmount(e.target.value))}
             style={{ width: `${Math.max(amount.length, 1) + 0.5}ch`, maxWidth: '80%', border: 0, background: 'transparent', color: C.text, font: `800 46px ${FONT}`, letterSpacing: '-0.03em', textAlign: 'center', outline: 'none', caretColor: 'var(--c-b3aeff)', padding: 0 }} />
         ) : (
           <span style={{ fontSize: 46, fontWeight: 800, letterSpacing: '-0.03em' }}>{amount}</span>
@@ -131,13 +133,18 @@ function Form({ tx, pc }: { tx: Transaction; pc: boolean }) {
         {kind !== 'transfer' && (
           <PickField label="Categoría" onClick={() => setSheet('cat')} lead={<CatTile name={cat?.name} type={cat?.type} size={30} icon={14} />}>{cat?.name ?? 'Sin categoría'}</PickField>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <PickField label="Cuenta" disabled={!manual} onClick={() => setSheet('account')}
-            lead={source === 'manual' ? <IconTile icon="wallet" size={30} radius={9} bg={C.soft} color={C.accentText} iconSize={16} /> : <BankLogo source={source} size={30} radius={9} />}>{accountName(source)}</PickField>
+        <PickField label="Cuenta" disabled={!manual} onClick={() => setSheet('account')}
+          lead={source === 'manual' ? <IconTile icon="wallet" size={30} radius={9} bg={C.soft} color={C.accentText} iconSize={16} /> : <BankLogo source={source} size={30} radius={9} />}>{accountName(source)}</PickField>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr)', gap: 10 }}>
           <div style={{ position: 'relative', minWidth: 0 }}>
-            <PickField label="Fecha" disabled={!manual} onClick={openDate}
+            <PickField label="Fecha" disabled={!manual} onClick={() => openPicker(dateRef.current)}
               lead={<span style={{ color: C.muted, display: 'flex', paddingLeft: 4 }}><Icon name="calendar" size={18} /></span>}>{shortDate(date)}</PickField>
             {manual && <input ref={dateRef} type="date" tabIndex={-1} aria-hidden="true" value={date} max={new Date().toISOString().slice(0, 10)} onChange={e => e.target.value && setDate(e.target.value)} style={{ position: 'absolute', left: 0, bottom: 12, width: 1, height: 1, opacity: 0, pointerEvents: 'none' }} />}
+          </div>
+          <div style={{ position: 'relative', minWidth: 0 }}>
+            <PickField label="Hora" disabled={!manual} onClick={() => openPicker(timeRef.current)}
+              lead={<span style={{ color: C.muted, display: 'flex', paddingLeft: 4 }}><Icon name="history-record" size={18} /></span>}>{time || 'Sin hora'}</PickField>
+            {manual && <input ref={timeRef} type="time" tabIndex={-1} aria-hidden="true" value={time} onChange={e => e.target.value && setTime(e.target.value)} style={{ position: 'absolute', left: 0, bottom: 12, width: 1, height: 1, opacity: 0, pointerEvents: 'none' }} />}
           </div>
         </div>
         <Field label="Nota" id="ed-nota" placeholder="Añadir nota" value={note} onChange={e => setNote(e.target.value)} style={{ margin: 0 }} />

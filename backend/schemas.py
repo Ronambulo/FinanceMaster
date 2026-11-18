@@ -1,8 +1,16 @@
 from datetime import datetime, date
 from datetime import date as DateType  # para campos que se llaman `date`
+from datetime import datetime as DateTimeType, timezone as _tz  # para campos que se llaman `datetime`
 from typing import Optional, List
 from pydantic import BaseModel, EmailStr, field_validator
 from .models import CategoryType, DebtDirection, GoalType, GoalCategory
+
+
+def _naive_utc(v):
+    """Las horas se guardan en UTC sin zona, como las de los bancos."""
+    if isinstance(v, DateTimeType) and v.tzinfo is not None:
+        return v.astimezone(_tz.utc).replace(tzinfo=None)
+    return v
 
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
@@ -122,6 +130,9 @@ class TransactionCreate(BaseModel):
     source: Optional[str] = None
     note: Optional[str] = None
     is_internal_transfer: Optional[bool] = None
+    # Momento exacto (con zona); `date` sigue siendo el día local.
+    datetime: Optional[DateTimeType] = None
+    _dt = field_validator("datetime")(lambda v: _naive_utc(v))
 
 class TransferCreate(BaseModel):
     amount: float
@@ -129,6 +140,8 @@ class TransferCreate(BaseModel):
     from_source: str
     to_source: str
     note: Optional[str] = None
+    datetime: Optional[DateTimeType] = None
+    _dt = field_validator("datetime")(lambda v: _naive_utc(v))
 
 class QuickTransactionCreate(BaseModel):
     """Entrada simplificada para clientes externos (p.ej. un Atajo de iOS) que
@@ -165,10 +178,20 @@ class TransactionUpdate(BaseModel):
     is_ai_categorized: Optional[bool] = None
     source: Optional[str] = None
     note: Optional[str] = None
+    datetime: Optional[DateTimeType] = None
+    _dt = field_validator("datetime")(lambda v: _naive_utc(v))
 
 class SplitPart(BaseModel):
     category_id: Optional[int] = None
     amount: float  # en positivo; el signo lo pone el movimiento original
+
+class MerchantOut(BaseModel):
+    key: str
+    name: str
+    brand: Optional[str] = None
+    color: Optional[str] = None
+    logo: Optional[str] = None
+
 
 class TransactionOut(BaseModel):
     id: int
@@ -193,6 +216,8 @@ class TransactionOut(BaseModel):
     category: Optional[CategoryOut]
     is_auto_categorized: bool
     is_ai_categorized: bool = False
+    category_source: Optional[str] = None
+    merchant: Optional[MerchantOut] = None
     is_internal_transfer: bool
     exclude_from_stats: bool = False
     is_pending: bool = False
@@ -233,6 +258,7 @@ class PreferencesUpdate(BaseModel):
     ultra_modules: Optional[dict] = None
     cat_icons: Optional[str] = None
     home_cards: Optional[List[str]] = None
+    notify: Optional[dict] = None
 
 
 class BulkCategoryRequest(BaseModel):
@@ -272,6 +298,7 @@ class TransactionGroup(BaseModel):
     color: Optional[str] = None
     # Por comercio: la categoría más reciente, para pintar su ficha.
     category_name: Optional[str] = None
+    merchant: Optional[MerchantOut] = None
 
 
 class TransactionListResponse(BaseModel):
@@ -303,6 +330,7 @@ class RecurringGroupOut(BaseModel):
     is_dismissed: Optional[bool] = False
     transaction_count: int = 0
     amount_options: List[AmountOption] = []
+    merchant: Optional[MerchantOut] = None
     model_config = {"from_attributes": True}
 
 class RecurringGroupUpdate(BaseModel):
@@ -365,6 +393,8 @@ class GoalCreate(BaseModel):
     target_percent: Optional[float] = None
     category: Optional[GoalCategory] = None
     deadline: Optional[date] = None
+    auto_mode: Optional[str] = None      # "off" | "amount" | "percent"
+    auto_value: Optional[float] = None
 
 class GoalUpdate(BaseModel):
     name: Optional[str] = None
@@ -373,6 +403,8 @@ class GoalUpdate(BaseModel):
     deadline: Optional[date] = None
     current_amount: Optional[float] = None
     is_active: Optional[bool] = None
+    auto_mode: Optional[str] = None      # "off" | "amount" | "percent"
+    auto_value: Optional[float] = None
 
 class GoalOut(BaseModel):
     id: int
@@ -384,6 +416,8 @@ class GoalOut(BaseModel):
     deadline: Optional[date]
     current_amount: float
     is_active: bool
+    auto_mode: Optional[str] = None
+    auto_value: Optional[float] = None
     progress_pct: float = 0.0
     model_config = {"from_attributes": True}
 
@@ -523,6 +557,7 @@ class UpcomingRecurring(BaseModel):
     next_expected_date: Optional[date]
     days_until: Optional[int]
     category: Optional[CategoryOut]
+    merchant: Optional[MerchantOut] = None
 
 
 # ── Budgets ───────────────────────────────────────────────────────────────────
@@ -590,6 +625,7 @@ class PendingRecurring(BaseModel):
     category_color: str
     category_icon: str
     next_expected_date: Optional[date] = None
+    merchant: Optional[MerchantOut] = None
 
 
 class PricePoint(BaseModel):

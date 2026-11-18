@@ -323,6 +323,9 @@ def delete_user(
     db.query(models.ImportLog).filter(models.ImportLog.user_id == user_id).delete()
     db.query(models.UserSession).filter(models.UserSession.user_id == user_id).delete()
     db.query(models.Passkey).filter(models.Passkey.user_id == user_id).delete()
+    db.query(models.PushSubscription).filter(models.PushSubscription.user_id == user_id).delete()
+    db.query(models.EventLog).filter(models.EventLog.user_id == user_id).delete()
+    db.query(models.TransactionShare).filter(models.TransactionShare.user_id == user_id).delete()
     name = user.username
 
     db.delete(user)

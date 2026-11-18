@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { catApi, recurringApi, txApi } from '@/lib/api'
+import { catApi, recurringApi, shareApi, txApi } from '@/lib/api'
 import { isModuleOn } from '@/lib/preferences'
 import { usePreferencesStore } from '@/store/preferences'
 import { accountName, longDateTime, needsReview, shortDate, txNet, txTitle } from '@/lib/movements'
@@ -13,6 +13,7 @@ import { BackBtn, Btn, C, Divider, Empty, FONT, KV, RoundBtn, Sheet, SheetOption
 import { TxRow } from '@/ui/tx'
 import { toast } from '@/ui/Toast'
 import { CatSheet } from './Movimientos'
+import { ShareSheet } from './Compartidos'
 
 export default function Detalle() {
   const id = Number(useParams().id)
@@ -22,8 +23,12 @@ export default function Detalle() {
   const [cat, setCat] = useState(false)
   const [rec, setRec] = useState(false)
   const recOn = usePreferencesStore(s => isModuleOn(s.prefs, 'recurring'))
+  const sharedOn = usePreferencesStore(s => isModuleOn(s.prefs, 'shared'))
+  const [share, setShare] = useState(false)
   const q = useQuery({ queryKey: ['transactions', 'one', id], queryFn: () => txApi.get(id), enabled: Number.isFinite(id) })
   const tx = q.data
+  const canShare = sharedOn && !!tx && !tx.is_internal_transfer && tx.amount < 0
+  const shares = useQuery({ queryKey: ['shares', 'tx', id], queryFn: () => shareApi.forTx(id), enabled: canShare })
   const sim = useQuery({ queryKey: ['similar', id], queryFn: () => txApi.similar(id), enabled: !!tx })
   const categories = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const one = useMemo(() => (tx ? [tx] : null), [tx])
@@ -96,6 +101,14 @@ export default function Detalle() {
               v={tx.recurring_group_id != null ? 'Sí' : <span style={{ fontSize: 15, color: C.accentText, fontWeight: 800 }}>Marcar</span>} />
           </>
         )}
+        {canShare && (
+          <>
+            <Divider margin="0" />
+            <KV k="Compartido" onClick={() => setShare(true)} v={shares.data?.length
+              ? money(shares.data.reduce((a, s) => a + s.amount, 0), { euro: true })
+              : <span style={{ fontSize: 15, color: C.accentText, fontWeight: 800 }}>Compartir</span>} />
+          </>
+        )}
       </section>
       {tx.link_group_id != null && (tx.linked_transactions?.length ?? 0) > 0 && (() => {
         const all = [tx, ...tx.linked_transactions!].sort((a, b) => (b.datetime ?? b.date).localeCompare(a.datetime ?? a.date))
@@ -133,6 +146,7 @@ export default function Detalle() {
           <SheetOption key={d} title={l} onClick={() => markRecurring(d)} />
         ))}
       </Sheet>
+      {share && <ShareSheet txId={tx.id} total={Math.abs(tx.amount)} onClose={() => setShare(false)} />}
       <CatSheet txs={cat ? one : null} categories={categories.data ?? []} onClose={() => setCat(false)} />
     </div>
   )

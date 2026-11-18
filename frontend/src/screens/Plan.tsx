@@ -5,7 +5,7 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  budgetApi, catApi, dashApi, debtApi, exportApi, goalApi, recurringApi, txApi,
+  budgetApi, catApi, dashApi, debtApi, exportApi, goalApi, recurringApi, shareApi, txApi,
   type MonthlyDetailRow,
   type BudgetStatus, type Category, type Debt, type Goal, type MonthlyTrend, type RecurringGroup,
 } from '@/lib/api'
@@ -29,7 +29,7 @@ import { MerchantTile } from '@/ui/tx'
 import { toast } from '@/ui/Toast'
 import {
   Btn, C, Divider, Empty, Field, Header, Label, PickField, Pill, Ring, RoundBtn, Section, Segmented, Sheet, SheetOption,
-  Skeleton, SubHeader, useMoney,
+  Skeleton, SubHeader, Switch, useMoney,
 } from '@/ui/kit'
 
 const card: CSSProperties = { background: C.card, borderRadius: 24, boxShadow: 'var(--sh-card)' }
@@ -172,6 +172,7 @@ function usePlanData(months: number) {
   const goals = useQuery({ queryKey: ['goals'], queryFn: goalApi.list, enabled: on('goals') })
   const debts = useQuery({ queryKey: ['debts'], queryFn: debtApi.list, enabled: on('debts') })
   const streak = useStreak(on('achievements'))
+  const shares = useQuery({ queryKey: ['shares'], queryFn: shareApi.list, enabled: on('shared') })
   const w = usePeriodWords()
   const today = new Date()
   const tiles: Tile[] = [
@@ -180,6 +181,7 @@ function usePlanData(months: number) {
     { id: 'goals' as const, to: '/objetivos', icon: 'safe-open' as const, title: 'Objetivos', sub: goals.data ? goalsSummary(goals.data) : '' },
     { id: 'debts' as const, to: '/deudas', icon: 'receipt' as const, title: 'Deudas', sub: debts.data ? debtsSummary(debts.data) : '' },
     { id: 'monthly' as const, to: '/monthly', icon: 'calendar' as const, title: w.each, sub: trend.data ? monthlySummary(trend.data) : '' },
+    { id: 'shared' as const, to: '/compartidos', icon: 'group' as const, title: 'Compartidos', sub: shares.data ? (shares.data.total_owed > 0 ? `Te deben ${fmt0(shares.data.total_owed)} ${curSym()}` : 'Todo saldado') : '' },
     { id: 'achievements' as const, to: '/logros', icon: 'trophy' as const, title: 'Logros', sub: streak.current > 0 ? `Racha de ${streak.current} ${streak.current === 1 ? 'día' : 'días'}` : 'Empieza tu racha' },
   ].filter(t => on(t.id))
   return { trend, budgets, tiles, on }
@@ -487,7 +489,7 @@ export function Recurrentes() {
         <div key={g.id}>
           {i > 0 && <Divider margin="0" />}
           <a role="button" tabIndex={0} onClick={() => setOpen(g)} onKeyDown={e => e.key === 'Enter' && setOpen(g)} style={{ display: 'grid', gridTemplateColumns: pc ? '40px minmax(0, 1fr) minmax(0, 200px) 110px' : '40px minmax(0, 1fr) auto', gap: 12, alignItems: 'center', padding: '10px 0', color: C.text, cursor: 'pointer' }}>
-            <MerchantTile name={g.display_name} category={g.category?.name} type={g.category?.type ?? 'expense'} />
+            <MerchantTile name={g.display_name} merchant={g.merchant} category={g.category?.name} type={g.category?.type ?? 'expense'} />
             {pc ? (
               <>
                 <span style={{ minWidth: 0, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.display_name}</span>
@@ -530,7 +532,7 @@ export function Recurrentes() {
             <div key={g.id}>
               {i > 0 && <Divider margin="0" />}
               <div style={{ display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) auto', gap: 12, alignItems: 'center', padding: '10px 0' }}>
-                <MerchantTile name={g.display_name} category={g.category?.name} type={g.category?.type ?? 'expense'} />
+                <MerchantTile name={g.display_name} merchant={g.merchant} category={g.category?.name} type={g.category?.type ?? 'expense'} />
                 <span style={{ minWidth: 0, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.muted }}>{g.display_name}</span>
                 <button type="button" onClick={() => restore(g)} style={{ height: 34, padding: '0 14px', border: 0, borderRadius: 10, background: C.field, color: C.text, font: "800 13px 'Manrope', sans-serif", cursor: 'pointer' }}>Restaurar</button>
               </div>
@@ -549,7 +551,7 @@ export function Recurrentes() {
           <Divider margin="0" />
           <a role="button" tabIndex={0} onClick={() => setOpen(g)} onKeyDown={e => e.key === 'Enter' && setOpen(g)}
             style={{ display: 'grid', gridTemplateColumns: RCOLS, gap: 14, alignItems: 'center', padding: '10px 0', color: C.text, cursor: 'pointer' }}>
-            <MerchantTile name={g.display_name} category={g.category?.name} type={g.category?.type ?? 'expense'} />
+            <MerchantTile name={g.display_name} merchant={g.merchant} category={g.category?.name} type={g.category?.type ?? 'expense'} />
             <span style={{ ...cellText, fontWeight: 700 }}>{g.display_name}</span>
             <span style={{ ...cellText, fontWeight: 600, textTransform: 'capitalize' }}>{g.next_expected_date ? dayMonth(g.next_expected_date) : '—'}</span>
             <span style={{ ...cellText, color: C.muted, fontWeight: 600 }}>{periodText(g.period_days).replace(/^c/, 'C')}</span>
@@ -761,11 +763,19 @@ function GoalSheet({ goal, onClose }: { goal: Goal | null; onClose: () => void }
   const [name, setName] = useState(goal?.name ?? '')
   const [target, setTarget] = useState(goal?.target_amount ? fmtAuto(goal.target_amount) : '')
   const [deadline, setDeadline] = useState(goal?.deadline?.slice(0, 10) ?? '')
+  const [auto, setAuto] = useState(goal?.auto_mode === 'amount' || goal?.auto_mode === 'percent')
+  const [mode, setMode] = useState<'amount' | 'percent'>(goal?.auto_mode === 'percent' ? 'percent' : 'amount')
+  const [autoVal, setAutoVal] = useState(goal?.auto_value ? fmtAuto(goal.auto_value) : '')
   const value = parseAmount(target)
-  const valid = name.trim().length > 0 && !!value && value > 0
+  const autoNum = parseAmount(autoVal)
+  const autoOk = !auto || (!!autoNum && autoNum > 0 && (mode === 'amount' || autoNum <= 100))
+  const valid = name.trim().length > 0 && !!value && value > 0 && autoOk
   const save = useMutation({
     mutationFn: () => {
-      const data = { name: name.trim(), type: 'EURO_TARGET' as const, target_amount: value!, deadline: deadline || null }
+      const data = {
+        name: name.trim(), type: 'EURO_TARGET' as const, target_amount: value!, deadline: deadline || null,
+        auto_mode: auto ? mode : 'off' as const, auto_value: auto ? autoNum! : null,
+      }
       return goal ? goalApi.update(goal.id, data) : goalApi.create({ ...data, current_amount: 0 })
     },
     onSuccess: () => { invalidate(); toast(goal ? 'Objetivo guardado' : 'Objetivo creado'); onClose() },
@@ -782,6 +792,19 @@ function GoalSheet({ goal, onClose }: { goal: Goal | null; onClose: () => void }
       <Field label="Nombre" placeholder="Vacaciones" value={name} onChange={e => setName(e.target.value)} autoFocus={!goal} />
       <Field label="Cantidad" inputMode="decimal" placeholder="0,00" value={target} onChange={e => setTarget(e.target.value)} trail={<span style={{ color: C.muted, fontWeight: 700 }}>{curSym()}</span>} />
       <Field label="Fecha límite" type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: C.field, borderRadius: 16, padding: '0 16px', height: 52, margin: '0 0 12px' }}>
+        <span style={{ flex: 1, fontWeight: 700 }}>Aportar con cada nómina</span>
+        <Switch on={auto} onChange={setAuto} label="Aportar con cada nómina" />
+      </div>
+      {auto && (
+        <>
+          <Segmented label="Tipo de aportación" value={mode} onChange={setMode}
+            options={[['amount', `Fijo (${curSym()})`], ['percent', '% de la nómina']]} style={{ marginBottom: 12 }} />
+          <Field label={mode === 'amount' ? 'Cantidad por nómina' : 'Porcentaje de la nómina'} inputMode="decimal"
+            placeholder={mode === 'amount' ? '0,00' : '10'} value={autoVal} onChange={e => setAutoVal(e.target.value)}
+            trail={<span style={{ color: C.muted, fontWeight: 700 }}>{mode === 'amount' ? curSym() : '%'}</span>} />
+        </>
+      )}
       <Btn disabled={!valid || save.isPending} onClick={() => save.mutate()} style={{ marginTop: 6 }}>Guardar</Btn>
       {goal && <Btn kind="ghost" onClick={remove} style={{ marginTop: 8, color: C.red }}>Eliminar objetivo</Btn>}
     </Sheet>

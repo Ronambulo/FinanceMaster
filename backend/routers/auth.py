@@ -264,6 +264,9 @@ def delete_account(
     db.query(models.ImportLog).filter(models.ImportLog.user_id == current_user.id).delete()
     db.query(models.UserSession).filter(models.UserSession.user_id == current_user.id).delete()
     db.query(models.Passkey).filter(models.Passkey.user_id == current_user.id).delete()
+    db.query(models.PushSubscription).filter(models.PushSubscription.user_id == current_user.id).delete()
+    db.query(models.EventLog).filter(models.EventLog.user_id == current_user.id).delete()
+    db.query(models.TransactionShare).filter(models.TransactionShare.user_id == current_user.id).delete()
     activity.record(db, "account_deleted", user=current_user)
 
     db.delete(current_user)

@@ -20,4 +20,9 @@ describe('needsReview', () => {
     expect(needsReview(tx({ created_at: null }), now)).toBe(false)
     expect(needsReview(tx({ is_internal_transfer: true }), now)).toBe(false)
   })
+  it('no marca lo que viene de regla, historial o marca conocida', () => {
+    for (const s of ['rule', 'history', 'catalog']) expect(needsReview(tx({ category_source: s }), now)).toBe(false)
+    for (const s of ['mcc', 'type', 'ai', null]) expect(needsReview(tx({ category_source: s }), now)).toBe(true)
+    expect(needsReview(tx({ category_source: 'catalog', is_ai_categorized: true }), now)).toBe(true)
+  })
 })
