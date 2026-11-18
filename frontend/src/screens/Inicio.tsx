@@ -1,11 +1,13 @@
 // Inicio (tableros Main y PCInicio).
-import { useMemo, type CSSProperties } from 'react'
+import { Fragment, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { dashApi, goalApi, txApi } from '@/lib/api'
 import { categoryBars, dateHeading, periodTotals, weekdayDay, worthChangePct } from '@/lib/home'
-import { nextRecurring, topGoal } from '@/lib/plan'
+import { goalsReserved, nextRecurring, topGoal } from '@/lib/plan'
+import { visibleAccounts } from '@/lib/accounts'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
+import { usePeriodWords } from '@/hooks/usePeriodWords'
 import { useAuthStore } from '@/store/auth'
 import { usePreferencesStore } from '@/store/preferences'
 import { openAdd } from '@/store/add'
@@ -15,7 +17,11 @@ import { Icon } from '@/ui/Icon'
 import { C, Pill, RoundBtn, Ring, SkelChart, SkelHero, SkelRows, Skeleton, useMoney } from '@/ui/kit'
 import { CardHead, CatBar, MerchantTile, Spark, TxRow, shortDayLabel } from '@/ui/tx'
 import { PCHeader, useIsPC } from '@/app/Shell'
+import { cycleEstimatedEnd } from '@/lib/cycles'
 import { accountName, txNet, txTitle } from '@/lib/movements'
+import type { HomeCard } from '@/lib/preferences'
+import { Available } from './Cuentas'
+import { cardBox, CustomizeHome, CustomizeLink, InsightsCard, PendingCard } from './InicioCards'
 
 const card = { background: C.card, boxShadow: 'var(--sh-card)' } as const
 
@@ -34,6 +40,10 @@ function useHomeData() {
   const worth = useQuery({ queryKey: ['net-worth', 12], queryFn: () => dashApi.netWorthHistory(12), enabled: features.accounts, staleTime: 5 * 60_000 })
   const upcoming = useQuery({ queryKey: ['upcoming', 30], queryFn: () => dashApi.upcoming(30), enabled: features.recurring })
   const goals = useQuery({ queryKey: ['goals'], queryFn: goalApi.list, enabled: features.goals })
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: dashApi.accounts, enabled: features.accounts && features.goals })
+  // Efectivo menos lo apartado para objetivos.
+  const cash = visibleAccounts(accounts.data ?? []).reduce((a, c) => a + c.balance, 0)
+  const reserved = goalsReserved(goals.data ?? [])
   const totals = useMemo(() => periodTotals(detail.data ?? []), [detail.data])
   const bars = useMemo(() => categoryBars(cats.data ?? [], 5), [cats.data])
   const history = worth.data ?? []
@@ -44,16 +54,21 @@ function useHomeData() {
     worthSeries: history.map(h => h.net_worth),
     next: nextRecurring(upcoming.data ?? []),
     goal: topGoal(goals.data ?? []),
+    cash: accounts.data && goals.data ? { available: cash - reserved, reserved } : null,
     range,
+    // Fin real previsto del ciclo (el rango de datos se alarga 45 días para coger apuntes futuros).
+    cycleEnd: cycle.cycles.length ? cycleEstimatedEnd(cycle.cycles) : monthEnd(),
   }
 }
 
-function Hero({ pc, totals }: { pc?: boolean; totals: { income: number; expenses: number; left: number } }) {
+function Hero({ pc, totals, end }: { pc?: boolean; totals: { income: number; expenses: number; left: number }; end?: string }) {
   const money = useMoney()
+  const w = usePeriodWords()
+  if (pc) return <PCHero totals={totals} end={end} />
   return (
-    <section style={pc ? { ...card, borderRadius: 22, padding: '22px 24px' } : { ...card, margin: '18px 16px 0', borderRadius: 28, padding: 20 }}>
-      <p style={{ margin: 0, fontSize: 14, color: C.muted, fontWeight: 600 }}>Te quedan este mes</p>
-      <p style={{ margin: '4px 0 0', fontSize: pc ? 46 : 44, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05 }}>{money(totals.left, { euro: true })}</p>
+    <section style={{ ...card, margin: '16px 16px 0', borderRadius: 28, padding: 20 }}>
+      <p style={{ margin: 0, fontSize: 14, color: C.muted, fontWeight: 600 }}>Te quedan {w.this}</p>
+      <p style={{ margin: '4px 0 0', fontSize: 44, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05 }}>{money(totals.left, { euro: true })}</p>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16 }}>
         <Link to="/transacciones?tipo=ingresos" style={{ background: C.field, borderRadius: 16, padding: '10px 12px', color: C.text }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: C.green }}><Icon name="transfer-in" size={15} />Entró</span>
@@ -68,7 +83,71 @@ function Hero({ pc, totals }: { pc?: boolean; totals: { income: number; expenses
   )
 }
 
-function Worth({ pc, value, pct, series }: { pc?: boolean; value: number; pct: number | null; series: number[] }) {
+/** Días que quedan del periodo, contando hoy. */
+function monthEnd(): string {
+  const t = new Date()
+  const e = new Date(t.getFullYear(), t.getMonth() + 1, 0)
+  return `${e.getFullYear()}-${String(e.getMonth() + 1).padStart(2, '0')}-${String(e.getDate()).padStart(2, '0')}`
+}
+
+function daysLeft(end?: string): number | null {
+  if (!end) return null
+  const today = new Date()
+  const t = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+  const [y, m, d] = end.slice(0, 10).split('-').map(Number)
+  const n = Math.round((Date.UTC(y, m - 1, d) - t) / 86_400_000) + 1
+  return n > 0 ? n : null
+}
+
+/** En PC la tarjeta ocupa el alto de su fila: arriba lo que queda, en medio el ritmo de gasto, abajo entradas y salidas. */
+function PCHero({ totals, end }: { totals: { income: number; expenses: number; left: number }; end?: string }) {
+  const money = useMoney()
+  const w = usePeriodWords()
+  const days = daysLeft(end)
+  const used = totals.income > 0 ? Math.min(1, totals.expenses / totals.income) : totals.expenses > 0 ? 1 : 0
+  const usedPct = Math.round(used * 100)
+  const tone = used >= 1 ? C.red : used >= 0.85 ? 'var(--c-ffc27a)' : C.green
+  return (
+    <section style={{ ...card, borderRadius: 22, padding: '22px 24px', display: 'flex', flexDirection: 'column', minHeight: '100%', boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div>
+          <p style={{ margin: 0, fontSize: 14, color: C.muted, fontWeight: 600 }}>Te quedan {w.this}</p>
+          <p style={{ margin: '4px 0 0', fontSize: 46, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05 }}>{money(totals.left, { euro: true })}</p>
+        </div>
+        {days != null && totals.left > 0 && (
+          <div style={{ textAlign: 'right', flex: 'none' }}>
+            <span style={{ display: 'block', fontSize: 12, color: C.muted, fontWeight: 700 }}>{days === 1 ? 'Último día' : `${days} días por delante`}</span>
+            <span style={{ display: 'block', fontSize: 20, fontWeight: 800, marginTop: 2 }}>{money(totals.left / days, { euro: true })}<span style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}> / día</span></span>
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginTop: 'auto', paddingTop: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: C.muted, marginBottom: 6 }}>
+          <span>Gastado de lo que entró</span>
+          <span style={{ color: C.text }}>{usedPct} %</span>
+        </div>
+        <div role="progressbar" aria-label="Gastado de lo que entró" aria-valuenow={usedPct} aria-valuemin={0} aria-valuemax={100}
+          style={{ height: 8, borderRadius: 99, background: C.field, overflow: 'hidden' }}>
+          <div style={{ width: `${usedPct}%`, height: '100%', borderRadius: 99, background: tone, transition: 'width .4s' }} />
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16 }}>
+        <Link to="/transacciones?tipo=ingresos" style={{ background: C.field, borderRadius: 16, padding: '12px 14px', color: C.text }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: C.green }}><Icon name="transfer-in" size={15} />Entró</span>
+          <span style={{ display: 'block', fontSize: 19, fontWeight: 800, marginTop: 2 }}>{money(totals.income)}</span>
+        </Link>
+        <Link to="/transacciones?tipo=gastos" style={{ background: C.field, borderRadius: 16, padding: '12px 14px', color: C.text }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: C.red }}><Icon name="transfer-out" size={15} />Salió</span>
+          <span style={{ display: 'block', fontSize: 19, fontWeight: 800, marginTop: 2 }}>{money(totals.expenses)}</span>
+        </Link>
+      </div>
+    </section>
+  )
+}
+
+function Worth({ pc, value, pct, series, cash }: { pc?: boolean; value: number; pct: number | null; series: number[]; cash: { available: number; reserved: number } | null }) {
   const money = useMoney()
   const pill = pct != null && <Pill tone={pct >= 0 ? 'green' : 'red'}>{pctText(pct)}</Pill>
   if (pc) {
@@ -82,6 +161,7 @@ function Worth({ pc, value, pct, series }: { pc?: boolean; value: number; pct: n
           {pill}
         </div>
         <div style={{ marginTop: 10 }}><Spark values={series} width={420} height={92} id="g-worth-pc" /></div>
+        {cash && <Available {...cash} />}
       </Link>
     )
   }
@@ -95,28 +175,30 @@ function Worth({ pc, value, pct, series }: { pc?: boolean; value: number; pct: n
         {pill}
       </span>
       {series.length > 1 && <span style={{ display: 'block', marginTop: 8 }}><Spark values={series} width={318} height={58} id="g-worth" /></span>}
+      {cash && <span style={{ display: 'block', paddingBottom: 4 }}><Available {...cash} /></span>}
     </Link>
   )
 }
 
 function ThisMonth({ pc, bars }: { pc?: boolean; bars: ReturnType<typeof categoryBars> }) {
   const nav = useNavigate()
+  const w = usePeriodWords()
   const list = pc ? bars.slice(0, 5) : bars.slice(0, 4)
   return (
     <section style={pc ? { ...card, borderRadius: 22, padding: '20px 24px' } : { ...card, margin: '12px 16px 0', borderRadius: 24, padding: '16px 18px' }}>
-      <CardHead title="Este mes" link="ver todo" onLink={() => nav('/transacciones?agrupar=categoria')} />
+      <CardHead title={w.This} link="ver todo" onLink={() => nav('/transacciones?agrupar=categoria')} />
       <div style={{ marginTop: 6 }}>
-        {list.length === 0 && <p style={{ margin: '10px 0 4px', fontSize: 14, color: C.muted, fontWeight: 600 }}>Aún no hay gastos este mes</p>}
+        {list.length === 0 && <p style={{ margin: '10px 0 4px', fontSize: 14, color: C.muted, fontWeight: 600 }}>Aún no hay gastos {w.this}</p>}
         {list.map(b => <CatBar key={b.name} name={b.name} total={b.total} ratio={b.ratio} tile={pc ? 34 : 32} pad={pc ? '8px 0' : '7px 0'} gap={pc ? 6 : 5} />)}
       </div>
     </section>
   )
 }
 
-function NextCharge({ next }: { next: NonNullable<ReturnType<typeof nextRecurring>> }) {
+function NextCharge({ pc, next }: { pc?: boolean; next: NonNullable<ReturnType<typeof nextRecurring>> }) {
   const money = useMoney()
   return (
-    <section style={{ ...card, margin: '12px 16px 0', borderRadius: 24, padding: '14px 18px' }}>
+    <section style={{ ...cardBox(pc), padding: pc ? '18px 24px' : '14px 18px' }}>
       <Link to="/recurrentes" style={{ display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) auto', gap: 12, alignItems: 'center', padding: 0, color: C.text }}>
         <MerchantTile name={next.display_name} category={next.category?.name} type={next.category?.type} />
         <span style={{ minWidth: 0 }}>
@@ -129,11 +211,11 @@ function NextCharge({ next }: { next: NonNullable<ReturnType<typeof nextRecurrin
   )
 }
 
-function GoalCard({ goal }: { goal: NonNullable<ReturnType<typeof topGoal>> }) {
+function GoalCard({ pc, goal }: { pc?: boolean; goal: NonNullable<ReturnType<typeof topGoal>> }) {
   const money = useMoney()
   const pct = Math.round(goal.progress_pct)
   return (
-    <section style={{ ...card, margin: '12px 16px 0', borderRadius: 24, padding: '14px 18px' }}>
+    <section style={{ ...cardBox(pc), padding: pc ? '18px 24px' : '14px 18px' }}>
       <Link to="/objetivos" style={{ display: 'flex', gap: 14, alignItems: 'center', color: C.text }}>
         <Ring ratio={pct / 100}>{pct}</Ring>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -150,12 +232,12 @@ function GoalCard({ goal }: { goal: NonNullable<ReturnType<typeof topGoal>> }) {
   )
 }
 
-function Recent() {
+function Recent({ pc }: { pc?: boolean }) {
   const nav = useNavigate()
   const today = useMemo(() => new Date(), [])
   const q = useQuery({ queryKey: ['tx-recent'], queryFn: () => txApi.list({ page: 1, page_size: 5 }) })
   return (
-    <section style={{ ...card, borderRadius: 22, padding: '20px 24px' }}>
+    <section style={pc ? { ...card, borderRadius: 22, padding: '20px 24px' } : { ...card, margin: '12px 16px 0', borderRadius: 24, padding: '16px 18px' }}>
       <CardHead title="Últimos movimientos" link="ver todos" onLink={() => nav('/transacciones')} />
       <div style={{ marginTop: 4 }}>
         {q.isLoading && <Skeleton h={200} r={16} />}
@@ -182,6 +264,7 @@ type Heading = ReturnType<typeof dateHeading>
 
 function UltraInicio({ d, h }: { d: HomeData; h: Heading }) {
   const money = useMoney()
+  const w = usePeriodWords()
   const hidden = usePrivacyStore(s => s.hidden)
   const toggle = usePrivacyStore(s => s.toggle)
   const recent = useRecent()
@@ -202,7 +285,7 @@ function UltraInicio({ d, h }: { d: HomeData; h: Heading }) {
       </header>
       {d.loading ? <SkelHero style={{ margin: '20px 16px 0' }} /> : (
         <section style={{ ...card, margin: '20px 16px 0', borderRadius: 28, padding: '22px 20px 20px', textAlign: 'center' }}>
-          <p style={{ margin: 0, fontSize: 14, color: C.muted, fontWeight: 600 }}>Te quedan este mes</p>
+          <p style={{ margin: 0, fontSize: 14, color: C.muted, fontWeight: 600 }}>Te quedan {w.this}</p>
           <p style={{ margin: '6px 0 0', fontSize: 52, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05 }}>{money(left, { euro: true })}</p>
           <div style={{ margin: '18px 0 0' }}>
             <div style={{ height: 8, borderRadius: 99, background: 'var(--track)', overflow: 'hidden' }}>
@@ -223,7 +306,7 @@ function UltraInicio({ d, h }: { d: HomeData; h: Heading }) {
         <section style={{ ...card, margin: '22px 16px 0', borderRadius: 24, padding: '16px 18px' }}>
           <CardHead title="Gasto por categoría" />
           <div style={{ marginTop: 6 }}>
-            {d.bars.length === 0 && <p style={{ margin: '10px 0 4px', fontSize: 14, color: C.muted, fontWeight: 600 }}>Aún no hay gastos este mes</p>}
+            {d.bars.length === 0 && <p style={{ margin: '10px 0 4px', fontSize: 14, color: C.muted, fontWeight: 600 }}>Aún no hay gastos {w.this}</p>}
             {d.bars.slice(0, 4).map(b => <CatBar key={b.name} name={b.name} total={b.total} ratio={b.ratio} tile={32} />)}
           </div>
         </section>
@@ -246,6 +329,7 @@ function UltraInicio({ d, h }: { d: HomeData; h: Heading }) {
 
 function PCUltraInicio({ d, h }: { d: HomeData; h: Heading }) {
   const money = useMoney()
+  const w = usePeriodWords()
   const nav = useNavigate()
   const recent = useRecent()
   const today = useMemo(() => new Date(), [])
@@ -261,7 +345,7 @@ function PCUltraInicio({ d, h }: { d: HomeData; h: Heading }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 980, alignItems: 'start' }}>
         {d.loading ? <Skeleton h={300} r={22} /> : (
           <section style={{ ...card, borderRadius: 22, padding: '28px 30px' }}>
-            <p style={{ margin: 0, fontSize: 16, color: C.muted, fontWeight: 600 }}>Te quedan este mes</p>
+            <p style={{ margin: 0, fontSize: 16, color: C.muted, fontWeight: 600 }}>Te quedan {w.this}</p>
             <p style={{ margin: '6px 0 0', fontSize: 64, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 }}>{money(d.totals.left, { euro: true })}</p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16 }}>
               <Link to="/transacciones?tipo=ingresos" style={box}>
@@ -292,6 +376,34 @@ function PCUltraInicio({ d, h }: { d: HomeData; h: Heading }) {
   )
 }
 
+/** Tarjetas que se pueden mostrar con los módulos activos. */
+function availableCards(d: HomeData): HomeCard[] {
+  const f = d.features
+  const out: HomeCard[] = ['hero', 'month', 'insights', 'recent']
+  if (f.accounts) out.push('worth')
+  if (f.recurring) out.push('pending', 'next')
+  if (f.goals) out.push('goal')
+  return out
+}
+
+function HomeCards({ pc, d }: { pc?: boolean; d: HomeData }) {
+  const order = usePreferencesStore(s => s.prefs.home_cards)
+  const avail = availableCards(d)
+  const render = (c: HomeCard): ReactNode => {
+    switch (c) {
+      case 'hero': return <Hero pc={pc} totals={d.totals} end={d.cycleEnd} />
+      case 'recent': return <Recent pc={pc} />
+      case 'worth': return d.worthValue != null ? <Worth pc={pc} value={d.worthValue} pct={d.worthPct} series={d.worthSeries} cash={d.cash} /> : null
+      case 'month': return <ThisMonth pc={pc} bars={d.bars} />
+      case 'pending': return <PendingCard pc={pc} start={d.range.date_from} end={d.range.date_to} />
+      case 'next': return d.next ? <NextCharge pc={pc} next={d.next} /> : null
+      case 'goal': return d.goal ? <GoalCard pc={pc} goal={d.goal} /> : null
+      case 'insights': return <InsightsCard pc={pc} />
+    }
+  }
+  return <>{order.filter(c => avail.includes(c)).map(c => <Fragment key={c}>{render(c)}</Fragment>)}</>
+}
+
 export default function Inicio() {
   const pc = useIsPC()
   const user = useAuthStore(s => s.user)
@@ -301,6 +413,8 @@ export default function Inicio() {
   const d = useHomeData()
   const name = user?.display_name || user?.username || ''
   const ultra = usePreferencesStore(s => s.prefs.ui_mode === 'ultra')
+  const [custom, setCustom] = useState(false)
+  const customize = <CustomizeHome open={custom} onClose={() => setCustom(false)} available={availableCards(d)} />
 
   if (ultra) return pc ? <PCUltraInicio d={d} h={h} /> : <UltraInicio d={d} h={h} />
 
@@ -315,15 +429,10 @@ export default function Inicio() {
               {d.features.accounts && <Skeleton h={190} r={22} />}
               <Skeleton h={260} r={22} />
             </>
-          ) : (
-            <>
-              <Hero pc totals={d.totals} />
-              {d.features.accounts && d.worthValue != null && <Worth pc value={d.worthValue} pct={d.worthPct} series={d.worthSeries} />}
-              <ThisMonth pc bars={d.bars} />
-            </>
-          )}
-          <Recent />
+          ) : <HomeCards pc d={d} />}
         </div>
+        <CustomizeLink onClick={() => setCustom(true)}>Personalizar Inicio</CustomizeLink>
+        {customize}
       </>
     )
   }
@@ -348,13 +457,11 @@ export default function Inicio() {
         </>
       ) : (
         <>
-          <Hero totals={d.totals} />
-          {d.features.accounts && d.worthValue != null && <Worth value={d.worthValue} pct={d.worthPct} series={d.worthSeries} />}
-          <ThisMonth bars={d.bars} />
+          <HomeCards d={d} />
+          <CustomizeLink onClick={() => setCustom(true)}>Personalizar Inicio</CustomizeLink>
         </>
       )}
-      {d.features.recurring && d.next && <NextCharge next={d.next} />}
-      {d.features.goals && d.goal && <GoalCard goal={d.goal} />}
+      {customize}
     </>
   )
 }

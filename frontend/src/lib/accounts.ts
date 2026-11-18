@@ -60,18 +60,49 @@ export function brokerSub(broker: string): string {
   return 'Inversiones'
 }
 
-export type AssetKind = 'fund' | 'etf' | 'stock' | 'cash' | 'crypto' | 'other'
-export const ASSET_LABEL: Record<AssetKind, string> = { fund: 'Fondos indexados', etf: 'ETF', stock: 'Acciones', cash: 'Efectivo', crypto: 'Cripto', other: 'Otros' }
-export const ASSET_COLOR: Record<AssetKind, string> = { fund: 'var(--c-8cc6ff)', etf: 'var(--c-8b85ff)', stock: 'var(--c-7fdbe3)', cash: 'var(--c-6fe0a5)', crypto: 'var(--c-ffc979)', other: 'var(--c-9a9fb0)' }
+export type AssetKind = 'fund' | 'etf' | 'etc' | 'stock' | 'derivative' | 'cash' | 'crypto' | 'other'
+export const ASSET_LABEL: Record<AssetKind, string> = { fund: 'Fondos indexados', etf: 'ETF', etc: 'ETC', stock: 'Acciones', derivative: 'Derivados', cash: 'Efectivo', crypto: 'Cripto', other: 'Otros' }
+export const ASSET_COLOR: Record<AssetKind, string> = { fund: 'var(--c-8cc6ff)', etf: 'var(--c-8b85ff)', etc: 'var(--c-e0bc9a)', stock: 'var(--c-7fdbe3)', derivative: 'var(--c-ff9ccf)', cash: 'var(--c-6fe0a5)', crypto: 'var(--c-ffc979)', other: 'var(--c-9a9fb0)' }
 
-export function assetKind(assetClass: string | null | undefined): AssetKind {
+// Trade Republic no manda el tipo de activo y el servidor pone STOCK por
+// defecto, así que se deduce del nombre y el ticker.
+const ETC_TICKERS = new Set(['EGLN', 'SGLN', 'IGLN', 'PHAU', 'PHAG', 'SSLN', '4GLD', 'XAD5', 'GZUR', 'VZLD', 'EWG2'])
+const ETF_TICKERS = new Set(['IWDA', 'EUNL', 'SXR8', 'CSPX', 'VWCE', 'VWRL', 'VUSA', 'VUAA', 'EQQQ', 'CNDX', 'SXRV', 'EMIM', 'IS3N', 'XDWD', 'MEUD', 'SPPW', 'SSAC', 'IUSQ', 'ZPRV', 'ZPRX'])
+const CRYPTO_NAMES = /^(bitcoin|ethereum|solana|cardano|xrp|ripple|dogecoin|litecoin|polkadot|chainlink|avalanche|polygon|tron|stellar|bitcoin cash|ethereum classic)$/i
+
+function guessKind(name: string, symbol: string): AssetKind | null {
+  const t = symbol.toUpperCase().replace(/\..*$/, '')
+  if (ETC_TICKERS.has(t) || /\bETC\b|physical\s+(gold|silver|platinum|palladium|precious|metals?)|^(gold|silver|platinum|palladium)\b/i.test(name)) return 'etc'
+  if (/^(long|short|turbo|call|put|mini|faktor|factor)\b|knock[- ]?out|warrant|optionsschein/i.test(name)) return 'derivative'
+  if (CRYPTO_NAMES.test(name.trim()) || /-(EUR|USD)$/.test(symbol.toUpperCase())) return 'crypto'
+  if (ETF_TICKERS.has(t) || /\bETF\b|UCITS|\((acc|dist)\)|^(core |ishares|vanguard|xtrackers|amundi|spdr|invesco|lyxor|wisdomtree|vaneck)/i.test(name)) return 'etf'
+  return null
+}
+
+export function assetKind(assetClass: string | null | undefined, name?: string | null, symbol?: string | null): AssetKind {
   const a = (assetClass ?? '').toUpperCase()
   if (a.includes('CRYPTO')) return 'crypto'
+  if (a.includes('ETC') || a.includes('COMMODITY')) return 'etc'
   if (a.includes('ETF')) return 'etf'
   if (a.includes('FUND')) return 'fund'
-  if (a.includes('STOCK') || a.includes('EQUITY') || a === 'SHARES') return 'stock'
+  if (a.includes('DERIVATIVE') || a.includes('WARRANT')) return 'derivative'
+  // Sin tipo fiable: STOCK puede ser el valor por defecto del servidor.
+  if (!a || a.includes('STOCK') || a.includes('EQUITY') || a === 'SHARES') {
+    const g = guessKind(name ?? '', symbol ?? '')
+    if (g) return g
+    return a ? 'stock' : (name || symbol ? 'stock' : 'other')
+  }
   return 'other'
 }
+
+/** Tipo de una posición: el que da el servidor (deducido o elegido a mano) y, si no lo da, se adivina. */
+export function positionKind(p: Pick<PortfolioPosition, 'asset_class' | 'asset_class_auto' | 'asset_class_manual' | 'name' | 'symbol'>): AssetKind {
+  if (p.asset_class_manual || p.asset_class_auto) return assetKind(p.asset_class)
+  return assetKind(p.asset_class, p.name, p.symbol)
+}
+
+/** Tipos que se pueden elegir a mano, con el valor que guarda el servidor. */
+export const KIND_CLASS: [AssetKind, string][] = [['stock', 'STOCK'], ['etf', 'ETF'], ['etc', 'ETC'], ['fund', 'FUND'], ['crypto', 'CRYPTO'], ['derivative', 'DERIVATIVE'], ['other', 'OTHER']]
 
 export interface AssetSlice { kind: AssetKind; value: number; pct: number }
 
@@ -80,7 +111,7 @@ export function assetMix(positions: PortfolioPosition[], cash = 0): AssetSlice[]
   const sum = new Map<AssetKind, number>()
   for (const p of positions) {
     if (!(p.shares > 0.0001)) continue
-    const k = assetKind(p.asset_class)
+    const k = positionKind(p)
     sum.set(k, (sum.get(k) ?? 0) + Math.max(p.market_value ?? p.total_invested ?? 0, 0))
   }
   if (cash > 0) sum.set('cash', cash)
@@ -118,7 +149,7 @@ export function balanceSeries(balance: number, txs: { date: string; amount: numb
 export function sharesLabel(shares: number, kind: AssetKind): string {
   const n = Number.isInteger(Math.round(shares * 1000) / 1000) ? String(Math.round(shares)) : shares.toLocaleString('es-ES', { maximumFractionDigits: 4 })
   if (kind === 'stock') return `${n} acc.`
-  if (kind === 'etf' || kind === 'fund') return `${n} part.`
+  if (kind === 'etf' || kind === 'etc' || kind === 'fund') return `${n} part.`
   return n
 }
 

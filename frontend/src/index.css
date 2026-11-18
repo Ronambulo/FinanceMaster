@@ -3,6 +3,11 @@
 /* Tokens del lienzo: :root = claro, .dark = oscuro (el hex original). */
 :root {
   --c-001391: #001391;
+  --c-00eb5e: #00eb5e;
+  --c-eaf3ff: #eaf3ff;
+  --c-c92aa6: #c92aa6;
+  --c-2a6fcc: #2a6fcc;
+  --c-221c46: #221c46;
   --c-0369a1: #0369a1;
   --c-0b0b0f: #0b0b0f;
   --c-0b7fab: #0b7fab;
@@ -83,6 +88,11 @@
 }
 .dark {
   --c-001391: #001391;
+  --c-00eb5e: #00eb5e;
+  --c-eaf3ff: #eaf3ff;
+  --c-c92aa6: #c92aa6;
+  --c-2a6fcc: #2a6fcc;
+  --c-221c46: #221c46;
   --c-0369a1: #0369a1;
   --c-0b0b0f: #0b0b0f;
   --c-0b7fab: #0b7fab;
@@ -197,3 +207,6 @@ html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after 
   animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important; scroll-behavior: auto !important;
 }
+
+/* Filas pulsables en PC: un fondo suave al pasar el ratón */
+@media (hover: hover) { .fm-hover:hover { background: var(--c-23242e) !important; } }

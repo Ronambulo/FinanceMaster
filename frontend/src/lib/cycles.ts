@@ -36,6 +36,37 @@ export function calendarCycles(today: Date, n: number, day = 1): PayrollCycle[] 
   return out
 }
 
+/** Mes (YYYY-MM) al que pertenece un ciclo: el de su punto medio. Un ciclo
+ *  abierto se cuenta como de un mes de largo (su fin real aún no se sabe). */
+export function cycleMonth(c: { start: string; end: string; isOpen?: boolean }): string {
+  const a = parse(c.start)
+  const b = c.isOpen ? new Date(a.getTime() + 29 * 86_400_000) : parse(c.end)
+  return iso(new Date((a.getTime() + b.getTime()) / 2)).slice(0, 7)
+}
+
+type CycleLike = { start: string; end: string; isOpen?: boolean }
+
+/** Fin estimado de un ciclo (YYYY-MM-DD). El abierto no tiene fin conocido:
+ *  se estima con la duración media de los cerrados (o 30 días). */
+export function cycleEstimatedEnd(cycles: CycleLike[], idx = cycles.length - 1): string {
+  const cur = cycles[idx]
+  if (!cur) return ''
+  if (!cur.isOpen) return cur.end
+  const day = 86_400_000
+  const closed = cycles.filter(c => !c.isOpen).slice(-6)
+  const len = closed.length
+    ? Math.round(closed.reduce((s, c) => s + (parse(c.end).getTime() - parse(c.start).getTime()) / day + 1, 0) / closed.length)
+    : 30
+  return iso(new Date(parse(cur.start).getTime() + (len - 1) * day))
+}
+
+/** Días que quedan del ciclo actual (hoy incluido). */
+export function cycleDaysLeft(cycles: CycleLike[], today: Date): number {
+  const end = cycleEstimatedEnd(cycles)
+  if (!end) return 0
+  return Math.max(1, Math.round((parse(end).getTime() - parse(iso(today)).getTime()) / 86_400_000) + 1)
+}
+
 /** Totales de cada ciclo (más antiguo primero) a partir de las filas de todo el rango. */
 export function cycleRows(cycles: PayrollCycle[], rows: MonthlyDetailRow[]): CycleRow[] {
   return cycles.map(c => {
@@ -90,3 +121,11 @@ export function rangePeriodLabel(period: string, today: Date): string | null {
   const r = parseRangePeriod(period)
   return r ? cycleLabel(r.date_from, r.date_to, r.date_to >= iso(today)) : null
 }
+
+/** Textos del periodo: "ciclo" si va de nómina a nómina o desde un día fijo, "mes" si son meses naturales. */
+export function periodWords(isCycle: boolean) {
+  return isCycle
+    ? { isCycle, unit: 'ciclo', Unit: 'Ciclo', this: 'este ciclo', This: 'Este ciclo', last: 'Ciclo pasado', three: '3 ciclos', each: 'Ciclo a ciclo', none: 'Aún no hay ciclos' }
+    : { isCycle, unit: 'mes', Unit: 'Mes', this: 'este mes', This: 'Este mes', last: 'Mes pasado', three: '3 meses', each: 'Mes a mes', none: 'Aún no hay meses' }
+}
+export type PeriodWords = ReturnType<typeof periodWords>

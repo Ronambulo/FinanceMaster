@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerE
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useInfiniteQuery, useQuery, useQueryClient, type UseInfiniteQueryResult, type InfiniteData } from '@tanstack/react-query'
-import { catApi, dashApi, txApi, type AccountBalance, type Category, type Transaction, type TransactionListResponse } from '@/lib/api'
+import { aiApi, catApi, dashApi, txApi, type AccountBalance, type Category, type Transaction, type TransactionListResponse } from '@/lib/api'
 import {
   EMPTY_FILTERS, accountName, activeFilterCount, needsReview, categoriesFor, countLabel, filterParams, groupByDay, groupFilter, groupSections,
   monthKey, monthName, periodLabel, recentMonths, shortDate, txKind, txNet, txTitle,
@@ -18,9 +18,12 @@ import { CatGlyph, CatTile, Icon, catTone, toneColors, toneIcon, type AnyIcon } 
 import { Amount, Btn, C, Chip, ChipRow, DayHead, Divider, Empty, FONT, Fab, Field, Header, IconTile, RoundBtn, SearchBox, Section, Sheet, SheetOption, SkelRows, Skeleton, Switch, TextBtn, useMoney } from '@/ui/kit'
 import { MergedPill, MerchantTile, TxSub, shortDayLabel, txLead } from '@/ui/tx'
 import { openAdd } from '@/store/add'
+import { useAuthStore } from '@/store/auth'
 import { usePreferencesStore } from '@/store/preferences'
 import { toast } from '@/ui/Toast'
 import { hintSeen, markHint } from '@/lib/hints'
+import { usePayrollCycle } from '@/hooks/usePayrollCycle'
+import { usePeriodWords } from '@/hooks/usePeriodWords'
 
 type Params = Record<string, string | number | undefined>
 
@@ -82,7 +85,11 @@ export default function Movimientos() {
   const [selected, setSelected] = useState<Set<number> | null>(null)
   const [hiddenIds, setHiddenIds] = useState<Set<number>>(new Set())
 
-  const params: Params = useMemo(() => ({ ...filterParams(filters, today), search: q || undefined }), [filters, q, today])
+  // Los periodos van por ciclo de nómina, como en Inicio.
+  const cycle = usePayrollCycle(0)
+  const cycles = cycle.cycles
+  const w = usePeriodWords()
+  const params: Params = useMemo(() => ({ ...filterParams(filters, today, cycles), search: q || undefined }), [filters, q, today, cycles])
   const categories = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const accounts = useQuery({ queryKey: ['accounts', 'tx-sources'], queryFn: dashApi.txSources })
   const accountList = (accounts.data ?? []).filter(a => (a.tx_count ?? a.count) > 0)
@@ -92,20 +99,20 @@ export default function Movimientos() {
     queryFn: ({ pageParam }) => txApi.list({ ...params, page: pageParam, page_size: 50 }),
     initialPageParam: 1,
     getNextPageParam: last => (last.page * last.page_size < last.total ? last.page + 1 : undefined),
-    enabled: mode === 'day',
+    enabled: mode === 'day' && !cycle.loading,
   })
   const groupParams: Params = { ...params, hide_transfers: hideTransfers ? 'true' : undefined }
   const groups = useQuery({
     queryKey: ['transactions', 'groups', mode, groupParams],
     queryFn: () => txApi.groups(mode === 'day' ? 'category' : mode, groupParams),
-    enabled: mode !== 'day',
+    enabled: mode !== 'day' && !cycle.loading,
   })
 
   const items = useMemo(() => (list.data?.pages.flatMap(p => p.items) ?? []).filter(t => !hiddenIds.has(t.id)), [list.data, hiddenIds])
   const days = useMemo(() => groupByDay(items, today), [items, today])
   const total = mode === 'day' ? (list.data?.pages[0]?.total ?? 0) - hiddenIds.size : (groups.data ?? []).reduce((s, g) => s + g.count, 0)
   const sections = useMemo(() => groupSections(groups.data ?? [], split), [groups.data, split])
-  const periodText = filters.period === 'this' ? monthName(monthKey(today)) : periodLabel(filters.period)
+  const periodText = filters.period === 'this' ? (cycles.length ? cycle.cycleRangeLabel : monthName(monthKey(today))) : periodLabel(filters.period, w)
   const clearPeriod = filters.period !== '' && (
     <span role="button" tabIndex={0} aria-label="Quitar filtro de fecha" onClick={e => { e.stopPropagation(); setFilters(f => ({ ...f, period: '' })) }}
       onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); setFilters(f => ({ ...f, period: '' })) } }}
@@ -236,7 +243,7 @@ export default function Movimientos() {
       <div>
         <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, margin: '0 0 22px' }}>
           <div>
-            <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>{Math.max(0, total)} {filters.period === 'this' ? 'este mes' : `· ${periodText}`}</p>
+            <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>{Math.max(0, total)} {filters.period === 'this' ? w.this : `· ${periodText}`}</p>
             <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em' }}>Movimientos</h1>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -251,7 +258,7 @@ export default function Movimientos() {
           </div>
         </header>
         {!ultra && <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-          <Chip active={filters.period !== ''} onClick={() => setSheet('filters')}>{filters.period === 'this' ? 'Este mes' : periodText}{clearPeriod}</Chip>
+          <Chip active={filters.period !== ''} onClick={() => setSheet('filters')}>{filters.period === 'this' ? w.This : periodText}{clearPeriod}</Chip>
           <Chip icon="bank-card" active={filters.sources.length > 0} onClick={() => setSheet('filters')}>{srcLabel}</Chip>
           <Chip icon="tag" active={catNames.length > 0} onClick={() => setSheet('filters')}>{catNames.length ? catNames.join(', ') : 'Categoría'}</Chip>
           <Chip icon="filter" active={!!(filters.min || filters.max)} onClick={() => setSheet('filters')}>{amountLabel}</Chip>
@@ -677,10 +684,12 @@ function FiltersSheet({ open, onClose, value, onApply, search, categories, accou
   const [d, setD] = useState(value)
   const [months, setMonths] = useState(false)
   const [allCats, setAllCats] = useState(false)
+  const { cycles } = usePayrollCycle(0)
+  const w = usePeriodWords()
   useEffect(() => { if (open) { setD(value); setMonths(/^\d{4}-\d{2}$/.test(value.period)); setAllCats(false) } }, [open, value])
   const count = useQuery({
     queryKey: ['transactions', 'count', d, search],
-    queryFn: () => txApi.list({ ...filterParams(d, today), search: search || undefined, page: 1, page_size: 1 }),
+    queryFn: () => txApi.list({ ...filterParams(d, today, cycles), search: search || undefined, page: 1, page_size: 1 }),
     enabled: open,
   })
   const set = (patch: Partial<MovFilters>) => setD(x => ({ ...x, ...patch }))
@@ -708,7 +717,7 @@ function FiltersSheet({ open, onClose, value, onApply, search, categories, accou
       <FGroup>
         <SheetLabel>Fecha</SheetLabel>
         <Wrap>
-          {([['this', 'Este mes'], ['last', 'Mes pasado'], ['3m', '3 meses'], ['', 'Todo']] as const).map(([p, l]) => (
+          {([['this', w.This], ['last', w.last], ['3m', w.three], ['', 'Todo']] as const).map(([p, l]) => (
             <Chip key={p} active={d.period === p && !months} style={inSheet(d.period === p && !months)} onClick={() => { setMonths(false); set({ period: p }) }}>{l}</Chip>
           ))}
           <Chip icon="calendar" active={months} style={inSheet(months)} onClick={() => setMonths(m => !m)}>{months && /^\d{4}-\d{2}$/.test(d.period) ? monthName(d.period) : 'Otro mes'}</Chip>
@@ -855,6 +864,22 @@ export function CatSheet({ txs, categories, onClose, onDone }: { txs: Transactio
     } finally { setBusy(false) }
   }
 
+  const aiOn = useAuthStore(st => !!st.user?.ai_enabled)
+  async function categorizeAi() {
+    if (!txs) return
+    setBusy(true)
+    try {
+      const r = await aiApi.categorizeBatch(txs.map(t => t.id))
+      const ok = r.results.filter(x => x.category_id != null && !x.error).length
+      qc.invalidateQueries()
+      onClose()
+      onDone?.()
+      toast(ok === 0 ? 'La IA no ha sabido categorizar ninguno' : ok === txs.length ? (ok === 1 ? 'Categorizado con IA' : `${ok} categorizados con IA`) : `${ok} de ${txs.length} categorizados con IA`, { error: ok === 0 })
+    } catch (e) {
+      toast(errText(e), { error: true })
+    } finally { setBusy(false) }
+  }
+
   async function apply() {
     if (!txs || !selCat) return
     setBusy(true)
@@ -913,6 +938,7 @@ export function CatSheet({ txs, categories, onClose, onDone }: { txs: Transactio
         {keep
           ? <Btn icon="check-mark" disabled={busy} onClick={confirmKeep}>{`${selCat?.name ?? 'La categoría'} es correcta`}</Btn>
           : <Btn disabled={!changed || busy} onClick={apply}>{selCat ? `Cambiar a ${selCat.name}` : 'Elige una categoría'}</Btn>}
+        {aiOn && <Btn kind="ghost" icon="sparkle" disabled={busy} onClick={categorizeAi} style={{ marginTop: 6 }}>Categorizar con IA</Btn>}
       </div>
     </Sheet>
   )

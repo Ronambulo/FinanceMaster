@@ -2,12 +2,14 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { catApi, txApi } from '@/lib/api'
+import { catApi, recurringApi, txApi } from '@/lib/api'
+import { isModuleOn } from '@/lib/preferences'
+import { usePreferencesStore } from '@/store/preferences'
 import { accountName, longDateTime, needsReview, shortDate, txNet, txTitle } from '@/lib/movements'
 import { useIsPC } from '@/app/Shell'
 import { BankLogo } from '@/ui/BankLogo'
 import { CatTile } from '@/ui/Icon'
-import { BackBtn, Btn, C, Divider, Empty, FONT, KV, RoundBtn, Skeleton, useMoney } from '@/ui/kit'
+import { BackBtn, Btn, C, Divider, Empty, FONT, KV, RoundBtn, Sheet, SheetOption, Skeleton, useMoney } from '@/ui/kit'
 import { TxRow } from '@/ui/tx'
 import { toast } from '@/ui/Toast'
 import { CatSheet } from './Movimientos'
@@ -18,6 +20,8 @@ export default function Detalle() {
   const pc = useIsPC()
   const money = useMoney()
   const [cat, setCat] = useState(false)
+  const [rec, setRec] = useState(false)
+  const recOn = usePreferencesStore(s => isModuleOn(s.prefs, 'recurring'))
   const q = useQuery({ queryKey: ['transactions', 'one', id], queryFn: () => txApi.get(id), enabled: Number.isFinite(id) })
   const tx = q.data
   const sim = useQuery({ queryKey: ['similar', id], queryFn: () => txApi.similar(id), enabled: !!tx })
@@ -28,6 +32,14 @@ export default function Detalle() {
   async function confirmCat() {
     try { await txApi.confirm([id]); qc.invalidateQueries({ queryKey: ['transactions'] }); toast('Categoría confirmada') }
     catch (e) { toast(e instanceof Error ? e.message : 'Algo ha fallado', { error: true }) }
+  }
+  async function markRecurring(days: number) {
+    if (!tx) return
+    setRec(false)
+    try {
+      await recurringApi.createFromTx({ transaction_id: tx.id, display_name: sim.data?.merchant || txTitle(tx), period_days: days })
+      qc.invalidateQueries(); toast('Añadido a recurrentes')
+    } catch (e) { toast(e instanceof Error ? e.message : 'Algo ha fallado', { error: true }) }
   }
   async function unlink(group: number) {
     try { await txApi.unlink(group); qc.invalidateQueries(); toast('Movimientos separados') }
@@ -77,6 +89,13 @@ export default function Detalle() {
         <KV k="Nota" onClick={edit} v={tx.note
           ? <span style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tx.note}</span>
           : <span style={{ fontSize: 15, color: C.muted, fontWeight: 700 }}>Sin nota</span>} />
+        {recOn && !tx.is_internal_transfer && (
+          <>
+            <Divider margin="0" />
+            <KV k="Recurrente" onClick={tx.recurring_group_id != null ? () => nav('/recurrentes') : () => setRec(true)}
+              v={tx.recurring_group_id != null ? 'Sí' : <span style={{ fontSize: 15, color: C.accentText, fontWeight: 800 }}>Marcar</span>} />
+          </>
+        )}
       </section>
       {tx.link_group_id != null && (tx.linked_transactions?.length ?? 0) > 0 && (() => {
         const all = [tx, ...tx.linked_transactions!].sort((a, b) => (b.datetime ?? b.date).localeCompare(a.datetime ?? a.date))
@@ -109,6 +128,11 @@ export default function Detalle() {
       <div style={pc ? { marginTop: 20, maxWidth: 260 } : { position: 'fixed', left: 20, right: 20, bottom: 'calc(30px - var(--vb-gap, 0px))', zIndex: 5 }}>
         <Btn icon="edit" onClick={edit}>Editar</Btn>
       </div>
+      <Sheet open={rec} onClose={() => setRec(false)} title="¿Cada cuánto se repite?">
+        {([[7, 'Cada semana'], [30, 'Cada mes'], [90, 'Cada 3 meses'], [365, 'Cada año']] as const).map(([d, l]) => (
+          <SheetOption key={d} title={l} onClick={() => markRecurring(d)} />
+        ))}
+      </Sheet>
       <CatSheet txs={cat ? one : null} categories={categories.data ?? []} onClose={() => setCat(false)} />
     </div>
   )

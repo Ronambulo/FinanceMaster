@@ -1,5 +1,5 @@
 // Importar CSV (tablero Importar) y revisión antes de guardar (tablero Revision).
-import { useMemo, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { catApi, txApi, type Category, type ImportPreview, type ImportReviewRow } from '@/lib/api'
@@ -17,6 +17,7 @@ const ORIGINS: { format: string; id: BankId; title: string; sub: string }[] = [
   { format: 'trade_republic', id: 'trade_republic', title: 'Trade Republic', sub: 'CSV o conexión directa' },
   { format: 'myinvestor', id: 'myinvestor', title: 'MyInvestor', sub: 'Órdenes de fondos' },
   { format: 'bbva', id: 'bbva', title: 'BBVA', sub: 'Excel o CSV del extracto' },
+  { format: 'pluxee', id: 'pluxee', title: 'Pluxee', sub: 'Excel de movimientos' },
   { format: 'wise', id: 'other', title: 'Wise', sub: 'CSV del extracto' },
 ]
 const PAGE = 200
@@ -45,6 +46,41 @@ export function reviewRows(p: ImportPreview): ImportReviewRow[] {
 
 type Review = { file: File; format: string; preview: ImportPreview }
 
+// Archivo soltado en otra pantalla (Cuentas): Importar lo lee nada más abrirse.
+let pending: File | null = null
+export function useImportFile() {
+  const nav = useNavigate()
+  return (file: File) => { pending = file; nav('/importar') }
+}
+
+/** Zona que acepta soltar un archivo de movimientos en toda la pantalla y lo lleva a Importar. */
+export function FileDrop({ children }: { children: ReactNode }) {
+  const importFile = useImportFile()
+  const [over, setOver] = useState(false)
+  const depth = useRef(0)
+  const isFile = (e: DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
+  return (
+    <div style={{ position: 'relative', minHeight: '100%' }}
+      onDragEnter={e => { if (!isFile(e)) return; e.preventDefault(); depth.current++; setOver(true) }}
+      onDragOver={e => { if (isFile(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' } }}
+      onDragLeave={e => { if (!isFile(e)) return; depth.current = Math.max(0, depth.current - 1); if (!depth.current) setOver(false) }}
+      onDrop={e => {
+        if (!isFile(e)) return
+        e.preventDefault(); depth.current = 0; setOver(false)
+        const f = e.dataTransfer.files[0]
+        if (f) importFile(f)
+      }}>
+      {children}
+      {over && (
+        <div style={{ position: 'fixed', inset: 12, zIndex: 50, pointerEvents: 'none', border: '2px dashed var(--c-5b52f0)', borderRadius: 28, background: 'color-mix(in srgb, var(--c-0f1015) 82%, transparent)', backdropFilter: 'blur(2px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: C.text }}>
+          <span style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--avatar)', color: C.accentText, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="file" size={30} /></span>
+          <span style={{ fontWeight: 800, fontSize: 18 }}>Suelta para importar movimientos</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Importar() {
   const [review, setReview] = useState<Review | null>(null)
   return review ? <Revision {...review} onBack={() => setReview(null)} /> : <Pick onReady={setReview} />
@@ -71,6 +107,12 @@ function Pick({ onReady }: { onReady: (r: Review) => void }) {
     }
   }
   const choose = (f = 'auto') => { format.current = f; input.current?.click() }
+  useEffect(() => {
+    if (!pending) return
+    const f = pending; pending = null
+    format.current = 'auto'; load(f)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const onDrop = (e: DragEvent) => { e.preventDefault(); setOver(false); format.current = 'auto'; load(e.dataTransfer.files[0]) }
 
   const m = pc ? 0 : 16
