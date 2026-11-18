@@ -1,6 +1,7 @@
 import os
+import secrets
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
@@ -163,6 +164,63 @@ def create_user(
     db.refresh(user)
     activity.record(db, "admin_user_created", user=current_user, detail=user.username)
     return _with_counts(db, [user])[0]
+
+
+INVITE_DAYS = 7
+
+
+class InviteCreate(BaseModel):
+    display_name: Optional[str] = None
+
+
+def _invite_out(i: models.Invite) -> dict:
+    return {"id": i.id, "token": i.token, "display_name": i.display_name,
+            "created_at": i.created_at.isoformat() if i.created_at else None,
+            "expires_at": i.expires_at.isoformat()}
+
+
+@router.post("/invites")
+def create_invite(
+    data: InviteCreate,
+    current_user: models.User = Depends(auth.require_admin),
+    db: Session = Depends(get_db),
+):
+    """Crea un enlace de invitación de un solo uso que caduca en una semana."""
+    name = (data.display_name or "").strip()[:60] or None
+    inv = models.Invite(
+        token=secrets.token_urlsafe(24), display_name=name, created_by=current_user.id,
+        expires_at=datetime.utcnow() + timedelta(days=INVITE_DAYS),
+    )
+    db.add(inv)
+    db.commit()
+    db.refresh(inv)
+    activity.record(db, "admin_invite_created", user=current_user, detail=name)
+    return _invite_out(inv)
+
+
+@router.get("/invites")
+def list_invites(
+    current_user: models.User = Depends(auth.require_admin),
+    db: Session = Depends(get_db),
+):
+    """Invitaciones sin usar y sin caducar, la más nueva primero."""
+    rows = (db.query(models.Invite)
+            .filter(models.Invite.used_at.is_(None), models.Invite.expires_at >= datetime.utcnow())
+            .order_by(models.Invite.created_at.desc()).all())
+    return [_invite_out(i) for i in rows]
+
+
+@router.delete("/invites/{invite_id}", status_code=204)
+def delete_invite(
+    invite_id: int,
+    current_user: models.User = Depends(auth.require_admin),
+    db: Session = Depends(get_db),
+):
+    inv = db.query(models.Invite).filter(models.Invite.id == invite_id).first()
+    if not inv:
+        raise HTTPException(404, "Invitación no encontrada")
+    db.delete(inv)
+    db.commit()
 
 
 @router.get("/users/{user_id}", response_model=schemas.AdminUserOut)

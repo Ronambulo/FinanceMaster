@@ -11,6 +11,8 @@ class UserCreate(BaseModel):
     username: str
     password: str
     display_name: Optional[str] = None
+    # Token del enlace de invitación (opcional).
+    invite: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: str  # correo o nombre de usuario

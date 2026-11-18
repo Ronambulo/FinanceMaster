@@ -9,8 +9,19 @@ const SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'O
 
 export const INCOME_TYPES = ['TRANSFER_INBOUND', 'CUSTOMER_INPAYMENT', 'INTEREST', 'DIVIDEND', 'REFUND']
 
-function isoDay(d: Date): string {
+export function isoDay(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Fecha y hora del servidor: llega en UTC sin zona, así que se marca como UTC. */
+export function serverDate(iso: string): Date {
+  return new Date(/(Z|[+-]\d\d:?\d\d)$/.test(iso) ? iso : iso + 'Z')
+}
+
+/** "Hoy, 11:40", "Ayer, 09:05" o "Domingo 15, 18:20" en hora local. */
+export function syncLabel(iso: string, now: Date): string {
+  const d = serverDate(iso)
+  return `${dayLabel(isoDay(d), now)}, ${d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`
 }
 
 /** Importe que cuenta: el neto del grupo enlazado si lo hay. */

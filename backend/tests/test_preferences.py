@@ -137,3 +137,32 @@ def test_home_cards_old_lists_show_hero_and_recent():
     assert prefs.resolve(old)["home_cards"] == ["hero", "goal", "worth", "recent"]
     raw = prefs.merge(old, {"home_cards": ["goal"]})
     assert prefs.resolve(raw)["home_cards"] == ["goal"]
+
+def test_profile_change_username(user_client):
+    client, _ = user_client
+    old = client.get("/api/auth/me").json()["username"]
+    # Sin enviar username no cambia
+    assert client.put("/api/auth/profile", json={"display_name": "Ana"}).json()["username"] == old
+    r = client.put("/api/auth/profile", json={"display_name": "Ana", "username": f"  {old}-nuevo "})
+    assert r.status_code == 200, r.text
+    assert r.json()["username"] == f"{old}-nuevo"
+    # Se entra con el usuario nuevo, no con el viejo
+    client.headers.pop("Authorization")
+    assert client.post("/api/auth/login", json={"email": f"{old}-nuevo", "password": "secret123"}).status_code == 200
+    assert client.post("/api/auth/login", json={"email": old, "password": "secret123"}).status_code == 401
+
+
+def test_profile_username_rules(client):
+    a = client.post("/api/auth/register", json={"username": "solo_a", "password": "secret123"}).json()
+    client.post("/api/auth/register", json={"email": "b@example.com", "username": "solo_b", "password": "secret123"})
+    client.headers["Authorization"] = f"Bearer {a['access_token']}"
+    put = lambda u: client.put("/api/auth/profile", json={"display_name": None, "username": u})
+    assert put("solo_b").status_code == 400
+    assert put("b@example.com").status_code == 400
+    assert put("").status_code == 422
+    assert put("con espacio").status_code == 422
+    assert put("x" * 41).status_code == 422
+    r = put("solo_a2")
+    assert r.status_code == 200
+    # El correo interno sigue al usuario
+    assert r.json()["email"] == "solo_a2@local"

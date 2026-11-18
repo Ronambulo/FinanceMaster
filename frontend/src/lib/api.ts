@@ -37,12 +37,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 const pkHeaders = () => ({ 'X-App-Origin': window.location.origin })
 
 export const authApi = {
-  register: (data: { email?: string; username: string; password: string; display_name?: string }) =>
+  register: (data: { email?: string; username: string; password: string; display_name?: string; invite?: string }) =>
     request<{ access_token: string; user: User }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: { email: string; password: string }) =>
     request<{ access_token: string; user: User }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request<User>('/auth/me'),
-  updateProfile: (data: { display_name: string | null }) =>
+  invite: (token: string) => request<{ display_name: string | null }>(`/auth/invite/${encodeURIComponent(token)}`),
+  updateProfile: (data: { display_name: string | null; username?: string }) =>
     request<User>('/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
   changePassword: (data: { current_password: string; new_password: string }) =>
     request<{ ok: boolean }>('/auth/password', { method: 'PUT', body: JSON.stringify(data) }),
@@ -73,6 +74,10 @@ export const authApi = {
 // Admin
 export const adminApi = {
   listUsers: () => request<AdminUser[]>('/admin/users'),
+  listInvites: () => request<Invite[]>('/admin/invites'),
+  createInvite: (displayName?: string) =>
+    request<Invite>('/admin/invites', { method: 'POST', body: JSON.stringify({ display_name: displayName || null }) }),
+  deleteInvite: (id: number) => request<void>(`/admin/invites/${id}`, { method: 'DELETE' }),
   setActive: (userId: number, isActive: boolean) =>
     request<AdminUser>(`/admin/users/${userId}/active`, { method: 'PUT', body: JSON.stringify({ is_active: isActive }) }),
   setAi: (userId: number, aiEnabled: boolean, aiModel: string | null) =>
@@ -110,6 +115,7 @@ export const adminApi = {
 
 export interface Passkey { id: number; credential_id: string; device: string | null; created_at: string; last_used_at: string | null }
 export interface AuthSession { id: number; device: string; ip: string | null; created_at: string; last_seen_at: string | null; current: boolean }
+export interface Invite { id: number; token: string; display_name: string | null; created_at: string | null; expires_at: string }
 export interface ActivityEntry { id: number; user_id: number | null; username: string | null; action: string; label: string; detail: string | null; created_at: string }
 export interface AdminNotice { id: number; level: string; title: string; text: string | null; created_at: string; read: boolean }
 export interface BackupFile { name: string; size_bytes: number; created_at: string }

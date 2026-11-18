@@ -17,6 +17,9 @@ def register(data: schemas.UserCreate, request: Request, db: Session = Depends(g
     username = data.username.strip()
     if not username:
         raise HTTPException(status_code=400, detail="Falta el usuario")
+    invite = _valid_invite(db, data.invite) if data.invite else None
+    if data.invite and not invite:
+        raise HTTPException(status_code=400, detail="La invitación ha caducado o ya se usó")
     # El correo es opcional: sin él se guarda uno interno único.
     email = data.email or f"{username}@local"
     if db.query(models.User).filter(models.User.email == email).first():
@@ -33,10 +36,30 @@ def register(data: schemas.UserCreate, request: Request, db: Session = Depends(g
     db.add(user)
     db.commit()
     db.refresh(user)
+    if invite:
+        invite.used_at = datetime.utcnow()
+        invite.used_by = user.id
+        db.commit()
 
     token = auth.issue_token(db, user, request)
-    activity.record(db, "register", user=user, request=request)
+    activity.record(db, "register", user=user, detail="con invitación" if invite else None, request=request)
     return schemas.Token(access_token=token, token_type="bearer", user=schemas.UserOut.model_validate(user))
+
+
+def _valid_invite(db: Session, token: str) -> Optional[models.Invite]:
+    inv = db.query(models.Invite).filter(models.Invite.token == token).first()
+    if not inv or inv.used_at is not None or inv.expires_at < datetime.utcnow():
+        return None
+    return inv
+
+
+@router.get("/invite/{token}")
+def get_invite(token: str, db: Session = Depends(get_db)):
+    """Datos públicos de una invitación: solo el nombre propuesto."""
+    inv = _valid_invite(db, token)
+    if not inv:
+        raise HTTPException(status_code=404, detail="La invitación ha caducado o ya se usó")
+    return {"display_name": inv.display_name}
 
 
 @router.post("/login", response_model=schemas.Token)
@@ -152,17 +175,50 @@ def update_preferences(
 
 class ProfileUpdate(BaseModel):
     display_name: str | None = None
+    # Sin enviar, el usuario no cambia (los clientes viejos solo mandan el nombre).
+    username: str | None = None
+
+
+def _rename(db: Session, user: models.User, new: str, request: Request) -> None:
+    """Cambia el nombre de usuario con el que se entra."""
+    new = new.strip()
+    if not new:
+        raise HTTPException(status_code=422, detail="Falta el usuario")
+    if len(new) > 40:
+        raise HTTPException(status_code=422, detail="El usuario es demasiado largo")
+    if any(c.isspace() for c in new):
+        raise HTTPException(status_code=422, detail="El usuario no puede tener espacios")
+    old = user.username
+    if new == old:
+        return
+    # Se entra con usuario o correo: no puede coincidir con ninguno de otra cuenta.
+    taken = db.query(models.User).filter(
+        models.User.id != user.id,
+        (models.User.username == new) | (models.User.email == new),
+    ).first()
+    if taken:
+        raise HTTPException(status_code=400, detail="Ese usuario ya existe")
+    user.username = new
+    # El correo interno de las cuentas sin correo sigue al usuario.
+    if user.email == f"{old}@local":
+        internal = f"{new}@local"
+        if not db.query(models.User).filter(models.User.id != user.id, models.User.email == internal).first():
+            user.email = internal
+    activity.record(db, "username_changed", user=user, detail=f"{old} → {new}", request=request)
 
 
 @router.put("/profile", response_model=schemas.UserOut)
 def update_profile(
     data: ProfileUpdate,
+    request: Request,
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
     name = (data.display_name or "").strip()
     if len(name) > 60:
         raise HTTPException(status_code=422, detail="El nombre es demasiado largo")
+    if data.username is not None:
+        _rename(db, current_user, data.username, request)
     current_user.display_name = name or None
     db.commit()
     db.refresh(current_user)

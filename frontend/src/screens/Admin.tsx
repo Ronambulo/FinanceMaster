@@ -2,7 +2,9 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { adminApi, aiApi, type AdminStats, type AdminUser } from '@/lib/api'
+import { adminApi, aiApi, type AdminStats, type AdminUser, type Invite } from '@/lib/api'
+import { canShare, copyText, inviteUrl, shareLink } from '@/lib/share'
+import { serverDate } from '@/lib/movements'
 import { formatBytes, formatCount, formatUptime, joinedLabel, lastAccessLabel, lastAccessShort } from '@/lib/admin'
 import { useAuthStore } from '@/store/auth'
 import { PCHeader, useIsPC } from '@/app/Shell'
@@ -34,28 +36,78 @@ function RolePill({ u, short }: { u: AdminUser; short?: boolean }) {
   return short ? null : <Pill tone="muted">Usuario</Pill>
 }
 
-// ── Hoja: crear usuario ─────────────────────────────────────────────────────
+// ── Hoja: invitar con enlace ────────────────────────────────────────────────
+const expiresLabel = (iso: string) => {
+  const days = Math.ceil((serverDate(iso).getTime() - Date.now()) / 86400000)
+  return days <= 1 ? 'Caduca hoy' : `Caduca en ${days} días`
+}
+
+async function copyInvite(i: Invite) {
+  if (await copyText(inviteUrl(i.token))) toast('Enlace copiado')
+  else toast('No se pudo copiar', { error: true })
+}
+
 function NewUserSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient()
-  const nav = useNavigate()
-  const [username, setUsername] = useState('')
   const [name, setName] = useState('')
-  const [password, setPassword] = useState('')
-  const m = useMutation({
-    mutationFn: () => adminApi.createUser({ username: username.trim(), password, display_name: name.trim() || undefined }),
-    onSuccess: u => {
-      qc.invalidateQueries({ queryKey: ['admin-users'] }); qc.invalidateQueries({ queryKey: ['admin-stats'] })
-      toast('Usuario creado'); setUsername(''); setName(''); setPassword(''); onClose(); nav(`/admin/usuarios/${u.id}`)
-    },
+  const [made, setMade] = useState<Invite | null>(null)
+  const invites = useQuery({ queryKey: ['admin-invites'], queryFn: adminApi.listInvites, enabled: open })
+  const create = useMutation({
+    mutationFn: () => adminApi.createInvite(name.trim() || undefined),
+    onSuccess: i => { setMade(i); qc.invalidateQueries({ queryKey: ['admin-invites'] }) },
     onError: (e: Error) => toast(e.message, { error: true }),
   })
-  const ok = username.trim().length > 0 && password.length >= 6 && !m.isPending
+  const remove = useMutation({
+    mutationFn: (id: number) => adminApi.deleteInvite(id),
+    onSuccess: (_, id) => { if (made?.id === id) setMade(null); qc.invalidateQueries({ queryKey: ['admin-invites'] }) },
+    onError: (e: Error) => toast(e.message, { error: true }),
+  })
+  const close = () => { setMade(null); setName(''); onClose() }
+  const share = async (i: Invite) => {
+    if (!(await shareLink(inviteUrl(i.token), 'FinanceMaster', 'Te invito a FinanceMaster. Crea tu cuenta aquí:'))) copyInvite(i)
+  }
+  const others = (invites.data ?? []).filter(i => i.id !== made?.id)
+  const sharable = canShare()
   return (
-    <Sheet open={open} onClose={onClose} title="Invitar usuario">
-      <Field label="Usuario" autoFocus autoComplete="off" value={username} onChange={e => setUsername(e.target.value)} />
-      <Field label="Nombre" autoComplete="off" value={name} onChange={e => setName(e.target.value)} />
-      <Field label="Contraseña" type="password" autoComplete="new-password" placeholder="Mínimo 6 caracteres" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && ok && m.mutate()} />
-      <Btn icon="add-person" disabled={!ok} onClick={() => m.mutate()} style={{ marginTop: 6 }}>Crear usuario</Btn>
+    <Sheet open={open} onClose={close} title="Invitar usuario">
+      {made ? (
+        <>
+          <Field label={made.display_name ? `Enlace para ${made.display_name}` : 'Enlace de invitación'} icon="link" readOnly
+            value={inviteUrl(made.token)} onFocus={e => e.currentTarget.select()} />
+          <div style={{ display: 'grid', gridTemplateColumns: sharable ? '1fr 1fr' : '1fr', gap: 10 }}>
+            <Btn icon="copy" kind={sharable ? 'secondary' : 'primary'} onClick={() => copyInvite(made)}>Copiar</Btn>
+            {sharable && <Btn icon="send-up" onClick={() => share(made)}>Compartir</Btn>}
+          </div>
+          <p style={{ margin: '10px 4px 0', fontSize: 13, fontWeight: 600, color: C.muted }}>Sirve una sola vez. {expiresLabel(made.expires_at)}.</p>
+          <Btn kind="ghost" height={44} onClick={() => { setMade(null); setName('') }} style={{ marginTop: 8 }}>Crear otro enlace</Btn>
+        </>
+      ) : (
+        <>
+          <Field label="Nombre" autoFocus autoComplete="off" placeholder="Opcional" value={name} maxLength={60}
+            onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && !create.isPending && create.mutate()} />
+          <Btn icon="link" disabled={create.isPending} onClick={() => create.mutate()} style={{ marginTop: 6 }}>Crear enlace</Btn>
+        </>
+      )}
+      {others.length > 0 && (
+        <>
+          <p style={{ margin: '20px 4px 8px', fontSize: 13, fontWeight: 700, color: C.muted }}>Sin usar</p>
+          <div style={{ background: C.field, borderRadius: 16, padding: '2px 6px 2px 14px' }}>
+            {others.map((i, n) => (
+              <div key={i.id}>
+                {n > 0 && <Divider margin="0" />}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 52 }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.display_name || 'Sin nombre'}</span>
+                    <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: C.muted }}>{expiresLabel(i.expires_at)}</span>
+                  </span>
+                  <RoundBtn icon="copy" label="Copiar enlace" onClick={() => copyInvite(i)} />
+                  <RoundBtn icon="delete" label="Anular invitación" onClick={() => remove.mutate(i.id)} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </Sheet>
   )
 }

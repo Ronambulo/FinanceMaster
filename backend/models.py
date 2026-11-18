@@ -418,3 +418,17 @@ class Passkey(Base):
     device = Column(String, nullable=True)
     created_at = Column(DateTime, default=_dt.utcnow)
     last_used_at = Column(DateTime, nullable=True)
+
+
+class Invite(Base):
+    """Enlace de invitación de un solo uso para crear una cuenta."""
+    __tablename__ = "invites"
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String, nullable=False, unique=True, index=True)
+    display_name = Column(String, nullable=True)
+    # Sin clave foránea: la invitación no debe impedir borrar al administrador.
+    created_by = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=_dt.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    used_by = Column(Integer, nullable=True)
