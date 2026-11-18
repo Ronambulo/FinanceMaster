@@ -297,6 +297,7 @@ class RecurringGroupOut(BaseModel):
     category: Optional[CategoryOut]
     next_expected_date: Optional[date]
     is_active: bool
+    is_dismissed: Optional[bool] = False
     transaction_count: int = 0
     amount_options: List[AmountOption] = []
     model_config = {"from_attributes": True}
@@ -305,6 +306,7 @@ class RecurringGroupUpdate(BaseModel):
     display_name: Optional[str] = None
     category_id: Optional[int] = None
     is_active: Optional[bool] = None
+    is_dismissed: Optional[bool] = None
     next_expected_date: Optional[date] = None
     avg_amount: Optional[float] = None
 

@@ -100,6 +100,8 @@ def update_recurring(
     updates = data.model_dump(exclude_none=True)
     if "avg_amount" in updates:
         g.amount_is_manual = True
+    if updates.get("is_active"):
+        updates["is_dismissed"] = False
     for k, v in updates.items():
         setattr(g, k, v)
     db.commit()

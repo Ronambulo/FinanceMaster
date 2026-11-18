@@ -10,11 +10,11 @@ import {
 } from '@/lib/api'
 import { isModuleOn, type ModuleId } from '@/lib/preferences'
 import { usePreferencesStore } from '@/store/preferences'
-import { BROKERS } from '@/lib/accounts'
+import { BROKERS, visibleAccounts } from '@/lib/accounts'
 import { categoriesFor, monthKey, parseAmount, shortDate } from '@/lib/movements'
 import {
   TONE_COLORS, badges, bestMonth, budgetTone, budgetTotals, budgetsSummary, daysLeftInMonth, debtTotals, debtsSummary,
-  goalSub, goalTarget, goalsSummary, lastGreenMonth, linePoints, longMonth, longestStreak, monthlySummary,
+  goalSub, goalTarget, goalsReserved, goalsSummary, lastGreenMonth, linePoints, longMonth, longestStreak, monthlySummary,
   recurringMonthly, recurringSummary, recurringWhen, savingsAverage, spendBars, spendChange, streakDays,
 } from '@/lib/plan'
 import { PCHeader, useIsPC } from '@/app/Shell'
@@ -336,7 +336,8 @@ export function Recurrentes() {
   const today = new Date()
   const all = groups.data ?? []
   const active = useMemo(() => all.filter(g => g.is_active).sort((a, b) => (a.next_expected_date ?? '9999').localeCompare(b.next_expected_date ?? '9999')), [all])
-  const paused = all.filter(g => !g.is_active)
+  // Sugerencias: detectados que aún no se han añadido ni descartado.
+  const suggested = all.filter(g => !g.is_active && !g.is_dismissed)
   const detect = useMutation({
     mutationFn: recurringApi.detect,
     onSuccess: () => { invalidate(); toast('Recurrentes actualizados') },
@@ -344,6 +345,14 @@ export function Recurrentes() {
   })
   const toggle = async (g: RecurringGroup, on: boolean) => {
     try { await recurringApi.update(g.id, { is_active: on }); invalidate(); toast(on ? `${g.display_name} añadido` : `${g.display_name} pausado`, on ? {} : { undo: () => { recurringApi.update(g.id, { is_active: true }).then(invalidate) } }) } catch (e) { toast(errText(e), { error: true }) }
+  }
+  // Descartar: deja de contar y la búsqueda automática no lo vuelve a proponer.
+  const dismiss = async (g: RecurringGroup) => {
+    const was = { is_active: g.is_active, is_dismissed: !!g.is_dismissed }
+    try {
+      await recurringApi.update(g.id, { is_active: false, is_dismissed: true }); invalidate()
+      toast(g.is_active ? `${g.display_name} ya no es recurrente` : 'Sugerencia descartada', { undo: () => { recurringApi.update(g.id, was).then(invalidate) } })
+    } catch (e) { toast(errText(e), { error: true }) }
   }
 
   return (
@@ -379,17 +388,18 @@ export function Recurrentes() {
               </Section>
             </>
           )}
-          {paused.length > 0 && (
+          {suggested.length > 0 && (
             <>
               <Label>Detectado</Label>
-              {paused.slice(0, 3).map(g => (
+              {suggested.slice(0, 3).map(g => (
                 <section key={g.id} style={{ ...card, margin: '0 16px 10px', padding: '14px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <span style={{ width: 40, height: 40, borderRadius: 14, background: C.soft, color: C.accentText, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name="sparkle" size={20} /></span>
-                    <span style={{ flex: 1, minWidth: 0 }}>
+                    <span role="button" tabIndex={0} onClick={() => setOpen(g)} onKeyDown={e => e.key === 'Enter' && setOpen(g)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
                       <span style={{ display: 'block', fontWeight: 700 }}>¿{g.display_name} es recurrente?</span>
                       <span style={{ fontSize: 12, color: C.muted, fontWeight: 600 }}>{g.avg_amount != null ? `${fmt2(Math.abs(g.avg_amount))} ${curSym()} ` : ''}{recurringWhen(null, g.period_days, today).toLowerCase()}</span>
                     </span>
+                    <button type="button" aria-label={`Descartar ${g.display_name}`} title="Descartar" onClick={() => dismiss(g)} style={{ width: 34, height: 34, flex: 'none', border: 0, borderRadius: 10, background: C.field, color: C.muted, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><Icon name="close" size={16} /></button>
                     <button type="button" onClick={() => toggle(g, true)} style={{ height: 34, padding: '0 14px', border: 0, borderRadius: 10, background: C.accent, color: C.white, font: "800 13px 'Manrope', sans-serif", cursor: 'pointer' }}>Añadir</button>
                   </div>
                 </section>
@@ -402,13 +412,42 @@ export function Recurrentes() {
         <SheetOption icon="search" title={detect.isPending ? 'Buscando…' : 'Buscar automáticamente'} sub="Revisa tus movimientos" onClick={() => { detect.mutate(); setAdd(false) }} />
         <SheetOption icon="text-unordered" title="Desde un movimiento" sub="Abre uno y márcalo como recurrente" onClick={() => { setAdd(false); nav('/transacciones') }} />
       </Sheet>
-      {open && (
-        <Sheet open onClose={() => setOpen(null)} title={open.display_name}>
-          <SheetOption icon="receipt" title="Ver movimientos" onClick={() => { setOpen(null); nav(`/comercio/${encodeURIComponent(open.display_name)}`) }} />
-          <SheetOption icon="close" title="Dejar de seguir" sub="Ya no cuenta como fijo" onClick={() => { const g = open; setOpen(null); toggle(g, false) }} />
-        </Sheet>
-      )}
+      {open && <RecurringSheet group={all.find(g => g.id === open.id) ?? open} onClose={() => setOpen(null)}
+        onAdd={g => { setOpen(null); toggle(g, true) }} onDismiss={g => { setOpen(null); dismiss(g) }} />}
     </Page>
+  )
+}
+
+function RecurringSheet({ group: g, onClose, onAdd, onDismiss }: {
+  group: RecurringGroup; onClose: () => void; onAdd: (g: RecurringGroup) => void; onDismiss: (g: RecurringGroup) => void
+}) {
+  const nav = useNavigate()
+  const invalidate = useInvalidate()
+  const options = g.amount_options ?? []
+  const current = g.avg_amount != null ? Math.round(Math.abs(g.avg_amount) * 100) / 100 : null
+  const pick = async (amount: number) => {
+    if (amount === current) return
+    try { await recurringApi.update(g.id, { avg_amount: amount }); invalidate(); toast(`Importe: ${fmt2(amount)} ${curSym()}`) } catch (e) { toast(errText(e), { error: true }) }
+  }
+  return (
+    <Sheet open onClose={onClose} title={g.display_name}>
+      {options.length > 1 && (
+        <>
+          <p style={{ margin: '0 0 2px', fontSize: 13, color: C.muted, fontWeight: 700 }}>Importe</p>
+          {options.slice(0, 6).map(o => (
+            <SheetOption key={o.amount} selected={o.amount === current} title={`${fmt2(o.amount)} ${curSym()}`}
+              sub={o.count === 1 ? `1 vez · ${shortDate(o.last_date)}` : `${o.count} veces · último ${shortDate(o.last_date)}`} onClick={() => pick(o.amount)} />
+          ))}
+          {current != null && !options.some(o => o.amount === current) && (
+            <SheetOption selected title={`${fmt2(current)} ${curSym()}`} sub="Media" onClick={() => {}} />
+          )}
+          <Divider margin="8px 0" />
+        </>
+      )}
+      {!g.is_active && <SheetOption icon="plus" title="Añadir como recurrente" onClick={() => onAdd(g)} />}
+      <SheetOption icon="receipt" title="Ver movimientos" onClick={() => { onClose(); nav(`/comercio/${encodeURIComponent(g.display_name)}`) }} />
+      <SheetOption icon="close" title={g.is_active ? 'No es recurrente' : 'Descartar sugerencia'} onClick={() => onDismiss(g)} />
+    </Sheet>
   )
 }
 
@@ -421,11 +460,15 @@ function goalLook(g: Goal): { icon: AnyIcon; color: string } {
 }
 
 export function Objetivos() {
+  const money = useMoney()
   const goals = useQuery({ queryKey: ['goals'], queryFn: goalApi.list })
   const [edit, setEdit] = useState<Goal | 'new' | null>(null)
   const [contribute, setContribute] = useState(false)
   const list = (goals.data ?? []).filter(g => g.is_active)
   const today = new Date()
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: dashApi.accounts })
+  const cashTotal = visibleAccounts(accounts.data ?? []).reduce((a, c) => a + c.balance, 0)
+  const reserved = goalsReserved(list)
 
   return (
     <Page>
@@ -436,6 +479,13 @@ export function Objetivos() {
         <Empty icon="safe-open" title="Sin objetivos" text="Ahorra para algo concreto y mira cómo avanza." action={<Btn icon="plus" onClick={() => setEdit('new')}>Nuevo objetivo</Btn>} />
       ) : (
         <>
+          {accounts.data && (
+            <section style={{ ...card, margin: '16px 16px 0', padding: '16px 20px' }}>
+              <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>Disponible</p>
+              <p style={{ margin: 0, fontSize: 30, fontWeight: 800 }}>{money(cashTotal - reserved, { euro: true })}</p>
+              <p style={{ margin: '4px 0 0', fontSize: 13, color: C.muted, fontWeight: 600 }}>{money(reserved, { euro: true })} apartados de {money(cashTotal, { euro: true })}</p>
+            </section>
+          )}
           {list.map(g => {
             const look = goalLook(g)
             const target = goalTarget(g)

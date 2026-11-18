@@ -82,8 +82,22 @@ export function StandaloneFix() {
   useEffect(() => {
     if (!(isStandalone() && isIos())) return
     const root = document.documentElement
+    // iOS a veces dibuja la app desde arriba del todo (bajo la barra de estado)
+    // pero deja el viewport con la altura de la pantalla menos esa barra: lo fijo
+    // abajo flota y queda una franja vacía. Se mide ese hueco y lo que va pegado
+    // abajo lo resta (--vb-gap).
+    const probe = document.createElement('div')
+    Object.assign(probe.style, { position: 'fixed', top: '0', left: '0', width: '0', paddingTop: 'env(safe-area-inset-top)', visibility: 'hidden', pointerEvents: 'none' })
+    document.body.append(probe)
     const measure = () => {
-      root.style.setProperty('--app-height', `${window.innerHeight}px`)
+      const safeTop = parseFloat(getComputedStyle(probe).paddingTop) || 0
+      const portrait = window.innerHeight >= window.innerWidth
+      const full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height)
+      const raw = full - window.innerHeight
+      // Solo si el contenido empieza bajo la barra de estado y el hueco es del tamaño de esa barra.
+      const gap = safeTop > 0 && raw > 0 && raw <= safeTop + 4 ? raw : 0
+      root.style.setProperty('--vb-gap', `${gap}px`)
+      root.style.setProperty('--app-height', `${window.innerHeight + gap}px`)
       if (window.scrollY !== 0) window.scrollTo(0, 0)
     }
     measure()
@@ -116,7 +130,7 @@ export function StandaloneFix() {
       window.removeEventListener('pageshow', measure)
       window.removeEventListener('resize', measure)
       window.removeEventListener('orientationchange', measure)
-      cover.remove(); panel.remove()
+      cover.remove(); panel.remove(); probe.remove()
     }
   }, [])
   return null

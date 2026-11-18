@@ -24,7 +24,7 @@ function Steps({ step, title, sub }: { step: number; title: string; sub: string 
 
 function Bottom({ children, two }: { children: ReactNode; two?: boolean }) {
   return (
-    <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: '12px 20px 30px', background: `linear-gradient(transparent, ${C.bg} 30%)` }}>
+    <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(0px - var(--vb-gap, 0px))', padding: '12px 20px 30px', background: `linear-gradient(transparent, ${C.bg} 30%)` }}>
       <div style={{ maxWidth: 520, margin: '0 auto', display: 'grid', gridTemplateColumns: two ? '1fr 2fr' : '1fr', gap: 10 }}>{children}</div>
     </div>
   )

@@ -73,7 +73,7 @@ export function Btn({ kind = 'primary', icon, children, style, height = 52, ...r
 export function Fab({ onClick, label = 'Añadir movimiento' }: { onClick: () => void; label?: string }) {
   return (
     <button type="button" aria-label={label} onClick={onClick} style={{
-      position: 'fixed', right: 22, bottom: 108, width: 58, height: 58, borderRadius: 20, border: 0, background: C.accent,
+      position: 'fixed', right: 22, bottom: 'calc(108px - var(--vb-gap, 0px))', width: 58, height: 58, borderRadius: 20, border: 0, background: C.accent,
       color: C.white, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
       boxShadow: '0 8px 22px rgba(79,70,229,0.35)', zIndex: 30,
     }}><Icon name="plus" size={24} /></button>
@@ -276,7 +276,7 @@ export function Sheet({ open, onClose, title, children, actions, label }: { open
   useSwipeDismiss(panel, overlay, onClose, open)
   if (!open) return null
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60 }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'calc(0px - var(--vb-gap, 0px))', zIndex: 60 }}>
       <div ref={overlay} aria-hidden="true" onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--overlay)', animation: 'fm-fade .15s' }} />
       <div ref={panel} role="dialog" aria-modal="true" aria-label={label ?? (typeof title === 'string' ? title : undefined)} style={{
         position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: '92dvh', overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain', boxSizing: 'border-box',

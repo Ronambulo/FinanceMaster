@@ -106,7 +106,7 @@ export default function Detalle() {
           </Link>
         </section>
       )}
-      <div style={pc ? { marginTop: 20, maxWidth: 260 } : { position: 'fixed', left: 20, right: 20, bottom: 30, zIndex: 5 }}>
+      <div style={pc ? { marginTop: 20, maxWidth: 260 } : { position: 'fixed', left: 20, right: 20, bottom: 'calc(30px - var(--vb-gap, 0px))', zIndex: 5 }}>
         <Btn icon="edit" onClick={edit}>Editar</Btn>
       </div>
       <CatSheet txs={cat ? one : null} categories={categories.data ?? []} onClose={() => setCat(false)} />

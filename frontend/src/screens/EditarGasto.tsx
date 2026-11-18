@@ -159,7 +159,7 @@ function Form({ tx, pc }: { tx: Transaction; pc: boolean }) {
           <Switch on={exclude} onChange={setExclude} label="Excluir" />
         </div>
       </section>
-      <div style={pc ? { marginTop: 20, maxWidth: 260 } : { position: 'fixed', left: 20, right: 20, bottom: 26, zIndex: 5 }}>
+      <div style={pc ? { marginTop: 20, maxWidth: 260 } : { position: 'fixed', left: 20, right: 20, bottom: 'calc(26px - var(--vb-gap, 0px))', zIndex: 5 }}>
         <Btn kind="danger" icon="delete" onClick={remove}>Borrar movimiento</Btn>
       </div>
 

@@ -162,7 +162,7 @@
   --overlay: rgba(5,6,10,0.62);
 }
 
-:root { --app-height: 100dvh; }
+:root { --app-height: 100dvh; --vb-gap: 0px; }
 html, body, #root { margin: 0; min-height: 100%; }
 body {
   background: var(--c-0f1015);
