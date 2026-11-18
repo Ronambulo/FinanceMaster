@@ -1,5 +1,5 @@
 // Inicio (tableros Main y PCInicio).
-import { useMemo, type CSSProperties } from 'react'
+import { Fragment, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { dashApi, goalApi, txApi } from '@/lib/api'
@@ -16,6 +16,8 @@ import { C, Pill, RoundBtn, Ring, SkelChart, SkelHero, SkelRows, Skeleton, useMo
 import { CardHead, CatBar, MerchantTile, Spark, TxRow, shortDayLabel } from '@/ui/tx'
 import { PCHeader, useIsPC } from '@/app/Shell'
 import { accountName, txNet, txTitle } from '@/lib/movements'
+import type { HomeCard } from '@/lib/preferences'
+import { cardBox, CustomizeHome, CustomizeLink, InsightsCard, PaceCard, PendingCard, ProfileCard } from './InicioCards'
 
 const card = { background: C.card, boxShadow: 'var(--sh-card)' } as const
 
@@ -113,10 +115,10 @@ function ThisMonth({ pc, bars }: { pc?: boolean; bars: ReturnType<typeof categor
   )
 }
 
-function NextCharge({ next }: { next: NonNullable<ReturnType<typeof nextRecurring>> }) {
+function NextCharge({ pc, next }: { pc?: boolean; next: NonNullable<ReturnType<typeof nextRecurring>> }) {
   const money = useMoney()
   return (
-    <section style={{ ...card, margin: '12px 16px 0', borderRadius: 24, padding: '14px 18px' }}>
+    <section style={{ ...cardBox(pc), padding: pc ? '18px 24px' : '14px 18px' }}>
       <Link to="/recurrentes" style={{ display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) auto', gap: 12, alignItems: 'center', padding: 0, color: C.text }}>
         <MerchantTile name={next.display_name} category={next.category?.name} type={next.category?.type} />
         <span style={{ minWidth: 0 }}>
@@ -129,11 +131,11 @@ function NextCharge({ next }: { next: NonNullable<ReturnType<typeof nextRecurrin
   )
 }
 
-function GoalCard({ goal }: { goal: NonNullable<ReturnType<typeof topGoal>> }) {
+function GoalCard({ pc, goal }: { pc?: boolean; goal: NonNullable<ReturnType<typeof topGoal>> }) {
   const money = useMoney()
   const pct = Math.round(goal.progress_pct)
   return (
-    <section style={{ ...card, margin: '12px 16px 0', borderRadius: 24, padding: '14px 18px' }}>
+    <section style={{ ...cardBox(pc), padding: pc ? '18px 24px' : '14px 18px' }}>
       <Link to="/objetivos" style={{ display: 'flex', gap: 14, alignItems: 'center', color: C.text }}>
         <Ring ratio={pct / 100}>{pct}</Ring>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -292,6 +294,34 @@ function PCUltraInicio({ d, h }: { d: HomeData; h: Heading }) {
   )
 }
 
+/** Tarjetas que se pueden mostrar con los módulos activos. */
+function availableCards(d: HomeData): HomeCard[] {
+  const f = d.features
+  const out: HomeCard[] = ['month', 'pace', 'insights', 'personality']
+  if (f.accounts) out.push('worth')
+  if (f.recurring) out.push('pending', 'next')
+  if (f.goals) out.push('goal')
+  return out
+}
+
+function HomeCards({ pc, d }: { pc?: boolean; d: HomeData }) {
+  const order = usePreferencesStore(s => s.prefs.home_cards)
+  const avail = availableCards(d)
+  const render = (c: HomeCard): ReactNode => {
+    switch (c) {
+      case 'worth': return d.worthValue != null ? <Worth pc={pc} value={d.worthValue} pct={d.worthPct} series={d.worthSeries} /> : null
+      case 'month': return <ThisMonth pc={pc} bars={d.bars} />
+      case 'pace': return <PaceCard pc={pc} expenses={d.totals.expenses} income={d.totals.income} start={d.range.date_from} end={d.range.date_to} />
+      case 'pending': return <PendingCard pc={pc} start={d.range.date_from} end={d.range.date_to} />
+      case 'next': return d.next ? <NextCharge pc={pc} next={d.next} /> : null
+      case 'goal': return d.goal ? <GoalCard pc={pc} goal={d.goal} /> : null
+      case 'insights': return <InsightsCard pc={pc} />
+      case 'personality': return <ProfileCard pc={pc} income={d.totals.income} expenses={d.totals.expenses} />
+    }
+  }
+  return <>{order.filter(c => avail.includes(c)).map(c => <Fragment key={c}>{render(c)}</Fragment>)}</>
+}
+
 export default function Inicio() {
   const pc = useIsPC()
   const user = useAuthStore(s => s.user)
@@ -301,6 +331,8 @@ export default function Inicio() {
   const d = useHomeData()
   const name = user?.display_name || user?.username || ''
   const ultra = usePreferencesStore(s => s.prefs.ui_mode === 'ultra')
+  const [custom, setCustom] = useState(false)
+  const customize = <CustomizeHome open={custom} onClose={() => setCustom(false)} available={availableCards(d)} />
 
   if (ultra) return pc ? <PCUltraInicio d={d} h={h} /> : <UltraInicio d={d} h={h} />
 
@@ -318,12 +350,13 @@ export default function Inicio() {
           ) : (
             <>
               <Hero pc totals={d.totals} />
-              {d.features.accounts && d.worthValue != null && <Worth pc value={d.worthValue} pct={d.worthPct} series={d.worthSeries} />}
-              <ThisMonth pc bars={d.bars} />
+              <HomeCards pc d={d} />
             </>
           )}
           <Recent />
         </div>
+        <CustomizeLink onClick={() => setCustom(true)}>Personalizar Inicio</CustomizeLink>
+        {customize}
       </>
     )
   }
@@ -349,12 +382,11 @@ export default function Inicio() {
       ) : (
         <>
           <Hero totals={d.totals} />
-          {d.features.accounts && d.worthValue != null && <Worth value={d.worthValue} pct={d.worthPct} series={d.worthSeries} />}
-          <ThisMonth bars={d.bars} />
+          <HomeCards d={d} />
+          <CustomizeLink onClick={() => setCustom(true)}>Personalizar Inicio</CustomizeLink>
         </>
       )}
-      {d.features.recurring && d.next && <NextCharge next={d.next} />}
-      {d.features.goals && d.goal && <GoalCard goal={d.goal} />}
+      {customize}
     </>
   )
 }

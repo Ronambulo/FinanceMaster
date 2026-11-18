@@ -20,6 +20,7 @@ import { Btn, C, Divider, Empty, Field, Header, Label, Pill, RoundBtn, Row, Sect
 import { create } from 'zustand'
 import { useFeaturesStore } from '@/store/features'
 import { goalsReserved } from '@/lib/plan'
+import { ManualPositionSheet, PositionSheet, refreshLivePrices } from './Posiciones'
 
 const card = { background: C.card, boxShadow: 'var(--sh-card)' }
 const errText = (e: unknown) => (e instanceof Error && e.message ? e.message : 'Algo ha fallado')
@@ -42,8 +43,9 @@ function useAccountsData() {
 }
 
 // ── Hoja Añadir cuenta ──────────────────────────────────────────────────────
-const useAddAccount = create<{ open: boolean }>(() => ({ open: false }))
+const useAddAccount = create<{ open: boolean; position: boolean }>(() => ({ open: false, position: false }))
 export const openAddAccount = () => useAddAccount.setState({ open: true })
+const openAddPosition = () => useAddAccount.setState({ open: false, position: true })
 
 const NEW_ACCOUNTS: { id: BankId; title: string; to: string }[] = [
   { id: 'n26', title: 'N26', to: '/importar?origen=n26' },
@@ -56,6 +58,7 @@ const NEW_ACCOUNTS: { id: BankId; title: string; to: string }[] = [
 
 export function AddAccountSheet() {
   const open = useAddAccount(s => s.open)
+  const position = useAddAccount(s => s.position)
   const nav = useNavigate()
   const close = () => useAddAccount.setState({ open: false })
   const go = (to: string) => { close(); nav(to) }
@@ -64,20 +67,24 @@ export function AddAccountSheet() {
       {lead}{title}
     </button>
   )
-  const plain = (icon: 'wallet' | 'edit') => (
+  const plain = (icon: 'wallet' | 'edit' | 'invest') => (
     <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 13, background: C.field, color: C.muted, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={icon} size={20} /></span>
   )
   return (
+    <>
     <Sheet open={open} onClose={close} title="Añadir cuenta">
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
         {NEW_ACCOUNTS.map(a => tile(a.id, <BankLogo id={a.id} />, a.title, () => go(a.to)))}
         {tile('cash', plain('wallet'), 'Efectivo', () => go('/cuentas/manual'))}
         {tile('manual', plain('edit'), 'Manual', () => go('/cuentas/manual'))}
+        {tile('position', plain('invest'), 'Inversión', openAddPosition)}
       </div>
       <button type="button" onClick={() => go('/importar')} style={{ width: '100%', marginTop: 12, border: 0, borderRadius: 16, background: 'transparent', color: C.accentText, height: 48, font: "800 15px 'Manrope', sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '0 9px 0 0', cursor: 'pointer' }}>
         <Icon name="plus" size={18} />Otro banco por CSV
       </button>
     </Sheet>
+    <ManualPositionSheet open={position} onClose={() => useAddAccount.setState({ position: false })} />
+    </>
   )
 }
 
@@ -386,6 +393,8 @@ function SummaryPC({ d, onPick }: { d: ReturnType<typeof useAccountsData>; onPic
 
 function BrokerCardPC({ broker, positions, cash }: { broker: string; positions: PortfolioPosition[]; cash: AccountBalance[] }) {
   const money = useMoney()
+  const qc = useQueryClient()
+  const [detail, setDetail] = useState<PortfolioPosition | null>(null)
   const own = positions.filter(p => brokerKey(p) === broker && p.shares > 0.0001).sort((a, b) => (b.market_value ?? 0) - (a.market_value ?? 0))
   const cashHere = Math.max(cash.find(c => c.source === broker)?.balance ?? 0, 0)
   const value = own.reduce((a, p) => a + (p.market_value ?? p.total_invested ?? 0), 0) + cashHere
@@ -400,7 +409,11 @@ function BrokerCardPC({ broker, positions, cash }: { broker: string; positions: 
           <p style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>{money(value, { euro: true })}</p>
         </div>
         {ret != null && <span style={{ marginLeft: 8 }}><Pill tone={ret >= 0 ? 'green' : 'red'}>{pctText(ret)}</Pill></span>}
-        <span style={{ marginLeft: 'auto' }}><SyncBar broker={broker} compact /></span>
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <RoundBtn icon="refresh" label="Actualizar precios" size={38} iconSize={18} bg={C.field} onClick={() => refreshLivePrices(qc)} />
+          <RoundBtn icon="plus" label="Añadir posición manual" size={38} iconSize={18} bg={C.field} onClick={openAddPosition} />
+          <SyncBar broker={broker} compact />
+        </span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 28, marginTop: 18, alignItems: 'center' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
@@ -411,7 +424,7 @@ function BrokerCardPC({ broker, positions, cash }: { broker: string; positions: 
           {own.map(p => {
             const pct = p.unrealized_pnl_pct
             return (
-              <div key={p.symbol + (p.manual_id ?? '')} style={{ display: 'grid', gridTemplateColumns: '70px 1fr auto auto', gap: 14, alignItems: 'center', padding: '10px 0', borderTop: `1px solid ${C.line}` }}>
+              <button type="button" key={p.symbol + (p.manual_id ?? '')} onClick={() => setDetail(p)} style={{ width: '100%', border: 0, borderTop: `1px solid ${C.line}`, background: 'transparent', color: C.text, font: 'inherit', textAlign: 'left', cursor: 'pointer', display: 'grid', gridTemplateColumns: '70px 1fr auto auto', gap: 14, alignItems: 'center', padding: '10px 0' }}>
                 <span style={{ fontWeight: 800 }}>{ticker(p)}</span>
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name || p.symbol}</span>
@@ -419,7 +432,7 @@ function BrokerCardPC({ broker, positions, cash }: { broker: string; positions: 
                 </span>
                 <span style={{ fontWeight: 800 }}>{money(p.market_value ?? p.total_invested, { euro: true })}</span>
                 {pct != null ? <Pill tone={pct >= 0 ? 'green' : 'red'}>{pctText(pct)}</Pill> : <span />}
-              </div>
+              </button>
             )
           })}
         </div>
@@ -562,6 +575,8 @@ export function Broker() {
   const ret = positionsReturn(own)
   const m = pc ? 0 : 16
   const [menu, setMenu] = useState(false)
+  const [detail, setDetail] = useState<PortfolioPosition | null>(null)
+  const qc = useQueryClient()
   const nav = useNavigate()
 
   return (
@@ -595,7 +610,7 @@ export function Broker() {
           return (
             <div key={p.symbol + (p.manual_id ?? '')}>
               {i > 0 && <Divider margin="0" />}
-              <div style={{ display: 'grid', gridTemplateColumns: '40px minmax(0,1fr) auto', gap: 12, alignItems: 'center', padding: '9px 0' }}>
+              <button type="button" onClick={() => setDetail(p)} style={{ width: '100%', border: 0, background: 'transparent', color: C.text, font: 'inherit', textAlign: 'left', cursor: 'pointer', display: 'grid', gridTemplateColumns: '40px minmax(0,1fr) auto', gap: 12, alignItems: 'center', padding: '9px 0' }}>
                 <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: 12, background: tickerBg(p.symbol || p.name), color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800 }}>{ticker(p)}</span>
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: 'block', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name || p.symbol}</span>
@@ -605,7 +620,7 @@ export function Broker() {
                   <span style={{ display: 'block', fontWeight: 700 }}>{money(p.market_value ?? p.total_invested)}</span>
                   {pct != null && <span style={{ color: pct >= 0 ? C.green : C.red, fontWeight: 700 }}>{pctText(pct)}</span>}
                 </span>
-              </div>
+              </button>
             </div>
           )
         })}
@@ -613,8 +628,11 @@ export function Broker() {
       <Sheet open={menu} onClose={() => setMenu(false)} title={accountName(broker)}>
         {d.cash.some(c => c.source === broker) && <SheetOption icon="wallet" title="Ver efectivo" onClick={() => nav(`/cuentas/${broker}`)} />}
         <SheetOption icon="text-unordered" title="Ver en Movimientos" onClick={() => nav(`/transacciones?cuenta=${broker}`)} />
-        <SheetOption icon="upload" title="Importar CSV" onClick={() => nav(`/importar?origen=${broker}`)} />
+        <SheetOption icon="refresh" title="Actualizar precios" onClick={() => { setMenu(false); refreshLivePrices(qc) }} />
+        <SheetOption icon="plus" title="Añadir posición manual" onClick={() => { setMenu(false); openAddPosition() }} />
+        {broker !== 'manual' && <SheetOption icon="upload" title="Importar CSV" onClick={() => nav(`/importar?origen=${broker}`)} />}
       </Sheet>
+      <PositionSheet pos={detail} onClose={() => setDetail(null)} />
     </div>
   )
 }

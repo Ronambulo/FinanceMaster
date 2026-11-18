@@ -230,6 +230,7 @@ class PreferencesUpdate(BaseModel):
     month_start: Optional[int] = None
     ultra_modules: Optional[dict] = None
     cat_icons: Optional[str] = None
+    home_cards: Optional[List[str]] = None
 
 
 class BulkCategoryRequest(BaseModel):
@@ -309,6 +310,7 @@ class RecurringGroupUpdate(BaseModel):
     is_dismissed: Optional[bool] = None
     next_expected_date: Optional[date] = None
     avg_amount: Optional[float] = None
+    amount_is_manual: Optional[bool] = None
 
 
 # ── Debts ────────────────────────────────────────────────────────────────────

@@ -5,8 +5,9 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  budgetApi, catApi, dashApi, debtApi, goalApi, recurringApi, txApi,
-  type BudgetStatus, type Category, type Debt, type Goal, type MonthlyTrend, type RecurringGroup,
+  budgetApi, catApi, dashApi, debtApi, exportApi, goalApi, recurringApi, txApi,
+  type MonthlyDetailRow,
+  type BudgetStatus, type Category, type SavingsAllocation, type Debt, type Goal, type MonthlyTrend, type RecurringGroup,
 } from '@/lib/api'
 import { isModuleOn, type ModuleId } from '@/lib/preferences'
 import { usePreferencesStore } from '@/store/preferences'
@@ -338,6 +339,16 @@ export function Recurrentes() {
   const active = useMemo(() => all.filter(g => g.is_active).sort((a, b) => (a.next_expected_date ?? '9999').localeCompare(b.next_expected_date ?? '9999')), [all])
   // Sugerencias: detectados que aún no se han añadido ni descartado.
   const suggested = all.filter(g => !g.is_active && !g.is_dismissed)
+  const dismissed = all.filter(g => !g.is_active && g.is_dismissed)
+  const [showDismissed, setShowDismissed] = useState(false)
+  const restore = async (g: RecurringGroup) => {
+    try { await recurringApi.update(g.id, { is_dismissed: false }); invalidate(); toast(`${g.display_name} vuelve a sugerencias`) } catch (e) { toast(errText(e), { error: true }) }
+  }
+  const remove = async (g: RecurringGroup) => {
+    const ok = await confirm({ title: 'Eliminar recurrente', text: `Se eliminará ${g.display_name}. Sus movimientos no cambian.`, action: 'Eliminar', danger: true })
+    if (!ok) return
+    try { await recurringApi.delete(g.id); setOpen(null); invalidate(); toast('Recurrente eliminado') } catch (e) { toast(errText(e), { error: true }) }
+  }
   const detect = useMutation({
     mutationFn: recurringApi.detect,
     onSuccess: () => { invalidate(); toast('Recurrentes actualizados') },
@@ -406,6 +417,28 @@ export function Recurrentes() {
               ))}
             </>
           )}
+          {dismissed.length > 0 && (
+            <>
+              <button type="button" aria-expanded={showDismissed} onClick={() => setShowDismissed(s => !s)} style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '18px 20px 8px', padding: 0, border: 0, background: 'transparent', color: C.muted, font: "800 13px 'Manrope', sans-serif", cursor: 'pointer' }}>
+                Descartados ({dismissed.length})
+                <span style={{ display: 'flex', transform: showDismissed ? 'rotate(180deg)' : undefined }}><Icon name="chev-d" size={14} /></span>
+              </button>
+              {showDismissed && (
+                <Section>
+                  {dismissed.map((g, i) => (
+                    <div key={g.id}>
+                      {i > 0 && <Divider margin="0" />}
+                      <div style={{ display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) auto', gap: 12, alignItems: 'center', padding: '10px 0' }}>
+                        <MerchantTile name={g.display_name} category={g.category?.name} type={g.category?.type ?? 'expense'} />
+                        <span style={{ minWidth: 0, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.muted }}>{g.display_name}</span>
+                        <button type="button" onClick={() => restore(g)} style={{ height: 34, padding: '0 14px', border: 0, borderRadius: 10, background: C.field, color: C.text, font: "800 13px 'Manrope', sans-serif", cursor: 'pointer' }}>Restaurar</button>
+                      </div>
+                    </div>
+                  ))}
+                </Section>
+              )}
+            </>
+          )}
         </>
       )}
       <Sheet open={add} onClose={() => setAdd(false)} title="Nuevo recurrente">
@@ -413,20 +446,25 @@ export function Recurrentes() {
         <SheetOption icon="text-unordered" title="Desde un movimiento" sub="Abre uno y márcalo como recurrente" onClick={() => { setAdd(false); nav('/transacciones') }} />
       </Sheet>
       {open && <RecurringSheet group={all.find(g => g.id === open.id) ?? open} onClose={() => setOpen(null)}
-        onAdd={g => { setOpen(null); toggle(g, true) }} onDismiss={g => { setOpen(null); dismiss(g) }} />}
+        onAdd={g => { setOpen(null); toggle(g, true) }} onDismiss={g => { setOpen(null); dismiss(g) }} onDelete={remove} />}
     </Page>
   )
 }
 
-function RecurringSheet({ group: g, onClose, onAdd, onDismiss }: {
-  group: RecurringGroup; onClose: () => void; onAdd: (g: RecurringGroup) => void; onDismiss: (g: RecurringGroup) => void
+function RecurringSheet({ group: g, onClose, onAdd, onDismiss, onDelete }: {
+  group: RecurringGroup; onClose: () => void; onAdd: (g: RecurringGroup) => void; onDismiss: (g: RecurringGroup) => void; onDelete: (g: RecurringGroup) => void
 }) {
   const nav = useNavigate()
   const invalidate = useInvalidate()
   const options = g.amount_options ?? []
   const current = g.avg_amount != null ? Math.round(Math.abs(g.avg_amount) * 100) / 100 : null
+  const manual = !!g.amount_is_manual
+  const auto = async () => {
+    if (!manual) return
+    try { await recurringApi.update(g.id, { amount_is_manual: false }); invalidate(); toast('Importe automático') } catch (e) { toast(errText(e), { error: true }) }
+  }
   const pick = async (amount: number) => {
-    if (amount === current) return
+    if (manual && amount === current) return
     try { await recurringApi.update(g.id, { avg_amount: amount }); invalidate(); toast(`Importe: ${fmt2(amount)} ${curSym()}`) } catch (e) { toast(errText(e), { error: true }) }
   }
   return (
@@ -435,18 +473,17 @@ function RecurringSheet({ group: g, onClose, onAdd, onDismiss }: {
         <>
           <p style={{ margin: '0 0 2px', fontSize: 13, color: C.muted, fontWeight: 700 }}>Importe</p>
           {options.slice(0, 6).map(o => (
-            <SheetOption key={o.amount} selected={o.amount === current} title={`${fmt2(o.amount)} ${curSym()}`}
+            <SheetOption key={o.amount} selected={manual && o.amount === current} title={`${fmt2(o.amount)} ${curSym()}`}
               sub={o.count === 1 ? `1 vez · ${shortDate(o.last_date)}` : `${o.count} veces · último ${shortDate(o.last_date)}`} onClick={() => pick(o.amount)} />
           ))}
-          {current != null && !options.some(o => o.amount === current) && (
-            <SheetOption selected title={`${fmt2(current)} ${curSym()}`} sub="Media" onClick={() => {}} />
-          )}
+          <SheetOption selected={!manual} title="Automático" sub={!manual && current != null ? `Media: ${fmt2(current)} ${curSym()}` : 'Media de sus movimientos'} onClick={auto} />
           <Divider margin="8px 0" />
         </>
       )}
       {!g.is_active && <SheetOption icon="plus" title="Añadir como recurrente" onClick={() => onAdd(g)} />}
       <SheetOption icon="receipt" title="Ver movimientos" onClick={() => { onClose(); nav(`/comercio/${encodeURIComponent(g.display_name)}`) }} />
       <SheetOption icon="close" title={g.is_active ? 'No es recurrente' : 'Descartar sugerencia'} onClick={() => onDismiss(g)} />
+      <SheetOption icon="delete" title="Eliminar" onClick={() => onDelete(g)} />
     </Sheet>
   )
 }
@@ -510,6 +547,7 @@ export function Objetivos() {
               </a>
             )
           })}
+          <AllocationCard />
           <div style={{ margin: '16px 16px 0' }}>
             <Btn kind="secondary" icon="plus" onClick={() => setContribute(true)} style={{ background: C.card, boxShadow: 'var(--sh-card)' }}>Aportar a un objetivo</Btn>
           </div>
@@ -518,6 +556,74 @@ export function Objetivos() {
       {edit && <GoalSheet goal={edit === 'new' ? null : edit} onClose={() => setEdit(null)} />}
       {contribute && <ContributeSheet goals={list} onClose={() => setContribute(false)} />}
     </Page>
+  )
+}
+
+const ALLOC_PARTS = [
+  { key: 'expenses_pct', label: 'Gastos', color: 'var(--c-ff9b9b)' },
+  { key: 'savings_pct', label: 'Ahorro', color: 'var(--c-6fe0a5)' },
+  { key: 'investment_pct', label: 'Inversión', color: C.accent },
+] as const
+
+/** Reparto del sueldo del mes entre gastos, ahorro e inversión (guardado por mes en el backend). */
+function AllocationCard() {
+  const money = useMoney()
+  const month = monthKey(new Date())
+  const alloc = useQuery({ queryKey: ['goal-allocation', month], queryFn: () => goalApi.getAllocation(month) })
+  const trend = useQuery({ queryKey: ['monthly-trend', 3], queryFn: () => dashApi.monthlyTrend(3) })
+  const [open, setOpen] = useState(false)
+  const a = alloc.data
+  if (!a) return null
+  const months = (trend.data ?? []).filter(t => t.income > 0)
+  const income = months.length ? months.reduce((s, t) => s + t.income, 0) / months.length : 0
+  return (
+    <>
+      <a role="button" tabIndex={0} onClick={() => setOpen(true)} onKeyDown={e => e.key === 'Enter' && setOpen(true)}
+        style={{ ...card, display: 'block', margin: '12px 16px 0', padding: '16px 18px', color: C.text, cursor: 'pointer' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontWeight: 800 }}>Reparto del sueldo</span>
+          <span style={{ color: C.accentText, fontWeight: 800, fontSize: 14 }}>Editar</span>
+        </div>
+        <div style={{ display: 'flex', height: 8, borderRadius: 99, overflow: 'hidden', marginTop: 12, background: 'var(--track)' }}>
+          {ALLOC_PARTS.map(p => <div key={p.key} style={{ width: `${a[p.key]}%`, background: p.color }} />)}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 12 }}>
+          {ALLOC_PARTS.map(p => (
+            <div key={p.key} style={{ minWidth: 0 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.muted, fontWeight: 700 }}>
+                <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 4, background: p.color }} />{p.label}
+              </span>
+              <span style={{ display: 'block', fontWeight: 800 }}>{Math.round(a[p.key])} %</span>
+              {income > 0 && <span style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600 }}>{money(income * a[p.key] / 100, { euro: true, decimals: 0 })}</span>}
+            </div>
+          ))}
+        </div>
+      </a>
+      {open && <AllocationSheet alloc={a} onClose={() => setOpen(false)} />}
+    </>
+  )
+}
+
+function AllocationSheet({ alloc, onClose }: { alloc: SavingsAllocation; onClose: () => void }) {
+  const qc = useQueryClient()
+  const [v, setV] = useState(() => Object.fromEntries(ALLOC_PARTS.map(p => [p.key, String(Math.round(alloc[p.key]))])) as Record<(typeof ALLOC_PARTS)[number]['key'], string>)
+  const nums = ALLOC_PARTS.map(p => parseAmount(v[p.key]) ?? 0)
+  const total = Math.round(nums.reduce((s, n) => s + n, 0) * 100) / 100
+  const ok = total === 100 && nums.every(n => n >= 0)
+  const save = useMutation({
+    mutationFn: () => goalApi.upsertAllocation({ month: alloc.month, expenses_pct: nums[0], savings_pct: nums[1], investment_pct: nums[2] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['goal-allocation'] }); toast('Reparto guardado'); onClose() },
+    onError: e => toast(errText(e), { error: true }),
+  })
+  return (
+    <Sheet open onClose={onClose} title="Reparto del sueldo" actions={<Btn icon="check-mark" disabled={!ok || save.isPending} onClick={() => save.mutate()}>Guardar</Btn>}>
+      <div style={{ display: 'grid', gap: 12 }}>
+        {ALLOC_PARTS.map(p => (
+          <Field key={p.key} label={`${p.label} (%)`} inputMode="decimal" value={v[p.key]} onChange={e => setV({ ...v, [p.key]: e.target.value })} />
+        ))}
+        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: ok ? C.muted : C.red }}>{`Total ${total} %${ok ? '' : ' · debe sumar 100 %'}`}</p>
+      </div>
+    </Sheet>
   )
 }
 
@@ -770,6 +876,25 @@ function SavingsLine({ values, id, sel }: { values: number[]; id: string; sel?: 
   )
 }
 
+/** PDF con el resumen y los movimientos de un mes o ciclo. */
+async function exportCyclePdf(title: string, income: number, expenses: number, rows: MonthlyDetailRow[], file: string) {
+  const [{ default: JsPDF }, { default: autoTable }, { formatEuro }] = await Promise.all([import('jspdf'), import('jspdf-autotable'), import('@/lib/format')])
+  const doc = new JsPDF()
+  doc.setFontSize(15)
+  doc.text(`Resumen ${title}`, 14, 16)
+  doc.setFontSize(10)
+  doc.text(`Ingresos: ${formatEuro(income)}   Gastos: ${formatEuro(expenses)}   Ahorro: ${formatEuro(income - expenses, { sign: true })}`, 14, 24)
+  autoTable(doc, {
+    startY: 30,
+    head: [['Fecha', 'Nombre', 'Categoría', 'Importe']],
+    body: [...rows].sort((a, b) => a.date.localeCompare(b.date)).map(r => [r.date, r.name ?? '', r.category_name, formatEuro(r.amount, { sign: true })]),
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [40, 40, 60] },
+    columnStyles: { 3: { halign: 'right' } },
+  })
+  doc.save(`${file}.pdf`)
+}
+
 export function MesAMes() {
   const money = useMoney()
   const nav = useNavigate()
@@ -796,6 +921,28 @@ export function MesAMes() {
   const isCycle = payroll.isPayrollCycle
   const unit = isCycle ? 'ciclo' : 'mes'
   const name = (r: { label: string; start: string }) => (isCycle ? r.label : longMonth(r.start.slice(0, 7)))
+  const investOn = usePreferencesStore(s => isModuleOn(s.prefs, 'investments'))
+  const invested = useQuery({
+    queryKey: ['monthly-investments', cur?.start, cur?.end],
+    queryFn: () => dashApi.monthlyInvestments({ date_from: cur!.start, date_to: cur!.end }),
+    enabled: investOn && !!cur,
+  })
+  const [exp, setExp] = useState(false)
+  const [busy, setBusy] = useState(false)
+  async function doExport(kind: 'pdf' | 'xlsx') {
+    if (!cur) return
+    setBusy(true)
+    try {
+      if (kind === 'xlsx') {
+        await exportApi.download({ format: 'xlsx', period: 'range', date_from: cur.start, date_to: cur.end, sections: ['transactions', 'categories_by_month'] })
+      } else {
+        const rows = (detail.data ?? []).filter(r => r.date >= cur.start && r.date <= cur.end)
+        await exportCyclePdf(name(cur), cur.income, cur.expenses, rows, `financemaster-${cur.start}_${cur.end}`)
+      }
+      setExp(false)
+    } catch (e) { toast(e instanceof Error ? e.message : 'No se pudo exportar', { error: true }) }
+    finally { setBusy(false) }
+  }
 
   const select = (i: number) => {
     if (!rows[i]) return
@@ -832,7 +979,7 @@ export function MesAMes() {
 
   return (
     <Page>
-      <SubHeader title="Mes a mes" back="/plan" />
+      <SubHeader title="Mes a mes" back="/plan" actions={cur && !loading ? <RoundBtn icon="export" label="Exportar" onClick={() => setExp(true)} /> : null} />
       {loading ? (
         <div style={{ margin: '16px 16px 0', display: 'grid', gap: 12 }}><Skeleton h={230} r={24} /><Skeleton h={130} r={24} /></div>
       ) : !cur ? (
@@ -855,6 +1002,12 @@ export function MesAMes() {
               {tile('transfer-in', 'Entró', C.green, cur.income)}
               {tile('transfer-out', 'Salió', C.red, cur.expenses)}
             </div>
+            {investOn && (invested.data?.invested ?? 0) > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: C.field, borderRadius: 16, padding: '10px 12px', marginTop: 10 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: C.accentText }}><Icon name="invest" size={15} />Invertido</span>
+                <span style={{ fontSize: 17, fontWeight: 800 }}>{money(invested.data!.invested)}</span>
+              </div>
+            )}
             <div style={{ marginTop: 12 }}>
               <Btn kind="ghost" height={44} onClick={() => nav(`/transacciones?periodo=${cur.key}`)}>Ver movimientos</Btn>
             </div>
@@ -896,6 +1049,10 @@ export function MesAMes() {
           </Section>
         </>
       )}
+      <Sheet open={exp} onClose={() => !busy && setExp(false)} title={cur ? `Exportar ${name(cur)}` : 'Exportar'}>
+        <SheetOption icon="file" title="PDF" onClick={() => doExport('pdf')} />
+        <SheetOption icon="download" title="Excel" onClick={() => doExport('xlsx')} />
+      </Sheet>
     </Page>
   )
 }

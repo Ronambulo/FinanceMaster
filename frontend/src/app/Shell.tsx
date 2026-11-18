@@ -15,6 +15,8 @@ import { usePrivacyStore } from '@/store/privacy'
 import { openAdd } from '@/store/add'
 import { getLockMinutes, markHidden, shouldLock, takeHidden } from '@/lib/autolock'
 import { queryClient } from '@/lib/queryClient'
+import { miApi, trApi } from '@/lib/api'
+import { toast } from '@/ui/Toast'
 import { PULL_TRIGGER, pullDistance, scrollToTop, setScroller } from '@/app/scroller'
 import { allNav, isActive, moreNav, primaryNav, type NavIcon, type NavItem } from '@/lib/nav'
 
@@ -446,6 +448,7 @@ export function AppLayout({ children, bare }: { children: ReactNode; bare?: bool
   useEffect(() => { setMore(false); setPeek(false); setPal(false); scrollToTop() }, [loc.pathname])
   useShortcuts(() => setPal(true))
   useAutoLock()
+  useBankAutoConnect()
 
   if (pc) {
     return (
@@ -459,6 +462,29 @@ export function AppLayout({ children, bare }: { children: ReactNode; bare?: bool
   return <MobileShell bare={bare} resetKey={loc.pathname} onMore={() => setMore(true)} canMore={moreItems.length > 0 && !ultra && !more}
     navPull={pull} onPeek={() => setPeek(true)} navHidden={peek || more}
     menu={<MoreMenu open={more} peek={peek} pull={pull} onOpened={() => { setMore(true); setPeek(false) }} onCancel={() => setPeek(false)} onClose={() => setMore(false)} />}>{children}</MobileShell>
+}
+
+let autoConnectedFor: string | null = null
+/** Al abrir la app, reconecta Trade Republic y MyInvestor con las credenciales guardadas (una vez por sesión). */
+function useBankAutoConnect() {
+  const token = useAuthStore(s => s.token)
+  useEffect(() => {
+    if (!token || autoConnectedFor === token) return
+    autoConnectedFor = token
+    const banks = [
+      { name: 'Trade Republic', key: 'tr-status', run: trApi.autoConnect },
+      { name: 'MyInvestor', key: 'mi-status', run: miApi.autoConnect },
+    ]
+    for (const b of banks) {
+      b.run().then(r => {
+        if (r.status === 'connected') queryClient.invalidateQueries({ queryKey: [b.key] })
+        // 'needs_2fa' nunca manda un código nuevo: solo avisa de uno pendiente.
+        else if (r.status === 'needs_2fa') { queryClient.invalidateQueries({ queryKey: [b.key] }); toast(`${b.name}: confirma el acceso para sincronizar`) }
+        else if (r.status === 'error') toast(`${b.name}: ${r.message ?? 'no se pudo conectar'}`, { error: true })
+        // 'no_credentials' → silencioso
+      }).catch(() => {})
+    }
+  }, [token])
 }
 
 /** Tirar hacia abajo desde arriba del todo vuelve a pedir los datos de la pestaña. */

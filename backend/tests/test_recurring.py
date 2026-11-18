@@ -45,3 +45,27 @@ def test_pick_amount_from_options(user_client, db):
     # La detección ya no lo pisa.
     c.post("/api/recurring/detect")
     assert c.get("/api/recurring").json()[0]["avg_amount"] == 10.99
+
+
+def test_reset_to_automatic_amount(user_client, db):
+    c, uid = user_client
+    _seed(db, uid)
+    c.post("/api/recurring/detect")
+    g = c.get("/api/recurring").json()[0]
+    c.put(f"/api/recurring/{g['id']}", json={"avg_amount": 10.99})
+    r = c.put(f"/api/recurring/{g['id']}", json={"amount_is_manual": False})
+    body = r.json()
+    assert body["amount_is_manual"] is False
+    assert body["avg_amount"] == round((9.99 + 9.99 + 10.99) / 3, 2)
+
+
+def test_create_from_transaction_and_delete(user_client, db):
+    c, uid = user_client
+    tx = add_tx(db, uid, date=date(2026, 10, 1), amount=-30.0, name="Gimnasio")
+    db.commit()
+    r = c.post("/api/recurring/from-transaction", json={"transaction_id": tx.id, "display_name": "Gimnasio", "period_days": 30})
+    assert r.status_code == 200
+    gid = r.json()["id"]
+    assert r.json()["is_active"] is True
+    assert c.delete(f"/api/recurring/{gid}").status_code == 200
+    assert c.get("/api/recurring").json() == []

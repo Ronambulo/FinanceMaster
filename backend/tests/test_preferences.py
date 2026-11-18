@@ -118,3 +118,14 @@ def test_ultra_modules_rechaza_valores_raros():
         prefs.merge(None, {"ultra_modules": {"ai": True}})
     with pytest.raises(prefs.PreferencesError):
         prefs.merge(None, {"cat_icons": "png"})
+
+
+def test_home_cards_order_and_validation():
+    out = prefs.resolve(None)
+    assert out["home_cards"] == list(prefs.HOME_CARDS)
+    raw = prefs.merge(None, {"home_cards": ["goal", "worth", "goal"]})
+    assert prefs.resolve(raw)["home_cards"] == ["goal", "worth"]
+    raw = prefs.merge(raw, {"home_cards": []})
+    assert prefs.resolve(raw)["home_cards"] == []
+    with pytest.raises(prefs.PreferencesError):
+        prefs.merge(None, {"home_cards": ["nope"]})

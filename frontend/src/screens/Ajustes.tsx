@@ -4,11 +4,12 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { create } from 'zustand'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  accountApi, aiApi, authApi, catApi, exportApi, integrationsApi, trApi,
+  accountApi, aiApi, authApi, catApi, exportApi, integrationsApi, trApi, webhookApi,
   type Category, type CategoryRule, type ExportFormat,
 } from '@/lib/api'
 import { PCHeader, useIsPC } from '@/app/Shell'
 import { useAuthStore } from '@/store/auth'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { usePreferencesStore } from '@/store/preferences'
 import { usePrivacyStore } from '@/store/privacy'
 import { CURRENCIES, MODULES, MONTH_START_MAX, type CatIcons, type UltraModuleId, type Currency, type ModuleId } from '@/lib/preferences'
@@ -26,7 +27,7 @@ import { CatTile, Icon, type AnyIcon } from '@/ui/Icon'
 import {
   Avatar, Btn, C, Divider, Field, Header, IconTile, Label, PickField, Pill, RoundBtn, Rows, Section, Segmented,
   SetRow, Sheet, SheetOption, Skeleton, SubHeader, Switch,
-  Empty,
+  Empty, KV, useMoney,
 } from '@/ui/kit'
 import pkg from '../../package.json'
 
@@ -630,20 +631,31 @@ function SetRowCat({ cat, sub, count, onClick }: { cat: Category; sub?: string; 
 function CategorySheet({ cat, rules, onClose, onChanged }: { cat: Category | null; rules: CategoryRule[]; onClose: () => void; onChanged: () => void }) {
   const [name, setName] = useState('')
   const [kw, setKw] = useState('')
+  const [editRule, setEditRule] = useState<CategoryRule | null>(null)
   const [lastId, setLastId] = useState<number | null>(null)
-  if (cat && cat.id !== lastId) { setLastId(cat.id); setName(cat.name); setKw('') }
+  if (cat && cat.id !== lastId) { setLastId(cat.id); setName(cat.name); setKw(''); setEditRule(null) }
+  const probe = useDebouncedValue(kw.trim(), 350)
+  const preview = useQuery({
+    queryKey: ['rule-preview', probe, cat?.id],
+    queryFn: () => catApi.previewRule({ keyword: probe, field: 'name', category_id: cat!.id }),
+    enabled: !!cat && probe.length >= 2 && probe !== editRule?.keyword,
+    staleTime: 30_000,
+  })
 
   const run = async (fn: () => Promise<unknown>, ok: string) => {
     try { await fn(); onChanged(); toast(ok) } catch (e) { toast(errText(e), { error: true }) }
   }
   const addRule = async () => {
     if (!cat || !kw.trim()) return
+    const editing = editRule
     await run(async () => {
-      const r = await catApi.createRule({ keyword: kw.trim(), category_id: cat.id, field: 'name', priority: 0 })
-      setKw('')
+      const r = editing
+        ? await catApi.updateRule(editing.id, { keyword: kw.trim() })
+        : await catApi.createRule({ keyword: kw.trim(), category_id: cat.id, field: 'name', priority: 0 })
+      setKw(''); setEditRule(null)
       const n = await catApi.applyRule(r.id).catch(() => ({ updated: 0 }))
       if (n.updated) toast(`${fmtInt(n.updated)} movimientos recategorizados`)
-    }, 'Regla añadida')
+    }, editing ? 'Regla guardada' : 'Regla añadida')
   }
   const remove = async () => {
     if (!cat) return
@@ -667,8 +679,9 @@ function CategorySheet({ cat, rules, onClose, onChanged }: { cat: Category | nul
             {rules.length === 0 && <p style={{ margin: '0 0 8px', ...muted }}>Sin reglas.</p>}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {rules.map(r => (
-                <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: C.field, borderRadius: 99, padding: '6px 6px 6px 12px', fontWeight: 700, fontSize: 14 }}>
-                  {r.keyword}
+                <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: editRule?.id === r.id ? C.soft : C.field, borderRadius: 99, padding: '6px 6px 6px 12px', fontWeight: 700, fontSize: 14 }}>
+                  <button type="button" aria-label={`Editar ${r.keyword}`} onClick={() => { setEditRule(r); setKw(r.keyword) }}
+                    style={{ border: 0, background: 'transparent', padding: 0, color: editRule?.id === r.id ? C.accentText : C.text, font: 'inherit', cursor: 'pointer' }}>{r.keyword}</button>
                   <button aria-label={`Quitar ${r.keyword}`} onClick={() => run(() => catApi.deleteRule(r.id), 'Regla quitada')}
                     style={{ width: 24, height: 24, borderRadius: '50%', border: 0, background: C.card, color: C.muted, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                     <Icon name="close" size={14} />
@@ -678,9 +691,17 @@ function CategorySheet({ cat, rules, onClose, onChanged }: { cat: Category | nul
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <div style={{ flex: 1 }}><Field label="Nueva palabra clave" placeholder="Mercadona" value={kw} onChange={e => setKw(e.target.value)} onKeyDown={e => e.key === 'Enter' && addRule()} /></div>
-            <RoundBtn icon="plus" label="Añadir regla" size={52} onClick={addRule} disabled={!kw.trim()} />
+            <div style={{ flex: 1 }}><Field label={editRule ? `Editar "${editRule.keyword}"` : 'Nueva palabra clave'} placeholder="Mercadona" value={kw} onChange={e => setKw(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addRule(); if (e.key === 'Escape' && editRule) { setEditRule(null); setKw('') } }} /></div>
+            {editRule && <RoundBtn icon="close" label="Cancelar edición" size={52} bg={C.field} onClick={() => { setEditRule(null); setKw('') }} />}
+            <RoundBtn icon={editRule ? 'check-mark' : 'plus'} label={editRule ? 'Guardar regla' : 'Añadir regla'} size={52} onClick={addRule} disabled={!kw.trim() || kw.trim() === editRule?.keyword} />
           </div>
+          {preview.data && probe === kw.trim() && (
+            <div style={{ background: C.field, borderRadius: 16, padding: '10px 14px', fontSize: 13, fontWeight: 600 }}>
+              <span style={{ fontWeight: 800 }}>{preview.data.matches === 0 ? 'No coincide con ningún movimiento' : `Coincide con ${fmtInt(preview.data.matches)} ${preview.data.matches === 1 ? 'movimiento' : 'movimientos'}`}</span>
+              {preview.data.applicable > 0 && <span style={muted}>{` · ${fmtInt(preview.data.applicable)} cambiarán a ${cat.name}`}</span>}
+              {preview.data.samples.length > 0 && <span style={{ display: 'block', ...muted, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preview.data.samples.slice(0, 3).join(', ')}</span>}
+            </div>
+          )}
         </div>
       )}
     </Sheet>
@@ -705,7 +726,7 @@ function NewCategorySheet({ open, kind, onClose, onCreated }: { open: boolean; k
 // ── Integraciones ───────────────────────────────────────────────────────────
 function IntegracionesBody() {
   const pc = useIsPC()
-  return <>{<TRCard />}{!pc && <AtajosCard />}</>
+  return <>{<TRCard />}{!pc && <AtajosCard />}<WebhooksCard /></>
 }
 
 function TRCard() {
@@ -749,6 +770,68 @@ function TRCard() {
 }
 
 const QUICK_URL = () => `${window.location.origin}/api/transactions/quick`
+
+const WEBHOOK_EVENTS: [string, string][] = [
+  ['transaction.created', 'Movimiento nuevo'],
+  ['transaction.imported', 'Importación'],
+  ['recurring.detected', 'Recurrente detectado'],
+  ['goal.completed', 'Objetivo cumplido'],
+  ['achievement.unlocked', 'Logro desbloqueado'],
+]
+
+function WebhooksCard() {
+  const qc = useQueryClient()
+  const list = useQuery({ queryKey: ['webhooks'], queryFn: webhookApi.list })
+  const [open, setOpen] = useState(false)
+  const [url, setUrl] = useState('')
+  const [events, setEvents] = useState<string[]>(['transaction.created'])
+  const refresh = () => qc.invalidateQueries({ queryKey: ['webhooks'] })
+  const create = useMutation({
+    mutationFn: () => webhookApi.create({ url: url.trim(), events }),
+    onSuccess: () => { refresh(); setOpen(false); setUrl(''); toast('Webhook creado') },
+    onError: e => toast(errText(e), { error: true }),
+  })
+  const toggle = async (id: number) => {
+    try { await webhookApi.toggle(id); refresh() } catch (e) { toast(errText(e), { error: true }) }
+  }
+  const remove = async (id: number, u: string) => {
+    const ok = await confirm({ title: '¿Eliminar este webhook?', text: u, action: 'Eliminar', icon: 'delete', danger: true })
+    if (!ok) return
+    try { await webhookApi.delete(id); refresh(); toast('Webhook eliminado') } catch (e) { toast(errText(e), { error: true }) }
+  }
+  const valid = /^https?:\/\/\S+$/i.test(url.trim()) && events.length > 0
+  const hooks = list.data ?? []
+  return (
+    <>
+      <Group title="Webhooks" action={<RoundBtn icon="plus" label="Nuevo webhook" size={36} iconSize={18} bg={C.field} onClick={() => setOpen(true)} />}>
+        {hooks.length === 0
+          ? <p style={{ ...muted, padding: '12px 0', margin: 0 }}>Sin webhooks.</p>
+          : (
+            <Rows>
+              {hooks.map(w => (
+                <SetRow key={w.id} icon="link"
+                  title={<span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: w.is_active ? C.text : C.muted }}>{w.url}</span>}
+                  sub={w.events.map(e => WEBHOOK_EVENTS.find(x => x[0] === e)?.[1] ?? e).join(', ')}
+                  trail={<span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Switch on={w.is_active} onChange={() => toggle(w.id)} label={`Activar ${w.url}`} />
+                    <RoundBtn icon="delete" label="Eliminar webhook" size={36} iconSize={18} bg="transparent" color={C.red} onClick={() => remove(w.id, w.url)} />
+                  </span>} />
+              ))}
+            </Rows>
+          )}
+      </Group>
+      <Sheet open={open} onClose={() => setOpen(false)} title="Nuevo webhook"
+        actions={<Btn height={50} style={{ width: '100%' }} disabled={!valid || create.isPending} onClick={() => create.mutate()}>Crear</Btn>}>
+        <Field label="URL" placeholder="https://" inputMode="url" autoCapitalize="off" value={url} onChange={e => setUrl(e.target.value)} />
+        <p style={{ margin: '16px 0 4px', fontSize: 13, ...muted, fontWeight: 700 }}>Eventos</p>
+        {WEBHOOK_EVENTS.map(([id, label]) => (
+          <ToggleRow key={id} icon="notification-bell" title={label} on={events.includes(id)}
+            onChange={v => setEvents(ev => (v ? [...ev, id] : ev.filter(x => x !== id)))} />
+        ))}
+      </Sheet>
+    </>
+  )
+}
 
 function AtajosCard() {
   const qc = useQueryClient()
@@ -1068,6 +1151,7 @@ function StatusRow({ icon, title, value, warn }: { icon: AnyIcon; title: string;
 
 function DiagnosticoBody() {
   const qc = useQueryClient()
+  const money = useMoney()
   const user = useAuthStore(s => s.user)
   const ping = useQuery({
     queryKey: ['diag-ping'],
@@ -1088,7 +1172,17 @@ function DiagnosticoBody() {
     { title: 'Limpiar movimientos desconocidos', icon: 'feedback-warning', run: trApi.fixUnknown, done: r => `${r.deleted} limpiados` },
     { title: 'Corregir valores', icon: 'cat-inversion', run: trApi.fixSecurities, done: r => `${r.fixed} corregidos` },
     { title: 'Resolver tickers', icon: 'refresh', run: trApi.fixTickers, done: r => `${r.resolved} de ${r.total} resueltos` },
+    { title: 'Recalcular participaciones', icon: 'invest', run: trApi.fixShares, done: r => `${r.fixed} de ${r.total} corregidas` },
+    { title: 'Importar movimientos que faltan', icon: 'download', run: () => trApi.importMissing().then(r => ({ imported: r.imported })), done: r => `${r.imported} importados` },
+    { title: 'Quitar movimientos huérfanos', icon: 'delete', run: () => trApi.fixOrphans().then(r => ({ deleted: r.total_deleted })), done: r => `${r.deleted} quitados` },
   ]
+  const [balance, setBalance] = useState<Awaited<ReturnType<typeof trApi.debugBalance>> | null>(null)
+  const [skipped, setSkipped] = useState<Awaited<ReturnType<typeof trApi.debugSkipped>> | null>(null)
+  const check = async () => {
+    setRunning('check')
+    try { const [b, k] = await Promise.all([trApi.debugBalance(), trApi.debugSkipped()]); setBalance(b); setSkipped(k) }
+    catch (e) { toast(errText(e), { error: true }) } finally { setRunning(null) }
+  }
   const [running, setRunning] = useState<string | null>(null)
   const fix = async (f: typeof fixes[number]) => {
     setRunning(f.title)
@@ -1128,6 +1222,8 @@ function DiagnosticoBody() {
       {tr.data?.connected && (
         <Group title="Reparar datos de Trade Republic">
           <Rows>
+            <SetRow icon="search" title="Comprobar saldo con Trade Republic" onClick={running ? undefined : check}
+              trail={running === 'check' ? <Muted>…</Muted> : undefined} />
             {fixes.map(f => (
               <SetRow key={f.title} icon={f.icon} title={f.title} onClick={running ? undefined : () => fix(f)}
                 trail={running === f.title ? <Muted>…</Muted> : undefined} />
@@ -1135,6 +1231,24 @@ function DiagnosticoBody() {
           </Rows>
         </Group>
       )}
+      <Sheet open={!!balance} onClose={() => setBalance(null)} title="Saldo con Trade Republic">
+        {balance && (
+          <div style={{ display: 'grid' }}>
+            <KV k="Según Trade Republic" v={money(balance.tr_timeline_sum, { euro: true })} />
+            <Divider margin="0" />
+            <KV k="En la app" v={money(balance.db_sum, { euro: true })} />
+            <Divider margin="0" />
+            <KV k="Diferencia" v={<span style={{ color: Math.abs(balance.db_vs_tr_diff) < 0.01 ? C.green : C.red }}>{money(balance.db_vs_tr_diff, { sign: true, euro: true })}</span>} />
+            <Divider margin="0" />
+            <KV k="Faltan en la app" v={fmtInt(balance.missing_from_db.length)} />
+            <Divider margin="0" />
+            <KV k="Sobran en la app" v={fmtInt(balance.orphan_db_rows.length)} />
+            <Divider margin="0" />
+            <KV k="Importes distintos" v={fmtInt(balance.amount_mismatches.length)} />
+            {skipped && <><Divider margin="0" /><KV k="Cancelados ignorados" v={fmtInt(skipped.skipped_cancelled.length)} /></>}
+          </div>
+        )}
+      </Sheet>
       <div style={{ margin: useIsPC() ? '0' : '18px 16px 0' }}>
         <Btn kind="secondary" icon="copy" height={48} style={{ width: '100%', paddingLeft: 16 }} onClick={() => copy(report(), 'Informe copiado')}>Copiar informe</Btn>
       </div>

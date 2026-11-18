@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_PREFERENCES, applyPatch, isModuleOn, legacyMigration, sanitize,
+  DEFAULT_PREFERENCES, HOME_CARD_IDS, applyPatch, isModuleOn, legacyMigration, sanitize,
 } from '../preferences'
 
 const store = (o: Record<string, string>) => ({ getItem: (k: string) => o[k] ?? null })
@@ -76,5 +76,16 @@ describe('ultra_modules y cat_icons', () => {
     expect(isModuleOn(p, 'debts')).toBe(true)
     expect(isModuleOn(p, 'goals')).toBe(false)
     expect(isModuleOn(applyPatch(p, { modules: { ai: true } }), 'ai')).toBe(false)
+  })
+})
+
+describe('home_cards', () => {
+  it('por defecto todas en orden y limpia valores raros', () => {
+    expect(sanitize({}).home_cards).toEqual(HOME_CARD_IDS)
+    expect(sanitize({ home_cards: ['goal', 'x', 'goal', 'worth'] }).home_cards).toEqual(['goal', 'worth'])
+    expect(sanitize({ home_cards: [] }).home_cards).toEqual([])
+  })
+  it('applyPatch cambia el orden', () => {
+    expect(applyPatch(DEFAULT_PREFERENCES, { home_cards: ['pace', 'month'] }).home_cards).toEqual(['pace', 'month'])
   })
 })

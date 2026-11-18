@@ -75,3 +75,48 @@ export function sparkPath(values: number[], width: number, height: number, pad =
   const area = `${line} L${fmt(last[0])} ${height} L${fmt(pts[0][0])} ${height} Z`
   return { line, area, end: last }
 }
+
+const dayOf = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`)
+const DAY = 86_400_000
+
+export interface Pace { elapsed: number; days: number; perDay: number; projected: number }
+
+/** Ritmo de gasto del periodo: días pasados, gasto diario y a cuánto llegarías a este paso. */
+export function spendingPace(expenses: number, start: string, end: string, today: Date): Pace | null {
+  if (!start || !end) return null
+  const s = dayOf(start).getTime()
+  const e = dayOf(end).getTime()
+  const t = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  const days = Math.round((e - s) / DAY) + 1
+  if (days <= 0) return null
+  const elapsed = Math.min(days, Math.max(1, Math.round((t - s) / DAY) + 1))
+  const perDay = expenses / elapsed
+  return { elapsed, days, perDay: Math.round(perDay * 100) / 100, projected: Math.round(perDay * days * 100) / 100 }
+}
+
+export type ProfileId = 'foodie' | 'tech' | 'traveler' | 'saver' | 'spender' | 'mystery' | 'balanced'
+export interface Profile { id: ProfileId; name: string; desc: string; detail: string }
+
+const share = (rows: CategoryBreakdown[], re: RegExp, total: number) =>
+  rows.filter(r => re.test(r.category_name)).reduce((s, r) => s + r.total, 0) / total
+
+/** Perfil de gasto a partir del reparto por categorías y de lo que entra y sale. */
+export function spendingProfile(rows: CategoryBreakdown[], income: number, expenses: number): Profile | null {
+  if (expenses <= 0 && income <= 0) return null
+  const total = expenses || 1
+  const pct = (x: number) => Math.round(x * 100)
+  if (income > 0 && expenses > income * 1.05)
+    return { id: 'spender', name: 'Vividor', desc: 'Gastas más de lo que entra. Toca revisar.', detail: `${pct(expenses / income - 1)} % más gasto que ingresos` }
+  const saving = income > 0 ? (income - expenses) / income : 0
+  if (saving > 0.3)
+    return { id: 'saver', name: 'Hormiga', desc: 'Ahorras una buena parte de lo que entra.', detail: `Ahorras el ${pct(saving)} %` }
+  const food = share(rows, /restaur|comida|delivery|bar|cafe|food/i, total)
+  if (food > 0.25) return { id: 'foodie', name: 'Sibarita', desc: 'Restaurantes, bares y comida a domicilio mandan.', detail: `${pct(food)} % en comer fuera` }
+  const tech = share(rows, /suscri|software|tech|electr|digital/i, total)
+  if (tech > 0.2) return { id: 'tech', name: 'Tecnológico', desc: 'Suscripciones y tecnología pesan mucho.', detail: `${pct(tech)} % en suscripciones y tecnología` }
+  const travel = share(rows, /viaje|transporte|vuelo|hotel|aloj/i, total)
+  if (travel > 0.15) return { id: 'traveler', name: 'Viajero', desc: 'Transporte y viajes se llevan buena parte.', detail: `${pct(travel)} % en viajes y transporte` }
+  const unknown = share(rows, /sin categ/i, total)
+  if (unknown > 0.4) return { id: 'mystery', name: 'Misterioso', desc: 'Mucho gasto sin categoría.', detail: `${pct(unknown)} % sin categoría` }
+  return { id: 'balanced', name: 'Equilibrado', desc: 'Ninguna categoría se dispara.', detail: 'Gasto repartido' }
+}

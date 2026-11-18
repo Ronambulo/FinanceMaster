@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerE
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useInfiniteQuery, useQuery, useQueryClient, type UseInfiniteQueryResult, type InfiniteData } from '@tanstack/react-query'
-import { catApi, dashApi, txApi, type AccountBalance, type Category, type Transaction, type TransactionListResponse } from '@/lib/api'
+import { aiApi, catApi, dashApi, txApi, type AccountBalance, type Category, type Transaction, type TransactionListResponse } from '@/lib/api'
 import {
   EMPTY_FILTERS, accountName, activeFilterCount, needsReview, categoriesFor, countLabel, filterParams, groupByDay, groupFilter, groupSections,
   monthKey, monthName, periodLabel, recentMonths, shortDate, txKind, txNet, txTitle,
@@ -18,6 +18,7 @@ import { CatGlyph, CatTile, Icon, catTone, toneColors, toneIcon, type AnyIcon } 
 import { Amount, Btn, C, Chip, ChipRow, DayHead, Divider, Empty, FONT, Fab, Field, Header, IconTile, RoundBtn, SearchBox, Section, Sheet, SheetOption, SkelRows, Skeleton, Switch, TextBtn, useMoney } from '@/ui/kit'
 import { MergedPill, MerchantTile, TxSub, shortDayLabel, txLead } from '@/ui/tx'
 import { openAdd } from '@/store/add'
+import { useAuthStore } from '@/store/auth'
 import { usePreferencesStore } from '@/store/preferences'
 import { toast } from '@/ui/Toast'
 import { hintSeen, markHint } from '@/lib/hints'
@@ -855,6 +856,22 @@ export function CatSheet({ txs, categories, onClose, onDone }: { txs: Transactio
     } finally { setBusy(false) }
   }
 
+  const aiOn = useAuthStore(st => !!st.user?.ai_enabled)
+  async function categorizeAi() {
+    if (!txs) return
+    setBusy(true)
+    try {
+      const r = await aiApi.categorizeBatch(txs.map(t => t.id))
+      const ok = r.results.filter(x => x.category_id != null && !x.error).length
+      qc.invalidateQueries()
+      onClose()
+      onDone?.()
+      toast(ok === 0 ? 'La IA no ha sabido categorizar ninguno' : ok === txs.length ? (ok === 1 ? 'Categorizado con IA' : `${ok} categorizados con IA`) : `${ok} de ${txs.length} categorizados con IA`, { error: ok === 0 })
+    } catch (e) {
+      toast(errText(e), { error: true })
+    } finally { setBusy(false) }
+  }
+
   async function apply() {
     if (!txs || !selCat) return
     setBusy(true)
@@ -913,6 +930,7 @@ export function CatSheet({ txs, categories, onClose, onDone }: { txs: Transactio
         {keep
           ? <Btn icon="check-mark" disabled={busy} onClick={confirmKeep}>{`${selCat?.name ?? 'La categoría'} es correcta`}</Btn>
           : <Btn disabled={!changed || busy} onClick={apply}>{selCat ? `Cambiar a ${selCat.name}` : 'Elige una categoría'}</Btn>}
+        {aiOn && <Btn kind="ghost" icon="sparkle" disabled={busy} onClick={categorizeAi} style={{ marginTop: 6 }}>Categorizar con IA</Btn>}
       </div>
     </Sheet>
   )
