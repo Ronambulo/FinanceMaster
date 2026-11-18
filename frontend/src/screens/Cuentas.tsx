@@ -8,7 +8,7 @@ import {
   ASSET_COLOR, ASSET_LABEL, BROKERS, accountSub, assetMix, balanceSeries, brokerKey, brokerSub, positionKind,
   holdingsByBroker, positionsReturn, sharesLabel, trWarning, visibleAccounts, worthSplit, type AssetSlice,
 } from '@/lib/accounts'
-import { accountName, dayLabel, kindToType, parseAmount } from '@/lib/movements'
+import { accountName, dayLabel, kindToType, parseAmount, syncLabel } from '@/lib/movements'
 import { pctText } from '@/screens/Inicio'
 import { useIsPC } from '@/app/Shell'
 import { BankLogo, type BankId } from '@/ui/BankLogo'
@@ -205,7 +205,7 @@ function SyncBar({ broker, compact }: { broker: string; compact?: boolean }) {
   const sync = useTrSync()
   if (!tr || !status.data) return null
   const s = status.data
-  const when = s.last_sync ? `${dayLabel(s.last_sync, new Date())}, ${new Date(s.last_sync).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : null
+  const when = s.last_sync ? syncLabel(s.last_sync, new Date()) : null
   const ok = s.connected
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: C.field, borderRadius: compact ? 14 : 16, padding: compact ? '8px 8px 8px 14px' : '10px 10px 10px 14px', marginTop: compact ? 0 : 16 }}>

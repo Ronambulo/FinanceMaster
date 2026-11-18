@@ -22,6 +22,8 @@ ACTIONS = {
     "logout": "Cerró sesión",
     "register": "Se registró",
     "password_changed": "Cambió su contraseña",
+    "username_changed": "Cambió su usuario",
+    "admin_invite_created": "Creó una invitación",
     "sessions_closed": "Cerró sus otras sesiones",
     "import": "Importó movimientos",
     "account_deleted": "Eliminó su cuenta",

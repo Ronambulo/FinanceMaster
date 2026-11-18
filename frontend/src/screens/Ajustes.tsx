@@ -315,8 +315,9 @@ function PCAjustes({ sec }: { sec: SecId }) {
 function PerfilBody() {
   const user = useAuthStore(s => s.user)
   const [name, setName] = useState(user?.display_name ?? '')
+  const [username, setUsername] = useState(user?.username ?? '')
   const save = useMutation({
-    mutationFn: () => authApi.updateProfile({ display_name: name.trim() || null }),
+    mutationFn: () => authApi.updateProfile({ display_name: name.trim() || null, username: username.trim() }),
     onSuccess: u => {
       const st = useAuthStore.getState()
       useAuthStore.setState({ user: { ...st.user!, ...u } })
@@ -326,7 +327,7 @@ function PerfilBody() {
   })
   if (!user) return null
   const since = new Date(user.created_at).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
-  const dirty = (name.trim() || null) !== (user.display_name || null)
+  const dirty = (name.trim() || null) !== (user.display_name || null) || username.trim() !== user.username
   return (
     <>
       <Group pad="16px">
@@ -339,10 +340,11 @@ function PerfilBody() {
       <Group title="Datos" pad="16px">
         <div style={{ display: 'grid', gap: 12 }}>
           <Field label="Nombre" icon="user-profile" value={name} maxLength={60} placeholder={user.username} onChange={e => setName(e.target.value)} />
-          <Field label="Usuario" icon="user-profile" value={user.username} readOnly />
+          <Field label="Usuario" icon="user-profile" value={username} maxLength={40} autoCapitalize="none" autoCorrect="off" spellCheck={false}
+            onChange={e => setUsername(e.target.value.replace(/\s/g, ''))} />
           {user.email && <Field label="Email" icon="link" value={user.email} readOnly />}
           <PeriodoFields />
-          {dirty && <Btn height={46} onClick={() => save.mutate()} disabled={save.isPending}>Guardar</Btn>}
+          {dirty && <Btn height={46} onClick={() => save.mutate()} disabled={save.isPending || !username.trim()}>Guardar</Btn>}
         </div>
       </Group>
     </>

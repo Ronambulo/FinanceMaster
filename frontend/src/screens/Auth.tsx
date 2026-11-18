@@ -1,6 +1,6 @@
 // Entrar y Crear cuenta (tableros Login, PCLogin y Registro).
-import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { authApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 import { Icon } from '@/ui/Icon'
@@ -196,6 +196,14 @@ export function Registro() {
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const st = passwordStrength(pass)
+  // Enlace de invitación: trae el nombre propuesto y se marca como usado al crear la cuenta.
+  const invite = useSearchParams()[0].get('invitacion') || undefined
+  useEffect(() => {
+    if (!invite) return
+    authApi.invite(invite)
+      .then(r => { if (r.display_name) setName(n => n || r.display_name!) })
+      .catch(ex => setErr(ex instanceof Error && ex.message ? ex.message : 'La invitación no es válida'))
+  }, [invite])
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -204,7 +212,7 @@ export function Registro() {
     if (pass !== pass2) return setErr('Las contraseñas no coinciden')
     setBusy(true); setErr(null)
     try {
-      const r = await authApi.register({ username: user.trim(), password: pass, display_name: name.trim() || undefined })
+      const r = await authApi.register({ username: user.trim(), password: pass, display_name: name.trim() || undefined, invite })
       setAuth(r.user, r.access_token)
       nav('/bienvenida', { replace: true })
     } catch (ex) {

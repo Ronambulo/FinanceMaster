@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Transaction, TxGroup } from '../api'
-import { EMPTY_FILTERS, activeFilterCount, filterParams, periodLabel, periodRange } from '../movements'
+import { EMPTY_FILTERS, activeFilterCount, filterParams, periodLabel, periodRange, serverDate, syncLabel } from '../movements'
 import {
   accountName, averageTicket, categoriesFor, countLabel, dayLabel, groupByDay, groupFilter, groupSections,
   kindToType, merchantBars, monthName, monthRange, parseAmount, recentMonths, signedAmount, txKind, txTitle,
@@ -199,5 +199,18 @@ describe('editar / añadir', () => {
     const rules = [{ keyword: 'lidl' }, { keyword: 'Mercadona' }]
     expect(ruleFor(rules, 'MERCADONA Valencia')?.keyword).toBe('Mercadona')
     expect(ruleFor(rules, 'Café')).toBeUndefined()
+  })
+})
+
+describe('serverDate / syncLabel', () => {
+  it('lee la hora del servidor como UTC', () => {
+    expect(serverDate('2026-11-18T09:40:00').getTime()).toBe(Date.UTC(2026, 10, 18, 9, 40))
+    expect(serverDate('2026-11-18T09:40:00Z').getTime()).toBe(Date.UTC(2026, 10, 18, 9, 40))
+    expect(serverDate('2026-11-18T09:40:00+00:00').getTime()).toBe(Date.UTC(2026, 10, 18, 9, 40))
+  })
+  it('muestra la hora local', () => {
+    const d = new Date(Date.UTC(2026, 10, 18, 9, 40))
+    const hhmm = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+    expect(syncLabel('2026-11-18T09:40:00', d)).toBe(`Hoy, ${hhmm}`)
   })
 })
