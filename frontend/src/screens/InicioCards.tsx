@@ -2,8 +2,8 @@
 import { useRef, useState, type CSSProperties, type PointerEvent as RPointerEvent, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { dashApi, type CategoryBreakdown, type Insight } from '@/lib/api'
-import { spendingPace, spendingProfile, weekdayDay, type ProfileId } from '@/lib/home'
+import { dashApi, type Insight } from '@/lib/api'
+import { weekdayDay } from '@/lib/home'
 import { HOME_CARDS, HOME_CARD_IDS, type HomeCard } from '@/lib/preferences'
 import { usePreferencesStore } from '@/store/preferences'
 import { Icon, type AnyIcon } from '@/ui/Icon'
@@ -14,30 +14,6 @@ const card = { background: C.card, boxShadow: 'var(--sh-card)' } as const
 export const cardBox = (pc?: boolean): CSSProperties => pc
   ? { ...card, borderRadius: 22, padding: '20px 24px' }
   : { ...card, margin: '12px 16px 0', borderRadius: 24, padding: '16px 18px' }
-
-/** A este ritmo: gasto diario y a cuánto llegarás al acabar el periodo. */
-export function PaceCard({ pc, expenses, income, start, end }: { pc?: boolean; expenses: number; income: number; start: string; end: string }) {
-  const money = useMoney()
-  const p = spendingPace(expenses, start, end, new Date())
-  if (!p || expenses <= 0) return null
-  const over = income > 0 && p.projected > income
-  const ratio = p.elapsed / p.days
-  return (
-    <section style={cardBox(pc)}>
-      <CardHead title="Ritmo de gasto" />
-      <p style={{ margin: '8px 0 0', fontSize: 14, color: C.muted, fontWeight: 600 }}>
-        A este ritmo acabarás con <b style={{ color: over ? C.red : C.text }}>{money(p.projected, { euro: true })}</b> de gasto
-      </p>
-      <div aria-hidden="true" style={{ position: 'relative', height: 8, borderRadius: 4, background: 'var(--track)', marginTop: 12, overflow: 'hidden' }}>
-        <span style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: `${Math.round(ratio * 100)}%`, background: over ? C.red : C.accent, borderRadius: 4 }} />
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 12, color: C.muted, fontWeight: 700 }}>
-        <span>{money(p.perDay)} al día</span>
-        <span>Día {p.elapsed} de {p.days}</span>
-      </div>
-    </section>
-  )
-}
 
 /** Recurrentes que deberían cobrarse en el periodo y aún no han llegado. */
 export function PendingCard({ pc, start, end }: { pc?: boolean; start: string; end: string }) {
@@ -108,33 +84,6 @@ export function InsightsCard({ pc }: { pc?: boolean }) {
   )
 }
 
-const PROFILE_ICON: Record<ProfileId, AnyIcon> = {
-  foodie: 'cat-comida', tech: 'cat-suscripciones', traveler: 'cat-viajes', saver: 'piggy',
-  spender: 'flame', mystery: 'help', balanced: 'sliders',
-}
-
-const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-
-/** Perfil de gasto: reparto de los últimos tres meses y balance del periodo. */
-export function ProfileCard({ pc, income, expenses }: { pc?: boolean; income: number; expenses: number }) {
-  const from = new Date(); from.setMonth(from.getMonth() - 3)
-  const range = { date_from: iso(from), date_to: iso(new Date()), tx_type: 'expense' }
-  const q = useQuery({ queryKey: ['home-profile', range.date_from], queryFn: () => dashApi.byCategory(range), staleTime: 30 * 60_000 })
-  const rows: CategoryBreakdown[] = q.data ?? []
-  const p = q.data ? spendingProfile(rows, income, expenses) : null
-  if (!p) return null
-  return (
-    <section style={{ ...cardBox(pc), display: 'flex', gap: 14, alignItems: 'center' }}>
-      <span style={{ width: 52, height: 52, borderRadius: 18, background: C.soft, color: C.accentText, display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}><Icon name={PROFILE_ICON[p.id]} size={26} /></span>
-      <span style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600 }}>Tu perfil de gasto</span>
-        <span style={{ display: 'block', fontSize: 18, fontWeight: 800 }}>{p.name}</span>
-        <span style={{ display: 'block', fontSize: 13, color: C.muted, fontWeight: 600 }}>{p.detail}</span>
-      </span>
-    </section>
-  )
-}
-
 /** Ordenar (arrastrando el asa) y mostrar u ocultar tarjetas de Inicio. */
 export function CustomizeHome({ open, onClose, available }: { open: boolean; onClose: () => void; available: HomeCard[] }) {
   const saved = usePreferencesStore(s => s.prefs.home_cards)
@@ -173,14 +122,20 @@ export function CustomizeHome({ open, onClose, available }: { open: boolean; onC
     }
     setDragging({ id: d.id, dy: dy - (target - d.from) * d.h })
   }
-  const up = () => { drag.current = null; setDragging(null) }
-  const save = async () => {
+  // Cada cambio se guarda al momento: no hay botón de guardar que olvidar.
+  const persist = (o: HomeCard[], s: Set<HomeCard>) => {
     // Las que ahora no se pueden mostrar (módulo apagado) conservan su sitio.
     const unavailable = saved.filter(c => !available.includes(c))
-    await update({ home_cards: [...order.filter(c => on.has(c)), ...unavailable] })
-    onClose()
+    update({ home_cards: [...o.filter(c => s.has(c)), ...unavailable] }).catch(() => { /* el store ya revierte */ })
   }
-  const toggle = (id: HomeCard, v: boolean) => setOn(s => { const n = new Set(s); if (v) n.add(id); else n.delete(id); return n })
+  const up = () => {
+    if (drag.current && order.indexOf(drag.current.id) !== drag.current.from) persist(order, on)
+    drag.current = null; setDragging(null)
+  }
+  const toggle = (id: HomeCard, v: boolean) => {
+    const n = new Set(on); if (v) n.add(id); else n.delete(id)
+    setOn(n); persist(order, n)
+  }
 
   return (
     <Sheet open={open} onClose={onClose} title="Personalizar Inicio">
@@ -200,7 +155,7 @@ export function CustomizeHome({ open, onClose, available }: { open: boolean; onC
                   if (!k) return
                   e.preventDefault()
                   const j = Math.max(0, Math.min(order.length - 1, i + k))
-                  const next = order.filter(x => x !== id); next.splice(j, 0, id); setOrder(next)
+                  const next = order.filter(x => x !== id); next.splice(j, 0, id); setOrder(next); persist(next, on)
                 }}
                 style={{ width: 32, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.muted, cursor: 'grab', touchAction: 'none' }}><Icon name="grip" size={18} /></span>
               <span style={{ fontWeight: 700, color: on.has(id) ? C.text : C.muted }}>{HOME_CARDS[id]}</span>
@@ -209,7 +164,7 @@ export function CustomizeHome({ open, onClose, available }: { open: boolean; onC
           )
         })}
       </div>
-      <div style={{ paddingTop: 14 }}><Btn onClick={save}>Guardar</Btn></div>
+      <div style={{ paddingTop: 14 }}><Btn onClick={onClose}>Listo</Btn></div>
     </Sheet>
   )
 }

@@ -4,7 +4,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { dashApi, goalApi, txApi } from '@/lib/api'
 import { categoryBars, dateHeading, periodTotals, weekdayDay, worthChangePct } from '@/lib/home'
-import { nextRecurring, topGoal } from '@/lib/plan'
+import { goalsReserved, nextRecurring, topGoal } from '@/lib/plan'
+import { visibleAccounts } from '@/lib/accounts'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 import { useAuthStore } from '@/store/auth'
 import { usePreferencesStore } from '@/store/preferences'
@@ -17,7 +18,8 @@ import { CardHead, CatBar, MerchantTile, Spark, TxRow, shortDayLabel } from '@/u
 import { PCHeader, useIsPC } from '@/app/Shell'
 import { accountName, txNet, txTitle } from '@/lib/movements'
 import type { HomeCard } from '@/lib/preferences'
-import { cardBox, CustomizeHome, CustomizeLink, InsightsCard, PaceCard, PendingCard, ProfileCard } from './InicioCards'
+import { Available } from './Cuentas'
+import { cardBox, CustomizeHome, CustomizeLink, InsightsCard, PendingCard } from './InicioCards'
 
 const card = { background: C.card, boxShadow: 'var(--sh-card)' } as const
 
@@ -36,6 +38,10 @@ function useHomeData() {
   const worth = useQuery({ queryKey: ['net-worth', 12], queryFn: () => dashApi.netWorthHistory(12), enabled: features.accounts, staleTime: 5 * 60_000 })
   const upcoming = useQuery({ queryKey: ['upcoming', 30], queryFn: () => dashApi.upcoming(30), enabled: features.recurring })
   const goals = useQuery({ queryKey: ['goals'], queryFn: goalApi.list, enabled: features.goals })
+  const accounts = useQuery({ queryKey: ['accounts'], queryFn: dashApi.accounts, enabled: features.accounts && features.goals })
+  // Efectivo menos lo apartado para objetivos.
+  const cash = visibleAccounts(accounts.data ?? []).reduce((a, c) => a + c.balance, 0)
+  const reserved = goalsReserved(goals.data ?? [])
   const totals = useMemo(() => periodTotals(detail.data ?? []), [detail.data])
   const bars = useMemo(() => categoryBars(cats.data ?? [], 5), [cats.data])
   const history = worth.data ?? []
@@ -46,6 +52,7 @@ function useHomeData() {
     worthSeries: history.map(h => h.net_worth),
     next: nextRecurring(upcoming.data ?? []),
     goal: topGoal(goals.data ?? []),
+    cash: accounts.data && goals.data ? { available: cash - reserved, reserved } : null,
     range,
   }
 }
@@ -70,7 +77,7 @@ function Hero({ pc, totals }: { pc?: boolean; totals: { income: number; expenses
   )
 }
 
-function Worth({ pc, value, pct, series }: { pc?: boolean; value: number; pct: number | null; series: number[] }) {
+function Worth({ pc, value, pct, series, cash }: { pc?: boolean; value: number; pct: number | null; series: number[]; cash: { available: number; reserved: number } | null }) {
   const money = useMoney()
   const pill = pct != null && <Pill tone={pct >= 0 ? 'green' : 'red'}>{pctText(pct)}</Pill>
   if (pc) {
@@ -84,6 +91,7 @@ function Worth({ pc, value, pct, series }: { pc?: boolean; value: number; pct: n
           {pill}
         </div>
         <div style={{ marginTop: 10 }}><Spark values={series} width={420} height={92} id="g-worth-pc" /></div>
+        {cash && <Available {...cash} />}
       </Link>
     )
   }
@@ -97,6 +105,7 @@ function Worth({ pc, value, pct, series }: { pc?: boolean; value: number; pct: n
         {pill}
       </span>
       {series.length > 1 && <span style={{ display: 'block', marginTop: 8 }}><Spark values={series} width={318} height={58} id="g-worth" /></span>}
+      {cash && <span style={{ display: 'block', paddingBottom: 4 }}><Available {...cash} /></span>}
     </Link>
   )
 }
@@ -297,7 +306,7 @@ function PCUltraInicio({ d, h }: { d: HomeData; h: Heading }) {
 /** Tarjetas que se pueden mostrar con los módulos activos. */
 function availableCards(d: HomeData): HomeCard[] {
   const f = d.features
-  const out: HomeCard[] = ['month', 'pace', 'insights', 'personality']
+  const out: HomeCard[] = ['month', 'insights']
   if (f.accounts) out.push('worth')
   if (f.recurring) out.push('pending', 'next')
   if (f.goals) out.push('goal')
@@ -309,14 +318,12 @@ function HomeCards({ pc, d }: { pc?: boolean; d: HomeData }) {
   const avail = availableCards(d)
   const render = (c: HomeCard): ReactNode => {
     switch (c) {
-      case 'worth': return d.worthValue != null ? <Worth pc={pc} value={d.worthValue} pct={d.worthPct} series={d.worthSeries} /> : null
+      case 'worth': return d.worthValue != null ? <Worth pc={pc} value={d.worthValue} pct={d.worthPct} series={d.worthSeries} cash={d.cash} /> : null
       case 'month': return <ThisMonth pc={pc} bars={d.bars} />
-      case 'pace': return <PaceCard pc={pc} expenses={d.totals.expenses} income={d.totals.income} start={d.range.date_from} end={d.range.date_to} />
       case 'pending': return <PendingCard pc={pc} start={d.range.date_from} end={d.range.date_to} />
       case 'next': return d.next ? <NextCharge pc={pc} next={d.next} /> : null
       case 'goal': return d.goal ? <GoalCard pc={pc} goal={d.goal} /> : null
       case 'insights': return <InsightsCard pc={pc} />
-      case 'personality': return <ProfileCard pc={pc} income={d.totals.income} expenses={d.totals.expenses} />
     }
   }
   return <>{order.filter(c => avail.includes(c)).map(c => <Fragment key={c}>{render(c)}</Fragment>)}</>

@@ -20,7 +20,7 @@ import {
 } from '@/lib/plan'
 import { PCHeader, useIsPC } from '@/app/Shell'
 import { usePayrollCycle } from '@/hooks/usePayrollCycle'
-import { bestCycle, calendarCycles, cycleAverage, cycleRows, previousSpendAligned } from '@/lib/cycles'
+import { bestCycle, calendarCycles, cycleAverage, cycleDaysLeft, cycleEstimatedEnd, cycleMonth, cycleRows, previousSpendAligned } from '@/lib/cycles'
 import { CatPickSheet } from '@/ui/CatPick'
 import { confirm } from '@/ui/Confirm'
 import { Icon, catTone, toneColors, toneIcon, CatGlyph, CatTile, type AnyIcon } from '@/ui/Icon'
@@ -55,11 +55,53 @@ function useInvalidate() {
 
 interface Tile { id: ModuleId; to: string; icon: AnyIcon; title: string; sub: string }
 
+/** Ingresos y gastos de los últimos `n` ciclos de nómina (como Inicio y Mes a mes),
+ *  con la forma de la tendencia mensual: `month` es el mes al que pertenece cada ciclo. */
+function useCycleTrend(n: number, enabled = true) {
+  const payroll = usePayrollCycle(0)
+  const today = useMemo(() => new Date(), [])
+  const cycles = useMemo(
+    () => (payroll.cycles.length ? payroll.cycles.slice(-n) : calendarCycles(today, n)),
+    [payroll.cycles, n, today],
+  )
+  const range = cycles.length ? { date_from: cycles[0].start, date_to: cycles[cycles.length - 1].end } : null
+  const detail = useQuery({
+    queryKey: ['cycles-detail', range],
+    queryFn: () => dashApi.monthlyDetail(range!),
+    enabled: enabled && !payroll.loading && !!range,
+  })
+  const data = useMemo<MonthlyTrend[] | undefined>(
+    () => detail.data && cycleRows(cycles, detail.data).map(r => ({ month: cycleMonth(r), income: r.income, expenses: r.expenses, savings: r.savings })),
+    [detail.data, cycles],
+  )
+  return { data, isLoading: payroll.loading || detail.isLoading }
+}
+
+/** Estado de los presupuestos del ciclo de nómina actual. */
+function useBudgetStatus(enabled = true) {
+  const payroll = usePayrollCycle(0)
+  // El ciclo abierto acaba en hoy + 45 días; para prorratear el límite se usa su fin estimado.
+  const from = payroll.periodStart
+  // Si la nómina se retrasa, hoy ya pasó el fin estimado: no dejar fuera los últimos movimientos.
+  const est = payroll.cycles.length ? cycleEstimatedEnd(payroll.cycles, payroll.selectedCycleIdx) : payroll.periodEnd
+  const today = new Date().toLocaleDateString('sv')
+  const to = payroll.isLatestCycle && est && est < today ? today : est
+  return useQuery({
+    queryKey: ['budgets', 'status', from, to],
+    queryFn: () => budgetApi.status(undefined, from, to),
+    enabled: enabled && !payroll.loading && !!from && !!to,
+  })
+}
+
 function usePlanData(months: number) {
   const prefs = usePreferencesStore(s => s.prefs)
   const on = (id: ModuleId) => isModuleOn(prefs, id)
-  const trend = useQuery({ queryKey: ['monthly-trend', months], queryFn: () => dashApi.monthlyTrend(months) })
-  const budgets = useQuery({ queryKey: ['budgets', 'status', monthKey(new Date())], queryFn: () => budgetApi.status(monthKey(new Date())), enabled: on('budgets') })
+  // Hasta un año, por ciclos; la vista por años sigue usando meses naturales.
+  const byYear = months > 12
+  const cycleTrend = useCycleTrend(Math.min(months, 12), !byYear)
+  const yearTrend = useQuery({ queryKey: ['monthly-trend', months], queryFn: () => dashApi.monthlyTrend(months), enabled: byYear })
+  const trend = byYear ? yearTrend : cycleTrend
+  const budgets = useBudgetStatus(on('budgets'))
   const upcoming = useQuery({ queryKey: ['upcoming', 30], queryFn: () => dashApi.upcoming(30), enabled: on('recurring') })
   const goals = useQuery({ queryKey: ['goals'], queryFn: goalApi.list, enabled: on('goals') })
   const debts = useQuery({ queryKey: ['debts'], queryFn: debtApi.list, enabled: on('debts') })
@@ -81,8 +123,8 @@ function Bars({ trend, height, radius, gap }: { trend: MonthlyTrend[]; height: n
   const bars = spendBars(trend)
   return (
     <div style={{ display: 'flex', gap, marginTop: height > 100 ? 16 : 14 }}>
-      {bars.map(b => (
-        <span key={b.month} title={`${b.label}: ${money(b.value, { euro: true })}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+      {bars.map((b, i) => (
+        <span key={`${b.month}-${i}`} title={`${b.label}: ${money(b.value, { euro: true })}`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
           <span style={{ width: '100%', height, display: 'flex', alignItems: 'flex-end' }}>
             <span style={{ display: 'block', width: '100%', height: `${Math.max(4, Math.round(b.ratio * 100))}%`, borderRadius: radius, background: b.current ? 'var(--c-8b85ff)' : 'var(--track)' }} />
           </span>
@@ -132,7 +174,8 @@ export default function Plan() {
   const pc = useIsPC()
   const [range, setRange] = useState<'mes' | 'ano'>('mes')
   const d = usePlanData(pc ? (range === 'mes' ? 12 : 60) : 6)
-  const month = longMonth(monthKey(new Date()))
+  const payroll = usePayrollCycle(0)
+  const month = payroll.isPayrollCycle ? payroll.cycleRangeLabel : longMonth(monthKey(new Date()))
   const trend = d.trend.data ?? []
 
   if (pc) {
@@ -224,13 +267,13 @@ const fmtAuto = (n: number) => (Number.isInteger(Math.round(n * 100) / 100) ? fm
 
 export function Presupuestos() {
   const money = useMoney()
-  const month = monthKey(new Date())
-  const status = useQuery({ queryKey: ['budgets', 'status', month], queryFn: () => budgetApi.status(month) })
+  const payroll = usePayrollCycle(0)
+  const status = useBudgetStatus()
   const [edit, setEdit] = useState<BudgetStatus | 'new' | null>(null)
   const list = status.data ?? []
   const tot = budgetTotals(list)
   const pct = Math.round(tot.ratio * 100)
-  const left = daysLeftInMonth(new Date())
+  const left = payroll.cycles.length ? cycleDaysLeft(payroll.cycles, new Date()) : daysLeftInMonth(new Date())
 
   return (
     <Page>
@@ -503,9 +546,6 @@ export function Objetivos() {
   const [contribute, setContribute] = useState(false)
   const list = (goals.data ?? []).filter(g => g.is_active)
   const today = new Date()
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: dashApi.accounts })
-  const cashTotal = visibleAccounts(accounts.data ?? []).reduce((a, c) => a + c.balance, 0)
-  const reserved = goalsReserved(list)
 
   return (
     <Page>
@@ -516,13 +556,6 @@ export function Objetivos() {
         <Empty icon="safe-open" title="Sin objetivos" text="Ahorra para algo concreto y mira cómo avanza." action={<Btn icon="plus" onClick={() => setEdit('new')}>Nuevo objetivo</Btn>} />
       ) : (
         <>
-          {accounts.data && (
-            <section style={{ ...card, margin: '16px 16px 0', padding: '16px 20px' }}>
-              <p style={{ margin: 0, fontSize: 13, color: C.muted, fontWeight: 600 }}>Disponible</p>
-              <p style={{ margin: 0, fontSize: 30, fontWeight: 800 }}>{money(cashTotal - reserved, { euro: true })}</p>
-              <p style={{ margin: '4px 0 0', fontSize: 13, color: C.muted, fontWeight: 600 }}>{money(reserved, { euro: true })} apartados de {money(cashTotal, { euro: true })}</p>
-            </section>
-          )}
           {list.map(g => {
             const look = goalLook(g)
             const target = goalTarget(g)
@@ -568,13 +601,16 @@ const ALLOC_PARTS = [
 /** Reparto del sueldo del mes entre gastos, ahorro e inversión (guardado por mes en el backend). */
 function AllocationCard() {
   const money = useMoney()
-  const month = monthKey(new Date())
-  const alloc = useQuery({ queryKey: ['goal-allocation', month], queryFn: () => goalApi.getAllocation(month) })
-  const trend = useQuery({ queryKey: ['monthly-trend', 3], queryFn: () => dashApi.monthlyTrend(3) })
+  // El reparto se guarda por mes: el del ciclo actual (el mes en que empieza, como los presupuestos).
+  const payroll = usePayrollCycle(0)
+  const month = payroll.monthStr
+  const alloc = useQuery({ queryKey: ['goal-allocation', month], queryFn: () => goalApi.getAllocation(month), enabled: !payroll.loading })
+  // Sueldo medio de los 3 últimos ciclos cerrados (el actual aún no ha terminado).
+  const trend = useCycleTrend(4)
   const [open, setOpen] = useState(false)
   const a = alloc.data
   if (!a) return null
-  const months = (trend.data ?? []).filter(t => t.income > 0)
+  const months = (trend.data ?? []).slice(0, -1).filter(t => t.income > 0)
   const income = months.length ? months.reduce((s, t) => s + t.income, 0) / months.length : 0
   return (
     <>
@@ -1075,7 +1111,7 @@ function useStreak(enabled = true) {
 
 export function Logros() {
   const streak = useStreak()
-  const trend = useQuery({ queryKey: ['monthly-trend', 6], queryFn: () => dashApi.monthlyTrend(6) })
+  const trend = useCycleTrend(6)
   const goals = useQuery({ queryKey: ['goals'], queryFn: goalApi.list })
   const debts = useQuery({ queryKey: ['debts'], queryFn: debtApi.list })
   const accounts = useQuery({ queryKey: ['accounts'], queryFn: dashApi.accounts })

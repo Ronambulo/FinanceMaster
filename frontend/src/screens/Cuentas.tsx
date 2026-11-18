@@ -39,7 +39,7 @@ function useAccountsData() {
   const goals = useQuery({ queryKey: ['goals'], queryFn: goalApi.list, enabled: goalsOn })
   // Lo apartado para objetivos sale del efectivo: lo que queda es lo disponible.
   const reserved = goalsOn ? goalsReserved(goals.data ?? []) : 0
-  return { reserved, available: cashTotal - reserved, loading: accounts.isLoading || perf.isLoading || worth.isLoading, history: (worth.data ?? []).map(p => p.net_worth), cash, positions, brokers, cashTotal, invested, split: worthSplit(cashTotal, invested) }
+  return { goalsOn, reserved, available: cashTotal - reserved, loading: accounts.isLoading || perf.isLoading || worth.isLoading, history: (worth.data ?? []).map(p => p.net_worth), cash, positions, brokers, cashTotal, invested, split: worthSplit(cashTotal, invested) }
 }
 
 // ── Hoja Añadir cuenta ──────────────────────────────────────────────────────
@@ -94,22 +94,28 @@ function Dot({ color }: { color: string }) {
 }
 
 /** Efectivo disponible una vez apartado lo de los objetivos. */
-export function Available({ available, reserved }: { available: number; reserved: number }) {
+export function Available({ available, reserved, link = false }: { available: number; reserved: number; link?: boolean }) {
   const money = useMoney()
   const box = { background: C.field, borderRadius: 16, padding: '10px 12px', color: C.text, minWidth: 0 }
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10, marginTop: 14 }}>
       <span style={box}>
-        <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: C.muted }}>Disponible</span>
+        <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: C.muted }}>Efectivo disponible</span>
         <span style={{ display: 'block', fontSize: 17, fontWeight: 800, marginTop: 2 }}>{money(available, { euro: true })}</span>
       </span>
-      <Link to="/objetivos" style={box}>
-        <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: C.muted }}>En objetivos</span>
-        <span style={{ display: 'block', fontSize: 17, fontWeight: 800, marginTop: 2 }}>{money(reserved, { euro: true })}</span>
-      </Link>
+      {link
+        ? <Link to="/objetivos" style={box}>{goalsBox(money(reserved, { euro: true }))}</Link>
+        : <span style={box}>{goalsBox(money(reserved, { euro: true }))}</span>}
     </div>
   )
 }
+
+const goalsBox = (v: string) => (
+  <>
+    <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: C.muted }}>En objetivos</span>
+    <span style={{ display: 'block', fontSize: 17, fontWeight: 800, marginTop: 2 }}>{v}</span>
+  </>
+)
 
 function SectionHead({ title, total }: { title: string; total: string }) {
   return (
@@ -219,7 +225,7 @@ export default function Cuentas() {
           </div>
         </>
       )}
-      {d.reserved > 0 && <Available available={d.available} reserved={d.reserved} />}
+      {d.goalsOn && <Available available={d.available} reserved={d.reserved} link />}
     </section>
   )
 
@@ -366,7 +372,7 @@ function SummaryPC({ d, onPick }: { d: ReturnType<typeof useAccountsData>; onPic
           </div>
         </>
       )}
-      {d.reserved > 0 && <Available available={d.available} reserved={d.reserved} />}
+      {d.goalsOn && <Available available={d.available} reserved={d.reserved} link />}
       <h2 style={{ margin: '24px 0 4px', fontSize: 17, fontWeight: 800 }}>Por cuenta</h2>
       {rows.map(r => {
         const share = d.split.total > 0 ? Math.round((r.value / d.split.total) * 100) : 0

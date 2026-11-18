@@ -1,4 +1,4 @@
-import { parseRangePeriod, rangePeriodLabel } from '@/lib/cycles'
+import { cycleMonth, parseRangePeriod, rangePeriodLabel } from '@/lib/cycles'
 // Cálculos de la pantalla Movimientos. Puros, sin React.
 import type { Category, Transaction, TxGroup } from './api'
 import { BANK_NAMES } from './utils'
@@ -188,6 +188,20 @@ export function merchantBars(byMonth: TxGroup[], today: Date, n = 6): MonthBar[]
   }))
 }
 
+/** Barras de gasto de un comercio por ciclo de nómina (los `n` últimos). */
+export function merchantCycleBars(items: Transaction[], cycles: (CycleSpan & { isOpen?: boolean })[], n = 6): MonthBar[] {
+  const last = cycles.slice(-n)
+  const values = last.map(c => r2(items.reduce((s, t) => {
+    const v = txNet(t)
+    return t.date >= c.start && t.date <= c.end && v < 0 ? s - v : s
+  }, 0)))
+  const max = Math.max(...values, 0)
+  return last.map((c, i) => {
+    const m = cycleMonth(c)
+    return { month: `${c.start}_${c.end}`, label: SHORT[Number(m.slice(5, 7)) - 1], value: values[i], ratio: max > 0 ? values[i] / max : 0, current: i === last.length - 1 }
+  })
+}
+
 /** Gasto medio por movimiento. */
 export function averageTicket(total: number, count: number): number {
   return count > 0 ? r2(Math.abs(total) / count) : 0
@@ -215,8 +229,20 @@ const toNumber = (s: string) => {
   return s.trim() && Number.isFinite(n) ? Math.abs(n) : undefined
 }
 
-/** Rango de fechas de un periodo de la hoja de filtros. */
-export function periodRange(period: FilterPeriod, today: Date): { date_from?: string; date_to?: string } {
+/** Un ciclo de nómina (de usePayrollCycle), del más antiguo al más reciente. */
+export interface CycleSpan { start: string; end: string }
+
+/** Rango de fechas de un periodo de la hoja de filtros. Con ciclos de nómina,
+ *  "este mes", "mes pasado" y "3 meses" van por ciclo (como en Inicio);
+ *  sin ellos, y para un mes elegido a mano, por mes natural. */
+export function periodRange(period: FilterPeriod, today: Date, cycles: CycleSpan[] = []): { date_from?: string; date_to?: string } {
+  const n = cycles.length
+  const span = (c: CycleSpan) => ({ date_from: c.start, date_to: c.end })
+  if (n) {
+    if (period === 'this') return span(cycles[n - 1])
+    if (period === 'last' && n >= 2) return span(cycles[n - 2])
+    if (period === '3m' && n >= 3) return { date_from: cycles[n - 3].start, date_to: cycles[n - 1].end }
+  }
   const cur = monthKey(today)
   if (period === 'this') return monthRange(cur)
   if (period === 'last') return monthRange(recentMonths(today, 2)[1])
@@ -237,14 +263,14 @@ export function periodLabel(period: FilterPeriod): string {
 }
 
 /** Parámetros de la API para unos filtros (los vacíos no se envían). */
-export function filterParams(f: MovFilters, today: Date): Record<string, string | number | undefined> {
+export function filterParams(f: MovFilters, today: Date, cycles: CycleSpan[] = []): Record<string, string | number | undefined> {
   return {
     type_group: f.kind || undefined,
     source: f.sources.length ? f.sources.join(',') : undefined,
     category_ids: f.categoryIds.length ? f.categoryIds.join(',') : undefined,
     amount_min: toNumber(f.min),
     amount_max: toNumber(f.max),
-    ...periodRange(f.period, today),
+    ...periodRange(f.period, today, cycles),
   }
 }
 

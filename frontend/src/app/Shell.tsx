@@ -233,7 +233,7 @@ function MorePanel({ open, peek, pull, onOpened, onCancel, onClose }: {
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'calc(0px - var(--vb-gap, 0px))', zIndex: 70, pointerEvents: open ? undefined : 'none' }}>
       <div ref={overlay} aria-hidden="true" onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--overlay)', animation: dragged ? undefined : 'fm-fade .15s', opacity: dragged && !open ? 0 : undefined }} />
       <nav ref={panel} aria-label="Principal" style={{
-        position: 'absolute', left: 16, right: 16, bottom: NAV_BOTTOM, boxSizing: 'border-box', padding: '0 10px 22px', borderRadius: 24,
+        position: 'absolute', left: 16, right: 16, bottom: NAV_BOTTOM, boxSizing: 'border-box', padding: '0 12px 14px', borderRadius: 24,
         background: C.pop, boxShadow: 'var(--sh-sheet)', border: 'var(--pop-border)', animation: dragged ? undefined : 'fm-up .2s ease-out',
         maxWidth: 560, margin: '0 auto', color: C.text, transform: dragged && !open ? 'translateY(110%)' : undefined,
       }}>
@@ -243,18 +243,59 @@ function MorePanel({ open, peek, pull, onOpened, onCancel, onClose }: {
           </button>
           <Tabs items={primary} onNavigate={onClose} />
         </div>
-        <div style={{ height: 1, background: C.line, margin: '0 4px 20px' }} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '20px 8px' }}>
-          {more.map(i => (
-            <Link key={i.id} to={i.to} onClick={onClose} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 700 }}>
-              <span style={{ width: 60, height: 60, borderRadius: '50%', background: C.field, color: C.accentText, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={NAV_ICON[i.icon]} size={24} /></span>
-              {i.label}
-            </Link>
-          ))}
-        </div>
+        <div style={{ height: 1, background: C.line, margin: '0 4px 14px' }} />
+        <MoreGrid items={more} onNavigate={onClose} />
       </nav>
     </div>,
     document.body,
+  )
+}
+
+// Herramientas de la app: van aparte, más discretas que las secciones.
+const UTILITY_IDS = new Set(['categories', 'import', 'settings', 'admin'])
+
+function MoreGrid({ items, onNavigate }: { items: NavItem[]; onNavigate: () => void }) {
+  const loc = useLocation()
+  const sections = items.filter(i => !UTILITY_IDS.has(i.id))
+  const tools = items.filter(i => UTILITY_IDS.has(i.id))
+  return (
+    <>
+      {sections.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+          {sections.map(i => {
+            const a = isActive(i, loc.pathname, loc.search)
+            return (
+              <Link key={i.id} to={i.to} onClick={onNavigate} aria-current={a ? 'page' : undefined} style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '14px 4px 12px', borderRadius: 18,
+                background: a ? C.soft : C.field, color: a ? C.accentText : C.text, fontSize: 12.5, fontWeight: 700, minWidth: 0,
+              }}>
+                <span style={{ width: 40, height: 40, borderRadius: 13, background: a ? C.accent : C.soft, color: a ? C.white : C.accentText, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name={NAV_ICON[i.icon]} size={21} />
+                </span>
+                <span style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.label}</span>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+      {tools.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${tools.length}, minmax(0, 1fr))`, gap: 8, marginTop: sections.length ? 12 : 0 }}>
+          {tools.map(i => {
+            const a = isActive(i, loc.pathname, loc.search)
+            return (
+              <Link key={i.id} to={i.to} onClick={onNavigate} aria-current={a ? 'page' : undefined} style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5, height: 60, padding: '0 4px', borderRadius: 14, minWidth: 0,
+                background: a ? C.soft : 'transparent', border: `1px solid ${a ? 'transparent' : C.line}`, boxSizing: 'border-box',
+                color: a ? C.accentText : C.muted, fontSize: 12, fontWeight: 700,
+              }}>
+                <Icon name={NAV_ICON[i.icon]} size={19} />
+                <span style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.label}</span>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </>
   )
 }
 

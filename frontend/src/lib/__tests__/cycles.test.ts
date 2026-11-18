@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bestCycle, calendarCycles, cycleAverage, cycleLabel, cycleRows, parseRangePeriod, previousSpendAligned } from '../cycles'
+import { bestCycle, calendarCycles, cycleAverage, cycleDaysLeft, cycleEstimatedEnd, cycleLabel, cycleMonth, cycleRows, parseRangePeriod, previousSpendAligned } from '../cycles'
 import type { MonthlyDetailRow } from '../api'
 
 const row = (date: string, amount: number, extra: Partial<MonthlyDetailRow> = {}): MonthlyDetailRow => ({
@@ -64,5 +64,34 @@ describe('calendarCycles con día fijo', () => {
     ])
     expect(calendarCycles(new Date(2026, 10, 25, 12), 1, 25)).toEqual([{ start: '2026-11-25', end: '2026-12-24', isOpen: true }])
     expect(calendarCycles(new Date(2026, 0, 3, 12), 1, 10)).toEqual([{ start: '2025-12-10', end: '2026-01-09', isOpen: true }])
+  })
+})
+
+describe('mes y días que quedan de un ciclo', () => {
+  it('el mes de un ciclo es el de su punto medio', () => {
+    expect(cycleMonth({ start: '2026-09-27', end: '2026-10-27' })).toBe('2026-10')
+    expect(cycleMonth({ start: '2026-11-01', end: '2026-11-30' })).toBe('2026-11')
+    // Abierto: su fin aún no se sabe, cuenta como un mes de largo
+    expect(cycleMonth({ start: '2026-10-28', end: '2026-12-31', isOpen: true })).toBe('2026-11')
+  })
+  it('días que quedan', () => {
+    const cycles = [
+      { start: '2026-09-27', end: '2026-10-26', isOpen: false },
+      { start: '2026-10-27', end: '2027-01-01', isOpen: true },
+    ]
+    // Ciclo de 30 días desde el 27 oct: acaba el 25 nov
+    expect(cycleDaysLeft(cycles, new Date(2026, 10, 18))).toBe(8)
+    expect(cycleDaysLeft([], new Date(2026, 10, 18))).toBe(0)
+    expect(cycleDaysLeft([{ start: '2026-11-01', end: '2026-11-30', isOpen: false }], new Date(2026, 10, 30))).toBe(1)
+  })
+  it('fin estimado del ciclo', () => {
+    const cycles = [
+      { start: '2026-09-27', end: '2026-10-26', isOpen: false },
+      { start: '2026-10-27', end: '2027-01-01', isOpen: true },
+    ]
+    expect(cycleEstimatedEnd(cycles)).toBe('2026-11-25')
+    expect(cycleEstimatedEnd(cycles, 0)).toBe('2026-10-26')
+    expect(cycleEstimatedEnd([{ start: '2026-11-01', end: '2026-12-31', isOpen: true }])).toBe('2026-11-30')
+    expect(cycleEstimatedEnd([])).toBe('')
   })
 })

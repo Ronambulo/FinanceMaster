@@ -18,9 +18,27 @@ Conecta Trade Republic y MyInvestor, importa los extractos de BBVA, N26, Revolut
 
 ## 📸 Vista previa
 
-![Dashboard](screenshots/dashboard.png)
+![Inicio](screenshots/inicio-pc.png)
 
-> Las capturas corresponden a la versión anterior de la interfaz.
+<p align="center">
+  <img src="screenshots/inicio-movil.png" width="19%" alt="Inicio en el móvil">
+  <img src="screenshots/movimientos-movil.png" width="19%" alt="Movimientos en el móvil">
+  <img src="screenshots/cuentas-movil.png" width="19%" alt="Cuentas en el móvil">
+  <img src="screenshots/plan-movil.png" width="19%" alt="Plan en el móvil">
+  <img src="screenshots/objetivos-movil.png" width="19%" alt="Objetivos en el móvil">
+</p>
+
+<details>
+<summary>Más capturas de escritorio</summary>
+
+![Movimientos](screenshots/movimientos-pc.png)
+![Cuentas](screenshots/cuentas-pc.png)
+![Plan](screenshots/plan-pc.png)
+![Objetivos](screenshots/objetivos-pc.png)
+
+</details>
+
+> Datos de ejemplo inventados.
 
 ---
 
@@ -28,13 +46,13 @@ Conecta Trade Republic y MyInvestor, importa los extractos de BBVA, N26, Revolut
 
 | Sección | Descripción |
 |---|---|
-| 🏠 **Inicio** | Lo que te queda del mes, ritmo de gasto, próximos cargos, avisos, perfil de gasto y patrimonio. Tarjetas que puedes ordenar y ocultar. |
+| 🏠 **Inicio** | Lo que te queda del ciclo, gasto por categoría, próximos cargos, avisos y patrimonio con el efectivo disponible una vez apartado lo de los objetivos. Tarjetas que puedes ordenar y ocultar. |
 | 💳 **Movimientos** | Listado con filtros, búsqueda, agrupación por día, categoría, comercio o cuenta. Selección múltiple para categorizar, fusionar, mover o excluir. Categorización con IA. |
-| 🏦 **Cuentas** | Saldos de bancos y brokers, cartera de inversión con gráfica de precio por posición, posiciones manuales y actualización de precios en vivo. |
+| 🏦 **Cuentas** | Saldos de bancos y brokers, efectivo disponible frente a lo apartado en objetivos, cartera de inversión con gráfica de precio por posición, posiciones manuales y actualización de precios en vivo. |
 | 📅 **Mes a mes** | Resumen por ciclos de nómina o meses naturales, con lo invertido en cada periodo y exportación a PDF o Excel. |
 | 🧾 **Presupuestos** | Límites de gasto por categoría con aviso al acercarte al tope. |
 | 🔁 **Recurrentes** | Detección automática de suscripciones y recibos, previsión del próximo cargo y marcado manual desde un movimiento. |
-| 🎯 **Objetivos** | Metas de ahorro, dinero disponible después de apartar lo de los objetivos y reparto del sueldo entre gastos, ahorro e inversión. |
+| 🎯 **Objetivos** | Metas de ahorro y reparto del sueldo entre gastos, ahorro e inversión. |
 | 💸 **Deudas** | Préstamos, cuotas y amortizaciones con historial de pagos. |
 | 🏆 **Logros** | Rachas y retos financieros. |
 | 🤖 **Asistente IA** | Chat sobre tus finanzas y categorización automática de movimientos. |

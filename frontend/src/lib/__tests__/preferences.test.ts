@@ -86,6 +86,6 @@ describe('home_cards', () => {
     expect(sanitize({ home_cards: [] }).home_cards).toEqual([])
   })
   it('applyPatch cambia el orden', () => {
-    expect(applyPatch(DEFAULT_PREFERENCES, { home_cards: ['pace', 'month'] }).home_cards).toEqual(['pace', 'month'])
+    expect(applyPatch(DEFAULT_PREFERENCES, { home_cards: ['insights', 'month'] }).home_cards).toEqual(['insights', 'month'])
   })
 })

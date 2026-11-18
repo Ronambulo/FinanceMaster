@@ -44,12 +44,10 @@ export type CatIcons = 'emoji' | 'dibujo'
 export const HOME_CARDS = {
   worth:       'Patrimonio',
   month:       'Este mes',
-  pace:        'Ritmo de gasto',
   pending:     'Cargos pendientes',
   next:        'Próximo cargo',
   goal:        'Objetivo principal',
   insights:    'Avisos',
-  personality: 'Perfil de gasto',
 } as const
 export type HomeCard = keyof typeof HOME_CARDS
 export const HOME_CARD_IDS = Object.keys(HOME_CARDS) as HomeCard[]

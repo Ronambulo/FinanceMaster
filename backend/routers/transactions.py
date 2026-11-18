@@ -3,7 +3,7 @@ from datetime import date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy import case, func, or_
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, aliased, joinedload
 from sqlalchemy.exc import IntegrityError
 from .. import models, schemas, auth
 from ..database import get_db
@@ -84,16 +84,33 @@ def _build_query(db, user_id, search, category_id, tx_type, type_group, date_fro
             q = q.filter(models.Transaction.account_category.in_(cats))
     if hide_transfers:
         q = q.filter(or_(models.Transaction.is_internal_transfer.is_(False), models.Transaction.is_internal_transfer.is_(None)))
-    if source:
-        # Cuenta(s) de origen separadas por comas; "manual" incluye los antiguos sin origen.
-        sources = [x.strip() for x in source.split(",") if x.strip()]
-        conds = [models.Transaction.source.in_(sources)]
-        if "manual" in sources:
-            conds.append(models.Transaction.source.is_(None))
-        q = q.filter(or_(*conds))
+    T = models.Transaction
+    sources = [x.strip() for x in source.split(",") if x.strip()] if source else []
+    if sources:
+        # Cuenta(s) de origen separadas por comas; "manual" incluye los antiguos
+        # sin origen (NULL o vacío), igual que el saldo de /dashboard/accounts.
+        q = q.filter(_source_cond(T, sources))
     # Collapse linked/merged groups into their primary row only
-    q = q.filter(or_(models.Transaction.link_group_id.is_(None), models.Transaction.is_link_primary == True))
+    collapse = [T.link_group_id.is_(None), T.is_link_primary == True]
+    if sources:
+        # Si el principal de una fusión es de otra cuenta, el movimiento de esta
+        # cuenta se enseña igualmente: su importe cuenta en el saldo de la cuenta.
+        P = aliased(T)
+        groups_here = (
+            db.query(P.link_group_id)
+            .filter(P.user_id == user_id, P.is_link_primary == True, P.link_group_id.isnot(None),
+                    _source_cond(P, sources))
+        )
+        collapse.append(T.link_group_id.notin_(groups_here.scalar_subquery()))
+    q = q.filter(or_(*collapse))
     return q
+
+
+def _source_cond(T, sources):
+    conds = [T.source.in_(sources)]
+    if "manual" in sources:
+        conds += [T.source.is_(None), T.source == ""]
+    return or_(*conds)
 
 
 MANUAL_ONLY_FIELDS = ("amount", "date", "type", "source")

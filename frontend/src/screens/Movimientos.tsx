@@ -22,6 +22,7 @@ import { useAuthStore } from '@/store/auth'
 import { usePreferencesStore } from '@/store/preferences'
 import { toast } from '@/ui/Toast'
 import { hintSeen, markHint } from '@/lib/hints'
+import { usePayrollCycle } from '@/hooks/usePayrollCycle'
 
 type Params = Record<string, string | number | undefined>
 
@@ -83,7 +84,10 @@ export default function Movimientos() {
   const [selected, setSelected] = useState<Set<number> | null>(null)
   const [hiddenIds, setHiddenIds] = useState<Set<number>>(new Set())
 
-  const params: Params = useMemo(() => ({ ...filterParams(filters, today), search: q || undefined }), [filters, q, today])
+  // Los periodos van por ciclo de nómina, como en Inicio.
+  const cycle = usePayrollCycle(0)
+  const cycles = cycle.cycles
+  const params: Params = useMemo(() => ({ ...filterParams(filters, today, cycles), search: q || undefined }), [filters, q, today, cycles])
   const categories = useQuery({ queryKey: ['categories'], queryFn: catApi.list })
   const accounts = useQuery({ queryKey: ['accounts', 'tx-sources'], queryFn: dashApi.txSources })
   const accountList = (accounts.data ?? []).filter(a => (a.tx_count ?? a.count) > 0)
@@ -93,20 +97,20 @@ export default function Movimientos() {
     queryFn: ({ pageParam }) => txApi.list({ ...params, page: pageParam, page_size: 50 }),
     initialPageParam: 1,
     getNextPageParam: last => (last.page * last.page_size < last.total ? last.page + 1 : undefined),
-    enabled: mode === 'day',
+    enabled: mode === 'day' && !cycle.loading,
   })
   const groupParams: Params = { ...params, hide_transfers: hideTransfers ? 'true' : undefined }
   const groups = useQuery({
     queryKey: ['transactions', 'groups', mode, groupParams],
     queryFn: () => txApi.groups(mode === 'day' ? 'category' : mode, groupParams),
-    enabled: mode !== 'day',
+    enabled: mode !== 'day' && !cycle.loading,
   })
 
   const items = useMemo(() => (list.data?.pages.flatMap(p => p.items) ?? []).filter(t => !hiddenIds.has(t.id)), [list.data, hiddenIds])
   const days = useMemo(() => groupByDay(items, today), [items, today])
   const total = mode === 'day' ? (list.data?.pages[0]?.total ?? 0) - hiddenIds.size : (groups.data ?? []).reduce((s, g) => s + g.count, 0)
   const sections = useMemo(() => groupSections(groups.data ?? [], split), [groups.data, split])
-  const periodText = filters.period === 'this' ? monthName(monthKey(today)) : periodLabel(filters.period)
+  const periodText = filters.period === 'this' ? (cycles.length ? cycle.cycleRangeLabel : monthName(monthKey(today))) : periodLabel(filters.period)
   const clearPeriod = filters.period !== '' && (
     <span role="button" tabIndex={0} aria-label="Quitar filtro de fecha" onClick={e => { e.stopPropagation(); setFilters(f => ({ ...f, period: '' })) }}
       onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); setFilters(f => ({ ...f, period: '' })) } }}
@@ -678,10 +682,11 @@ function FiltersSheet({ open, onClose, value, onApply, search, categories, accou
   const [d, setD] = useState(value)
   const [months, setMonths] = useState(false)
   const [allCats, setAllCats] = useState(false)
+  const { cycles } = usePayrollCycle(0)
   useEffect(() => { if (open) { setD(value); setMonths(/^\d{4}-\d{2}$/.test(value.period)); setAllCats(false) } }, [open, value])
   const count = useQuery({
     queryKey: ['transactions', 'count', d, search],
-    queryFn: () => txApi.list({ ...filterParams(d, today), search: search || undefined, page: 1, page_size: 1 }),
+    queryFn: () => txApi.list({ ...filterParams(d, today, cycles), search: search || undefined, page: 1, page_size: 1 }),
     enabled: open,
   })
   const set = (patch: Partial<MovFilters>) => setD(x => ({ ...x, ...patch }))
