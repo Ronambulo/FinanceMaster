@@ -69,6 +69,11 @@ FKS: Dict[str, Dict[str, str]] = {
     "debt_payments": {"debt_id": "debts", "transaction_id": "transactions"},
 }
 
+# Columnas que apuntan a la propia tabla (se reescriben tras insertarla)
+SELF_REFS: Dict[str, Dict[str, str]] = {
+    "transactions": {"split_parent_id": "transactions"},
+}
+
 
 class BackupError(ValueError):
     pass
@@ -258,6 +263,13 @@ def restore(db: Session, uid: int, doc: Dict[str, Any]) -> Dict[str, int]:
             for old_id, o in objs:
                 if old_id is not None:
                     id_map[key][old_id] = o.id
+            # Las partes de un gasto dividido apuntan a otro movimiento de la
+            # misma tabla: se reescriben cuando ya se conocen los ids nuevos.
+            for col, ref in SELF_REFS.get(key, {}).items():
+                for _, o in objs:
+                    old = getattr(o, col)
+                    if old is not None:
+                        setattr(o, col, id_map[ref].get(old))
             inserted[key] = len(objs)
 
         db.commit()

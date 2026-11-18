@@ -10,6 +10,7 @@ Login flow (v2 web login):
 """
 import asyncio
 import logging
+import functools
 import threading
 from typing import Optional
 from datetime import datetime
@@ -159,6 +160,18 @@ def _translate_login_error(e: Exception) -> str:
     return str(e)
 
 
+def _one_at_a_time(fn):
+    """La conexión con TR es un único WebSocket: dos lecturas a la vez
+    (p. ej. sincronizar mientras Cuentas pide las posiciones) rompen con
+    "cannot call recv while another coroutine is already running recv". Cada
+    operación que lee del socket espera a que termine la anterior."""
+    @functools.wraps(fn)
+    async def wrapper(self, *args, **kwargs):
+        async with self.ws_lock():
+            return await fn(self, *args, **kwargs)
+    return wrapper
+
+
 class TradeRepublicAPI:
     def __init__(self, phone: str, pin: str):
         self.phone = phone
@@ -170,6 +183,16 @@ class TradeRepublicAPI:
         self._login_method: Optional[str] = None
         self._login_error: Optional[str] = None
         self._last_sync: Optional[datetime] = None
+        self._ws_lock: Optional[asyncio.Lock] = None
+        self._ws_lock_loop = None
+
+    def ws_lock(self) -> asyncio.Lock:
+        """Candado del WebSocket (uno por bucle de eventos)."""
+        loop = asyncio.get_running_loop()
+        if self._ws_lock is None or self._ws_lock_loop is not loop:
+            self._ws_lock = asyncio.Lock()
+            self._ws_lock_loop = loop
+        return self._ws_lock
 
     def _build_client(self):
         from pytr.api import TradeRepublicApi, BASE_DIR
@@ -301,6 +324,7 @@ class TradeRepublicAPI:
             log.warning("TR: reconexión fallida: %s", e)
             return False
 
+    @_one_at_a_time
     async def get_timeline_raw(self, skip_ids: Optional[set[str]] = None, force_detail_ids: Optional[set[str]] = None) -> list:
         """
         Fetches ALL transactions with proper eventType.
@@ -471,6 +495,7 @@ class TradeRepublicAPI:
             self._connected = False
             raise TRConnectionError(f"Error al obtener timeline: {e}")
 
+    @_one_at_a_time
     async def get_portfolio_positions(self) -> dict:
         """
         Fetch current open positions directly from TR's portfolio WebSocket endpoint.
@@ -495,6 +520,7 @@ class TradeRepublicAPI:
             self._connected = False
             raise TRConnectionError(f"Error al obtener posiciones: {e}")
 
+    @_one_at_a_time
     async def get_compact_portfolio(self) -> dict:
         """Fetch compact portfolio (lighter payload) from TR."""
         if not self._connected or not self._client:

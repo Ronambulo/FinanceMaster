@@ -38,13 +38,25 @@ export default {
           DEFAULT:    'hsl(var(--accent))',
           foreground: 'hsl(var(--accent-foreground))',
         },
+        popover: {
+          DEFAULT:    'hsl(var(--popover))',
+          foreground: 'hsl(var(--popover-foreground))',
+        },
         card: {
           DEFAULT:    'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
         /* Semantic financial tokens — controlled via CSS vars by applyTheme() */
-        positive: 'hsl(var(--positive))',
-        negative: 'hsl(var(--negative))',
+        positive: {
+          DEFAULT: 'hsl(var(--positive))',
+          soft:    'hsl(var(--positive-soft))',
+        },
+        negative: {
+          DEFAULT: 'hsl(var(--negative))',
+          soft:    'hsl(var(--negative-soft))',
+        },
+        brand:    'hsl(var(--brand))',
+        handle:   'hsl(var(--handle))',
         warning:  'hsl(var(--warning))',
         /* Qualitative dataviz palette — constant across themes */
         chart: {
@@ -55,8 +67,8 @@ export default {
         },
       },
       fontFamily: {
-        sans:    ['"IBM Plex Sans"', '-apple-system', 'system-ui', 'sans-serif'],
-        display: ['"Space Grotesk"', '"IBM Plex Sans"', '-apple-system', 'system-ui', 'sans-serif'],
+        sans:    ['Manrope', '-apple-system', 'system-ui', 'sans-serif'],
+        display: ['Manrope', '-apple-system', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         lg:   'var(--radius)',
@@ -64,6 +76,7 @@ export default {
         sm:   'calc(var(--radius) - 4px)',
         xl:   'calc(var(--radius) + 4px)',
         '2xl':'calc(var(--radius) + 8px)',
+        card: '24px',
       },
       keyframes: {
         'accordion-down': {
@@ -100,8 +113,10 @@ export default {
         'number-pop':     'number-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1) both',
       },
       boxShadow: {
-        'card':      '0 2px 10px rgba(0,0,0,0.35)',
-        'card-hover':'0 14px 36px rgba(0,0,0,0.45)',
+        'card':      'var(--shadow-card)',
+        'card-hover':'var(--shadow-nav)',
+        'nav':       'var(--shadow-nav)',
+        'fab':       'var(--shadow-fab)',
       },
     },
   },

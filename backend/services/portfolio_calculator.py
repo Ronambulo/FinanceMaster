@@ -1,5 +1,6 @@
 import json
 import re
+import threading
 import time
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -31,6 +32,13 @@ def _lookup_isin_via_search(isin: str) -> Optional[tuple]:
     """Try to find a Yahoo Finance ticker for an unknown ISIN using yf.Search."""
     if isin in _isin_search_cache:
         return _isin_search_cache[isin]
+    # También en disco: la búsqueda en Yahoo tarda ~0,5 s por ISIN y antes se
+    # repetía tras cada reinicio del servidor.
+    key = f"search:{isin}"
+    if key in _persistent_ticker_cache:
+        raw = _persistent_ticker_cache[key]
+        _isin_search_cache[isin] = tuple(raw) if raw else None
+        return _isin_search_cache[isin]
     try:
         import yfinance as yf
         results = yf.Search(isin, max_results=3)
@@ -41,10 +49,16 @@ def _lookup_isin_via_search(isin: str) -> Optional[tuple]:
             if sym and len(sym) <= 10:
                 entry: tuple = (sym, currency)
                 _isin_search_cache[isin] = entry
+                _persistent_ticker_cache[key] = list(entry)
+                _save_ticker_cache()
                 return entry
     except Exception:
-        pass
+        # Error de red: no se guarda en disco, se reintenta tras reiniciar.
+        _isin_search_cache[isin] = None
+        return None
     _isin_search_cache[isin] = None
+    _persistent_ticker_cache[key] = None
+    _save_ticker_cache()
     return None
 
 # Fuzzy name → (Yahoo ticker, currency) for assets without ISIN in DB
@@ -322,17 +336,107 @@ _price_cache: Dict[str, tuple] = {}  # symbol → (price, currency, timestamp)
 _fx_cache: Dict[str, tuple] = {}     # pair → (rate, timestamp)
 _CACHE_TTL = 300  # 5 minutes
 
+# Caducado no significa inútil: un precio de hace 20 minutos se sirve al momento
+# y se refresca en segundo plano (stale-while-revalidate). Así Cuentas no espera
+# a Yahoo (2-3 s en frío) en cada visita. Los fallos también se recuerdan
+# (precio None) para no repetir la consulta en cada petición.
+_PRICE_CACHE_FILE = Path(__file__).parent.parent / "data" / "price_cache.json"
+_refreshing: set = set()
+_refresh_lock = threading.Lock()
+_save_timer: Optional[threading.Timer] = None
+
+
+def _load_price_cache() -> None:
+    try:
+        if _PRICE_CACHE_FILE.exists():
+            with open(_PRICE_CACHE_FILE, encoding="utf-8") as f:
+                raw = json.load(f)
+            for k, v in (raw.get("prices") or {}).items():
+                _price_cache[k] = tuple(v)
+            for k, v in (raw.get("fx") or {}).items():
+                _fx_cache[k] = tuple(v)
+    except Exception:
+        pass
+
+
+def _save_price_cache() -> None:
+    global _save_timer
+    _save_timer = None
+    try:
+        _PRICE_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        data = {"prices": {k: list(v) for k, v in list(_price_cache.items()) if v[0] is not None},
+                "fx": {k: list(v) for k, v in list(_fx_cache.items()) if v[0] is not None}}
+        tmp = _PRICE_CACHE_FILE.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        tmp.replace(_PRICE_CACHE_FILE)
+    except Exception:
+        pass
+
+
+def _schedule_save() -> None:
+    global _save_timer
+    with _refresh_lock:
+        if _save_timer is None:
+            _save_timer = threading.Timer(2.0, _save_price_cache)
+            _save_timer.daemon = True
+            _save_timer.start()
+
+
+def _cached(cache: Dict[str, tuple], key: str, fetch) -> Optional[tuple]:
+    """Entrada de caché sin la marca de tiempo, o la pide a `fetch`.
+
+    `fetch()` devuelve una tupla de valores o None si falló. Si la entrada está
+    caducada se devuelve igualmente y se refresca en un hilo aparte."""
+    hit = cache.get(key)
+    if hit is not None:
+        if time.time() - hit[-1] >= _CACHE_TTL:
+            _refresh_in_background(cache, key, fetch)
+        return hit[:-1]
+    return _store(cache, key, fetch)
+
+
+def _store(cache: Dict[str, tuple], key: str, fetch) -> Optional[tuple]:
+    try:
+        val = fetch()
+    except Exception:
+        val = None
+    old = cache.get(key)
+    if val is None:
+        # Fallo: conserva el último valor bueno; si no lo había, recuerda el fallo.
+        if old is not None and old[0] is not None:
+            cache[key] = (*old[:-1], time.time())
+            return old[:-1]
+        cache[key] = (None, None, time.time()) if cache is _price_cache else (None, time.time())
+        return cache[key][:-1]
+    cache[key] = (*val, time.time())
+    _schedule_save()
+    return val
+
+
+def _refresh_in_background(cache: Dict[str, tuple], key: str, fetch) -> None:
+    tag = (id(cache), key)
+    with _refresh_lock:
+        if tag in _refreshing:
+            return
+        _refreshing.add(tag)
+
+    def run():
+        try:
+            _store(cache, key, fetch)
+        finally:
+            with _refresh_lock:
+                _refreshing.discard(tag)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+_load_price_cache()
+
 
 def _get_usd_eur_rate() -> float:
     """Fetch current USD→EUR exchange rate from Yahoo Finance, with caching."""
-    key = "USDEUR"
-    now = time.time()
-    if key in _fx_cache:
-        rate, ts = _fx_cache[key]
-        if now - ts < _CACHE_TTL:
-            return rate
-
-    try:
+    def fetch():
         import yfinance as yf
         tk = yf.Ticker("EURUSD=X")
         eur_usd = None
@@ -343,13 +447,13 @@ def _get_usd_eur_rate() -> float:
         if not eur_usd:
             info = tk.info
             eur_usd = info.get("regularMarketPrice") or info.get("previousClose")
-
         if eur_usd and float(eur_usd) > 0:
-            usd_to_eur = round(1.0 / float(eur_usd), 6)
-            _fx_cache[key] = (usd_to_eur, now)
-            return usd_to_eur
-    except Exception:
-        pass
+            return (round(1.0 / float(eur_usd), 6),)
+        return None
+
+    hit = _cached(_fx_cache, "USDEUR", fetch)
+    if hit and hit[0]:
+        return hit[0]
 
     # Fallback: approximate rate if Yahoo is unavailable
     return 0.92
@@ -385,14 +489,10 @@ def _get_yahoo_price_in_eur(isin: str) -> Optional[float]:
     else:
         ticker_sym, ticker_currency = entry
 
-    now = time.time()
-    cache_key = ticker_sym
-    if cache_key in _price_cache:
-        price, currency, ts = _price_cache[cache_key]
-        if now - ts < _CACHE_TTL:
-            return _to_eur(price, currency)
+    default_currency = ticker_currency
 
-    try:
+    def fetch():
+        ticker_currency = default_currency
         import yfinance as yf
         tk = yf.Ticker(ticker_sym)
 
@@ -423,12 +523,13 @@ def _get_yahoo_price_in_eur(isin: str) -> Optional[float]:
             ticker_currency = detected_currency.upper()
 
         if price:
-            result = round(float(price), 4)
-            _price_cache[cache_key] = (result, ticker_currency, now)
-            return _to_eur(result, ticker_currency)
+            return (round(float(price), 4), ticker_currency)
         return None
-    except Exception:
+
+    hit = _cached(_price_cache, ticker_sym, fetch)
+    if not hit or hit[0] is None:
         return None
+    return _to_eur(hit[0], hit[1])
 
 
 def _get_fx_to_eur(currency: str) -> Optional[float]:
@@ -436,12 +537,8 @@ def _get_fx_to_eur(currency: str) -> Optional[float]:
     code = currency.upper()
     if code == "EUR":
         return 1.0
-    now = time.time()
-    if code in _fx_cache:
-        rate, ts = _fx_cache[code]
-        if now - ts < _CACHE_TTL:
-            return rate
-    try:
+
+    def fetch():
         import yfinance as yf
         tk = yf.Ticker(f"{code}EUR=X")
         rate = None
@@ -452,12 +549,11 @@ def _get_fx_to_eur(currency: str) -> Optional[float]:
         if not rate:
             rate = tk.info.get("regularMarketPrice") or tk.info.get("previousClose")
         if rate and float(rate) > 0:
-            rate = round(float(rate), 6)
-            _fx_cache[code] = (rate, now)
-            return rate
-    except Exception:
-        pass
-    return None
+            return (round(float(rate), 6),)
+        return None
+
+    hit = _cached(_fx_cache, code, fetch)
+    return hit[0] if hit and hit[0] else None
 
 
 def _to_eur(price: float, currency: str) -> float:
@@ -484,23 +580,17 @@ def _amount_to_eur(amount: float, tx_currency: Optional[str]) -> float:
 
 def _get_ticker_price_in_eur(ticker: str) -> Optional[float]:
     """Fetch current price for a known Yahoo Finance ticker and convert to EUR."""
-    now = time.time()
-    if ticker in _price_cache:
-        price, currency, ts = _price_cache[ticker]
-        if now - ts < _CACHE_TTL:
-            return _to_eur(price, currency)
-    try:
+    def fetch():
         import yfinance as yf
-        tk = yf.Ticker(ticker)
-        info = tk.fast_info
+        info = yf.Ticker(ticker).fast_info
         price = getattr(info, "last_price", None)
         currency = (getattr(info, "currency", None) or "USD").upper()
-        if price:
-            _price_cache[ticker] = (price, currency, now)
-            return _to_eur(price, currency)
-    except Exception:
-        pass
-    return None
+        return (price, currency) if price else None
+
+    hit = _cached(_price_cache, ticker, fetch)
+    if not hit or hit[0] is None:
+        return None
+    return _to_eur(hit[0], hit[1])
 
 
 def calculate_portfolio(db: Session, user_id: int) -> PortfolioPerformance:

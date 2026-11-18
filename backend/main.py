@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from .database import engine
 from . import models
-from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic, myinvestor, integrations, admin, export, account
+from .routers import auth, transactions, categories, recurring, debts, goals, portfolio, dashboard, budgets, ai, webhooks, trade_republic, myinvestor, integrations, admin, export, account, passkeys
 from .services.categorizer import seed_system_categories
 from .database import SessionLocal
 from sqlalchemy import text
@@ -50,6 +50,12 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE users ADD COLUMN ai_enabled BOOLEAN DEFAULT FALSE",
             "ALTER TABLE users ADD COLUMN ai_model VARCHAR",
             "ALTER TABLE transactions ADD COLUMN source VARCHAR",
+            "ALTER TABLE users ADD COLUMN preferences TEXT",
+            "ALTER TABLE users ADD COLUMN display_name VARCHAR",
+            "ALTER TABLE transactions ADD COLUMN note TEXT",
+            "ALTER TABLE transactions ADD COLUMN split_parent_id INTEGER",
+            "ALTER TABLE transactions ADD COLUMN is_manual BOOLEAN",
+            "ALTER TABLE users ADD COLUMN last_login_at DATETIME",
         ]:
             try:
                 conn.execute(text(stmt))
@@ -65,6 +71,8 @@ async def lifespan(app: FastAPI):
             "UPDATE transactions SET source = 'trade_republic' WHERE source IS NULL "
             "AND external_id LIKE '________-____-____-____-____________%'",
             "UPDATE transactions SET source = 'manual' WHERE source IS NULL AND external_id IS NULL",
+            # Manuales: los creados a mano, aunque luego se les asigne una cuenta.
+            "UPDATE transactions SET is_manual = CASE WHEN source = 'manual' THEN 1 ELSE 0 END WHERE is_manual IS NULL",
         ]:
             try:
                 conn.execute(text(stmt))
@@ -138,6 +146,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(passkeys.router)
 app.include_router(auth.router)
 app.include_router(transactions.router)
 app.include_router(categories.router)
@@ -158,6 +167,8 @@ app.include_router(account.router)
 
 
 # Serve React frontend
+_NO_CACHE = {"sw.js", "version.json", "manifest.webmanifest", "index.html"}
+_NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "static"))
 if os.path.isdir(static_dir):
     app.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
@@ -167,7 +178,11 @@ if os.path.isdir(static_dir):
         # Sirve directamente cualquier archivo estático real en la raíz del build
         # (manifest.webmanifest, sw.js, registerSW.js, workbox-*.js, icon.png...);
         # si no existe, se asume ruta del router de React y se devuelve index.html.
+        # sw.js, version.json, el manifest y el HTML nunca desde caché: así la PWA
+        # instalada ve cada despliegue en la siguiente apertura.
         candidate = os.path.normpath(os.path.join(static_dir, full_path))
         if full_path and candidate.startswith(static_dir) and os.path.isfile(candidate):
+            if full_path in _NO_CACHE:
+                return FileResponse(candidate, headers=_NO_CACHE_HEADERS)
             return FileResponse(candidate)
-        return FileResponse(os.path.join(static_dir, "index.html"))
+        return FileResponse(os.path.join(static_dir, "index.html"), headers=_NO_CACHE_HEADERS)

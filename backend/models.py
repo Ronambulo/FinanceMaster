@@ -2,7 +2,7 @@ from datetime import datetime as _dt, date
 from typing import Optional
 from sqlalchemy import (
     Boolean, Column, DateTime, Date, Float, ForeignKey,
-    Index, Integer, String, Text, UniqueConstraint, Enum as SAEnum
+    Index, Integer, LargeBinary, String, Text, UniqueConstraint, Enum as SAEnum
 )
 from sqlalchemy.orm import relationship
 import enum
@@ -38,12 +38,17 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     username = Column(String, unique=True, index=True, nullable=False)
+    display_name = Column(String, nullable=True)
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=_dt.utcnow)
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
     ai_enabled = Column(Boolean, default=False)
     ai_model = Column(String, nullable=True)
+    last_login_at = Column(DateTime, nullable=True)
+    # Preferencias de interfaz (JSON): modo, módulos y tema. NULL = usuario
+    # anterior al rediseño, ver services/preferences.py
+    preferences = Column(Text, nullable=True)
 
     transactions = relationship("Transaction", back_populates="user", cascade="all, delete-orphan")
     categories = relationship("Category", back_populates="user", cascade="all, delete-orphan")
@@ -119,6 +124,11 @@ class Transaction(Base):
     link_group_id = Column(Integer, ForeignKey("transaction_links.id"), nullable=True, index=True)
     is_link_primary = Column(Boolean, default=False)
     effective_amount = Column(Float, nullable=True)
+    # Nota libre del usuario y, si es una parte de un gasto dividido, el original.
+    note = Column(Text, nullable=True)
+    split_parent_id = Column(Integer, nullable=True, index=True)
+    # Creado a mano (aunque se asigne a una cuenta de banco).
+    is_manual = Column(Boolean, nullable=True, default=False)
     # Banco/origen del movimiento: trade_republic, myinvestor, revolut, n26, wise,
     # manual… (claves de bank_connectors.BANK_LABELS). NULL = desconocido.
     source = Column(String, nullable=True)
@@ -318,6 +328,21 @@ class AiUsageLog(Base):
     user = relationship("User")
 
 
+class ImportLog(Base):
+    """Historial de importaciones de CSV (pantalla Importar)."""
+    __tablename__ = "import_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    filename = Column(String, nullable=True)
+    source = Column(String, nullable=True)
+    imported = Column(Integer, default=0)
+    skipped = Column(Integer, default=0)
+    errors = Column(Integer, default=0)
+    created_at = Column(DateTime, default=_dt.utcnow, index=True)
+
+    user = relationship("User")
+
+
 class BankConnection(Base):
     __tablename__ = "bank_connections"
     id = Column(Integer, primary_key=True, index=True)
@@ -329,3 +354,56 @@ class BankConnection(Base):
 
     user = relationship("User", back_populates="bank_connections")
     __table_args__ = (UniqueConstraint("user_id", "bank_name", name="uq_user_bank"),)
+
+
+class UserSession(Base):
+    """Una sesión de login (un token JWT con su `jti`). Permite ver los
+    dispositivos abiertos en Seguridad y cerrarlos. Los tokens antiguos sin
+    `jti` siguen valiendo hasta que caducan."""
+    __tablename__ = "user_sessions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    jti = Column(String, nullable=False, unique=True, index=True)
+    user_agent = Column(String, nullable=True)
+    ip = Column(String, nullable=True)
+    created_at = Column(DateTime, default=_dt.utcnow)
+    last_seen_at = Column(DateTime, default=_dt.utcnow)
+    revoked_at = Column(DateTime, nullable=True)
+
+
+class ActivityLog(Base):
+    """Registro de actividad del servidor (Administración). Guarda el nombre
+    del usuario para que la fila siga teniendo sentido si se borra la cuenta."""
+    __tablename__ = "activity_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
+    username = Column(String, nullable=True)
+    action = Column(String, nullable=False)
+    detail = Column(String, nullable=True)
+    ip = Column(String, nullable=True)
+    created_at = Column(DateTime, default=_dt.utcnow, index=True)
+
+
+class AdminNotice(Base):
+    """Avisos para los administradores (copia fallida, accesos fallidos…)."""
+    __tablename__ = "admin_notices"
+    id = Column(Integer, primary_key=True, index=True)
+    level = Column(String, default="warning")  # info | warning | error
+    title = Column(String, nullable=False)
+    text = Column(String, nullable=True)
+    created_at = Column(DateTime, default=_dt.utcnow, index=True)
+    read_at = Column(DateTime, nullable=True)
+
+
+class Passkey(Base):
+    """Llave de acceso (WebAuthn) para "Entrar con huella". Una por
+    dispositivo; la clave privada nunca sale del dispositivo."""
+    __tablename__ = "passkeys"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    credential_id = Column(String, nullable=False, unique=True, index=True)  # base64url
+    public_key = Column(LargeBinary, nullable=False)
+    sign_count = Column(Integer, default=0)
+    device = Column(String, nullable=True)
+    created_at = Column(DateTime, default=_dt.utcnow)
+    last_used_at = Column(DateTime, nullable=True)

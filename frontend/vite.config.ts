@@ -1,50 +1,29 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-import { VitePWA } from 'vite-plugin-pwa'
+import fs from 'fs'
+
+// Cada build lleva su id; la PWA lo compara con /version.json y se recarga sola.
+const BUILD_ID = process.env.BUILD_ID || Date.now().toString(36)
+
+/** PWA: version.json en el build e icono de Apple incrustado (iOS pide el
+ *  apple-touch-icon tarde y acaba poniendo una letra si no está en el HTML). */
+function pwa(): Plugin {
+  return {
+    name: 'fm-pwa',
+    transformIndexHtml(html) {
+      const png = fs.readFileSync(path.resolve(__dirname, 'public/apple-touch-icon-180x180.png')).toString('base64')
+      return html.replace('__APPLE_TOUCH_ICON__', `data:image/png;base64,${png}`)
+    },
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ buildId: BUILD_ID }) })
+    },
+  }
+}
 
 export default defineConfig({
-  plugins: [
-    react(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['icon.png'],
-      manifest: {
-        name: 'FinanceMaster',
-        short_name: 'FinanceMaster',
-        description: 'Tu gestor de finanzas personales',
-        lang: 'es',
-        theme_color: '#0f1117',
-        background_color: '#0f1117',
-        display: 'standalone',
-        start_url: '/',
-        scope: '/',
-        orientation: 'portrait-primary',
-        icons: [
-          { src: 'icon.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: 'icon.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: 'icon.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-        ],
-      },
-      workbox: {
-        // Cache-first for static assets
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        runtimeCaching: [
-          {
-            // Network-first for API calls — fall back to cache when offline
-            urlPattern: /^https?:\/\/.*\/api\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 },
-              networkTimeoutSeconds: 10,
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
-      },
-    }),
-  ],
+  plugins: [react(), pwa()],
+  define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

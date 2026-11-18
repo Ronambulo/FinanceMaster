@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { catApi, txApi } from '@/lib/api'
+import { calendarCycles } from '@/lib/cycles'
+import { usePreferencesStore } from '@/store/preferences'
 
 export interface PayrollCycle {
   start: string   // YYYY-MM-DD
@@ -25,6 +27,8 @@ export interface UsePayrollCycleReturn {
   cycleRangeLabel: string
   /** Month string YYYY-MM (based on cycle start) for budget queries */
   monthStr: string
+  /** True while the payroll data is still loading */
+  loading: boolean
 }
 
 /**
@@ -33,9 +37,11 @@ export interface UsePayrollCycleReturn {
  */
 export function usePayrollCycle(cycleOffset: number, overrideCategoryId?: number | null): UsePayrollCycleReturn {
   const today = useMemo(() => new Date(), [])
+  // Perfil → "Primer día del mes": 0 = cuando entra la nómina; N = día fijo.
+  const fixedDay = usePreferencesStore(s => s.prefs.month_start)
 
   /* ── 1. Categories (for auto-detection fallback) ── */
-  const { data: categories } = useQuery({
+  const { data: categories, isLoading: catsLoading } = useQuery({
     queryKey: ['categories'],
     queryFn: catApi.list,
     staleTime: 10 * 60_000,
@@ -62,7 +68,7 @@ export function usePayrollCycle(cycleOffset: number, overrideCategoryId?: number
   const activeCategoryId = overrideCategoryId ?? nominaCategory?.id ?? null
 
   /* ── 4. Fetch payroll transactions by the active category (override or auto-detected nómina) ── */
-  const { data: payrollByCategory } = useQuery({
+  const { data: payrollByCategory, isLoading: payrollLoading } = useQuery({
     queryKey: ['payroll-transactions-cat', activeCategoryId ?? 'none'],
     queryFn: () =>
       txApi.list({
@@ -104,6 +110,7 @@ export function usePayrollCycle(cycleOffset: number, overrideCategoryId?: number
 
   /* ── 5. Build cycles array ── */
   const cycles = useMemo((): PayrollCycle[] => {
+    if (fixedDay > 0) return calendarCycles(today, 24, fixedDay)
     if (!payrollDates.length) return []
     return payrollDates.map((start, i) => {
       if (i + 1 < payrollDates.length) {
@@ -116,7 +123,7 @@ export function usePayrollCycle(cycleOffset: number, overrideCategoryId?: number
       future.setDate(future.getDate() + 45)
       return { start, end: future.toISOString().slice(0, 10), isOpen: true }
     })
-  }, [payrollDates, today])
+  }, [payrollDates, today, fixedDay])
 
   /* ── 6. Resolve selected cycle ── */
   const selectedCycleIdx =
@@ -175,5 +182,6 @@ export function usePayrollCycle(cycleOffset: number, overrideCategoryId?: number
     isPayrollCycle,
     cycleRangeLabel,
     monthStr,
+    loading: fixedDay > 0 ? false : catsLoading || payrollLoading,
   }
 }

@@ -111,6 +111,14 @@ def start():
         replace_existing=True,
         misfire_grace_time=3600,
     )
+    from .backups import HOUR, scheduled_backup
+    scheduler.add_job(
+        scheduled_backup,
+        trigger=CronTrigger(hour=HOUR, minute=0),
+        id="daily_backup",
+        replace_existing=True,
+        misfire_grace_time=6 * 3600,
+    )
     scheduler.start()
     log.info("APScheduler started")
 

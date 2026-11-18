@@ -1,3 +1,8 @@
+import json
+import threading
+import time
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -335,13 +340,144 @@ def monthly_investments(
     return schemas.MonthlyInvestmentSummary(invested=invested, count=len(txs))
 
 
+# symbol -> (period, {YYYY-MM: eur_close}, fetched_at). Failures are cached as
+# an empty dict so a delisted ticker is not retried on every request.
+_HIST_CACHE: dict = {}
+_HIST_TTL = 6 * 3600
+_HIST_FAIL_TTL = 30 * 60
+_PERIODS = ("1y", "2y", "5y")
+
+
+def _period_for(months: int) -> str:
+    if months <= 12:
+        return "1y"
+    if months <= 24:
+        return "2y"
+    return "5y"
+
+
+def _fetch_hist(sym: str, period: str) -> dict:
+    from ..services.portfolio_calculator import ISIN_TO_YAHOO, _to_eur
+    entry = ISIN_TO_YAHOO.get(sym, sym)
+    if entry is None:
+        return {}
+    yahoo_sym, currency = (entry if isinstance(entry, tuple) else (entry, None))
+    try:
+        import yfinance as yf
+        tk = yf.Ticker(yahoo_sym)
+        hist = tk.history(period=period, interval="1mo")
+        if hist.empty:
+            return {}
+        # `sym` is usually an already-resolved ticker, so the ISIN map rarely
+        # knows its currency. Ask Yahoo instead of assuming EUR: quoting a USD
+        # (or GBp) line as if it were euros inflated the whole history.
+        if currency is None:
+            currency = (tk.history_metadata or {}).get("currency")
+            if not currency:
+                try:
+                    currency = tk.fast_info.currency
+                except Exception:
+                    currency = None
+            currency = currency or "EUR"
+        out = {}
+        for idx, row in hist.iterrows():
+            out[f"{idx.year}-{idx.month:02d}"] = round(_to_eur(float(row["Close"]), currency), 4)
+        return out
+    except Exception:
+        return {}
+
+
+# Los cierres mensuales casi no cambian: se guardan en disco y, si han caducado,
+# se sirven igualmente y se refrescan en segundo plano. Antes, tras cada
+# reinicio, el gráfico de patrimonio esperaba ~1,5 s a Yahoo.
+_HIST_FILE = Path(__file__).parent.parent / "data" / "hist_cache.json"
+_HIST_REFRESHING: set = set()
+_HIST_LOCK = threading.Lock()
+
+
+def _load_hist_cache() -> None:
+    try:
+        if _HIST_FILE.exists():
+            for sym, v in json.loads(_HIST_FILE.read_text(encoding="utf-8")).items():
+                _HIST_CACHE[sym] = tuple(v)
+    except Exception:
+        pass
+
+
+def _save_hist_cache() -> None:
+    try:
+        _HIST_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _HIST_FILE.with_suffix(".tmp")
+        with _HIST_LOCK:
+            data = {k: list(v) for k, v in _HIST_CACHE.items() if v[1]}
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        tmp.replace(_HIST_FILE)
+    except Exception:
+        pass
+
+
+def _refresh_hist(syms, period: str) -> None:
+    with _HIST_LOCK:
+        syms = [s for s in syms if s not in _HIST_REFRESHING]
+        _HIST_REFRESHING.update(syms)
+    if not syms:
+        return
+
+    def run():
+        try:
+            for sym in syms:
+                prices = _fetch_hist(sym, period)
+                old = _HIST_CACHE.get(sym)
+                # Un fallo de red no borra la serie buena que ya había.
+                if prices or not (old and old[1]):
+                    _HIST_CACHE[sym] = (period, prices, time.time())
+            _save_hist_cache()
+        finally:
+            with _HIST_LOCK:
+                _HIST_REFRESHING.difference_update(syms)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+_load_hist_cache()
+
+
+def _hist_prices_eur(symbols, months: int) -> dict:
+    period = _period_for(months)
+    need = _PERIODS.index(period)
+    now = time.time()
+    result: dict = {}
+    todo = []
+    stale = []
+    for sym in symbols:
+        hit = _HIST_CACHE.get(sym)
+        if hit:
+            cached_period, prices, ts = hit
+            ttl = _HIST_TTL if prices else _HIST_FAIL_TTL
+            if _PERIODS.index(cached_period) >= need:
+                result[sym] = prices
+                if now - ts >= ttl:
+                    stale.append(sym)
+                continue
+        todo.append(sym)
+    if stale:
+        _refresh_hist(stale, period)
+    if todo:
+        with ThreadPoolExecutor(max_workers=min(8, len(todo))) as pool:
+            for sym, prices in zip(todo, pool.map(lambda s: _fetch_hist(s, period), todo)):
+                _HIST_CACHE[sym] = (period, prices, now)
+                result[sym] = prices
+        _save_hist_cache()
+    return result
+
+
 @router.get("/net-worth-history", response_model=List[schemas.NetWorthPoint])
 def net_worth_history(
     months: int = Query(24, ge=3, le=60),
     current_user: models.User = Depends(auth.get_current_user),
     db: Session = Depends(get_db),
 ):
-    from ..services.portfolio_calculator import _get_yahoo_price_in_eur, ISIN_TO_YAHOO, _to_eur
+    from ..services.portfolio_calculator import _get_yahoo_price_in_eur
 
     today = date.today()
 
@@ -381,42 +517,18 @@ def net_worth_history(
         _start, end_m = _month_range(y_num, m_num)
         month_list.append((y_num, m_num, end_m))
 
-    # Fetch historical monthly close prices for all symbols
+    # Historical monthly closes, cached per symbol and fetched in parallel:
+    # a serial yfinance call per symbol on every request made the charts on
+    # Inicio and Cuentas arrive seconds after the rest of the page.
     symbols_set = {tx.symbol for tx in trading_txs if tx.symbol}
-    hist_prices: dict = {}  # symbol → {YYYY-MM: eur_price}
+    hist_prices = _hist_prices_eur(symbols_set, months)
 
-    if symbols_set:
-        try:
-            import yfinance as yf
-            for sym in symbols_set:
-                entry = ISIN_TO_YAHOO.get(sym, sym)
-                if entry is None:
-                    continue
-                yahoo_sym, currency = (entry if isinstance(entry, tuple) else (entry, None))
-                try:
-                    tk = yf.Ticker(yahoo_sym)
-                    hist = tk.history(period="5y", interval="1mo")
-                    if hist.empty:
-                        continue
-                    # `sym` is usually an already-resolved ticker, so the ISIN map
-                    # rarely knows its currency. Ask Yahoo instead of assuming EUR:
-                    # quoting a USD (or GBp) line as if it were euros inflated the
-                    # whole history. _to_eur also handles London's pence lines.
-                    if currency is None:
-                        try:
-                            currency = tk.fast_info.currency
-                        except Exception:
-                            currency = None
-                        if not currency:
-                            currency = (tk.history_metadata or {}).get("currency") or "EUR"
-                    hist_prices[sym] = {}
-                    for idx, row in hist.iterrows():
-                        key = f"{idx.year}-{idx.month:02d}"
-                        hist_prices[sym][key] = round(_to_eur(float(row["Close"]), currency), 4)
-                except Exception:
-                    pass
-        except ImportError:
-            pass
+    # Current prices are the fallback for months Yahoo has no close for; warm
+    # them in parallel too instead of one by one inside the month loop.
+    missing = [s for s in symbols_set if not hist_prices.get(s)]
+    if missing:
+        with ThreadPoolExecutor(max_workers=min(8, len(missing))) as pool:
+            list(pool.map(_get_yahoo_price_in_eur, missing))
 
     result = []
     for y_num, m_num, end_m in month_list:
@@ -529,3 +641,56 @@ def refresh_user_insights(
     from ..services.insights import refresh_insights
     refresh_insights(db, current_user.id)
     return {"ok": True}
+
+
+@router.get("/accounts")
+def accounts(
+    with_investments: bool = False,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user),
+):
+    """Saldo de efectivo por origen (banco o manual), con la misma fórmula que
+    el saldo total de /overview, para la pantalla Cuentas."""
+    from ..services.bank_connectors import BANK_LABELS
+
+    T = models.Transaction
+    rows = db.query(
+        T.source,
+        func.sum(T.amount + func.coalesce(T.fee, 0.0) + func.coalesce(T.tax, 0.0)),
+        func.count(T.id),
+        func.max(T.date),
+    ).filter(
+        T.user_id == current_user.id,
+        affects_cash_clause(),
+    ).group_by(T.source).all()
+
+    labels = {**BANK_LABELS, "manual": "Manual"}
+    merged: dict = {}
+    for source, total, count, last in rows:
+        key = source or "manual"
+        acc = merged.setdefault(key, {
+            "source": key, "label": labels.get(key, key.replace("_", " ").title()),
+            "balance": 0.0, "count": 0, "last_date": None,
+        })
+        acc["balance"] += total or 0.0
+        acc["count"] += count
+        if last and (acc["last_date"] is None or last > acc["last_date"]):
+            acc["last_date"] = last
+    if with_investments:
+        # Para filtrar movimientos también cuentan los orígenes que solo tienen
+        # operaciones de inversión (p. ej. MyInvestor con fondos): sin saldo de
+        # efectivo, pero con movimientos. `tx_count` = todos sus movimientos.
+        for source, n in db.query(T.source, func.count(T.id)).filter(
+                T.user_id == current_user.id).group_by(T.source).all():
+            key = source or "manual"
+            acc = merged.setdefault(key, {
+                "source": key, "label": labels.get(key, key.replace("_", " ").title()),
+                "balance": 0.0, "count": 0, "last_date": None,
+            })
+            acc["tx_count"] = acc.get("tx_count", 0) + n
+    out = []
+    for acc in merged.values():
+        acc["balance"] = round(acc["balance"], 2)
+        out.append(acc)
+    out.sort(key=lambda a: (-abs(a["balance"]), a["label"]))
+    return out

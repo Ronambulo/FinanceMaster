@@ -1,6 +1,7 @@
 import os
 import bcrypt
 import hashlib
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -34,6 +35,54 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
+SESSION_TOUCH = timedelta(minutes=5)
+
+
+def issue_token(db: Session, user: models.User, request=None) -> str:
+    """Token de login con su sesión (Seguridad → Sesiones abiertas)."""
+    from .services.activity import client_ip
+    jti = secrets.token_urlsafe(16)
+    ua = request.headers.get("user-agent") if request is not None else None
+    db.add(models.UserSession(user_id=user.id, jti=jti, user_agent=(ua or None) and ua[:300], ip=client_ip(request)))
+    db.commit()
+    return create_access_token({"sub": str(user.id), "jti": jti})
+
+
+def _check_session(payload: dict, user_id: int, db: Session) -> bool:
+    """Tokens con `jti`: la sesión debe existir y no estar cerrada. Los tokens
+    de antes (sin `jti`) valen hasta que caducan."""
+    jti = payload.get("jti")
+    if not jti:
+        return True
+    sess = db.query(models.UserSession).filter(models.UserSession.jti == jti).first()
+    if sess is None or sess.revoked_at is not None or sess.user_id != int(user_id):
+        return False
+    now = datetime.utcnow()
+    if not sess.last_seen_at or now - sess.last_seen_at > SESSION_TOUCH:
+        sess.last_seen_at = now
+        db.commit()
+    return True
+
+
+def token_jti(token: str = Depends(oauth2_scheme)) -> Optional[str]:
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("jti")
+    except JWTError:
+        return None
+
+
+def revoke_sessions(db: Session, user_id: int, except_jti: Optional[str] = None) -> int:
+    q = db.query(models.UserSession).filter(models.UserSession.user_id == user_id, models.UserSession.revoked_at.is_(None))
+    if except_jti:
+        q = q.filter(models.UserSession.jti != except_jti)
+    n = 0
+    for s in q.all():
+        s.revoked_at = datetime.utcnow()
+        n += 1
+    db.commit()
+    return n
+
+
 def get_user_from_token(token: str, db: Session) -> models.User:
     """Resolve a user from a raw JWT string (used by SSE where Depends can't inject)."""
     try:
@@ -44,6 +93,8 @@ def get_user_from_token(token: str, db: Session) -> models.User:
         user = db.query(models.User).filter(models.User.id == int(user_id)).first()
         if user is None or not user.is_active:
             raise ValueError("user not found")
+        if not _check_session(payload, user_id, db):
+            raise ValueError("session closed")
         return user
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid token") from exc
@@ -85,6 +136,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
     user = db.query(models.User).filter(models.User.id == int(user_id)).first()
     if user is None or not user.is_active:
+        raise credentials_exception
+    if not _check_session(payload, user_id, db):
         raise credentials_exception
     return user
 
