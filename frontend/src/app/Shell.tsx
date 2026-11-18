@@ -595,7 +595,9 @@ function MobileShell({ children, bare, resetKey, onMore, canMore, menu, navPull,
   const ready = pull >= PULL_TRIGGER || busy
   const ease = dragging ? 'none' : 'transform .25s, opacity .25s'
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 'var(--app-height)', overflow: 'clip' }}>
+    // Anclado abajo con la misma referencia que la barra (no con una altura medida):
+    // si iOS da un innerHeight viejo al abrir, la barra ya no queda recortada.
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'calc(0px - var(--vb-gap, 0px))', overflow: 'clip' }}>
       {/* Franja opaca bajo la barra de estado: el contenido no se ve pasar por debajo. */}
       <div aria-hidden="true" style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 'env(safe-area-inset-top)', background: C.bg, zIndex: 30 }} />
       <div role={busy ? 'status' : undefined} aria-label={busy ? 'Actualizando' : undefined} aria-hidden={!busy} style={{

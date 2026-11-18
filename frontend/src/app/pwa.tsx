@@ -101,7 +101,8 @@ export function StandaloneFix() {
       if (window.scrollY !== 0) window.scrollTo(0, 0)
     }
     measure()
-    const timers = [100, 500, 1500].map(ms => window.setTimeout(measure, ms))
+    const timers = [100, 500, 1500, 3000].map(ms => window.setTimeout(measure, ms))
+    window.visualViewport?.addEventListener('resize', measure)
     window.addEventListener('pageshow', measure)
     window.addEventListener('resize', measure)
     window.addEventListener('orientationchange', measure)
@@ -127,6 +128,7 @@ export function StandaloneFix() {
       timers.forEach(t => window.clearTimeout(t))
       window.clearTimeout(back)
       cancelAnimationFrame(frame)
+      window.visualViewport?.removeEventListener('resize', measure)
       window.removeEventListener('pageshow', measure)
       window.removeEventListener('resize', measure)
       window.removeEventListener('orientationchange', measure)
