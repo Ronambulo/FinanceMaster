@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   badges, bestMonth, budgetTone, budgetTotals, daysLeftInMonth, debtTotals, goalSub, lastGreenMonth, linePoints,
   longestStreak, recurringMonthly, recurringWhen, savingsAverage, streakDays,
-  budgetsSummary, debtsSummary, goalsSummary, monthlySummary, recurringSummary, relativeDay, spendBars, spendChange,
+  budgetsSummary, debtsSummary, goalsReserved, goalsSummary, monthlySummary, recurringSummary, relativeDay, spendBars, spendChange,
 } from '../plan'
 import type { BudgetStatus, Debt, Goal, MonthlyTrend, UpcomingRecurring } from '../api'
 
@@ -107,5 +107,16 @@ describe('pantallas de plan', () => {
     const b = badges({ streak: 6, greenMonth: '2026-10', goals: 1, hasBroker: true, txCount: 120, debts: [] })
     expect(b.map(x => x.unlocked)).toEqual([true, true, true, true, true, false])
     expect(b[1].sub).toBe('octubre')
+  })
+})
+
+describe('reservado en objetivos', () => {
+  const g = (current_amount: number, is_active = true): Goal => ({
+    id: 1, name: 'x', type: 'EURO_TARGET', target_amount: 1000, target_percent: null, category: null, deadline: null,
+    current_amount, is_active, progress_pct: 0,
+  })
+  it('suma solo los activos y nunca resta negativos', () => {
+    expect(goalsReserved([g(200), g(50.5), g(300, false), g(-20)])).toBeCloseTo(250.5)
+    expect(goalsReserved([])).toBe(0)
   })
 })

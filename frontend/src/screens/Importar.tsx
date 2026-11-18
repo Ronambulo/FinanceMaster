@@ -228,7 +228,7 @@ function Revision({ file, format, preview, onBack }: Review & { onBack: () => vo
           </button>
         )}
       </section>
-      <div style={pc ? { marginTop: 20, maxWidth: 320 } : { position: 'fixed', left: 20, right: 20, bottom: 30, zIndex: 5 }}>{action}</div>
+      <div style={pc ? { marginTop: 20, maxWidth: 320 } : { position: 'fixed', left: 20, right: 20, bottom: 'calc(30px - var(--vb-gap, 0px))', zIndex: 5 }}>{action}</div>
 
       <CatPickSheet open={pick != null} categories={pick ? categoriesFor(all, pick.amount > 0 ? 'income' : 'expense') : []}
         current={pick ? catOf(pick)?.id ?? null : null}

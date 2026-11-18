@@ -141,7 +141,7 @@ function ScrollTabs({ items }: { items: NavItem[] }) {
   )
 }
 
-const NAV_BOTTOM = 'max(18px, calc(env(safe-area-inset-bottom) - 8px))'
+const NAV_BOTTOM = 'calc(max(18px, env(safe-area-inset-bottom) - 8px) - var(--vb-gap, 0px))'
 
 let navBobbed = false
 
@@ -228,7 +228,7 @@ function MorePanel({ open, peek, pull, onOpened, onCancel, onClose }: {
     return () => window.removeEventListener('keydown', k)
   }, [open, onClose])
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, zIndex: 70, pointerEvents: open ? undefined : 'none' }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'calc(0px - var(--vb-gap, 0px))', zIndex: 70, pointerEvents: open ? undefined : 'none' }}>
       <div ref={overlay} aria-hidden="true" onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'var(--overlay)', animation: dragged ? undefined : 'fm-fade .15s', opacity: dragged && !open ? 0 : undefined }} />
       <nav ref={panel} aria-label="Principal" style={{
         position: 'absolute', left: 16, right: 16, bottom: NAV_BOTTOM, boxSizing: 'border-box', padding: '0 10px 22px', borderRadius: 24,

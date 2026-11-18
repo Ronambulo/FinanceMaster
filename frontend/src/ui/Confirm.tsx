@@ -27,7 +27,7 @@ export function ConfirmHost() {
   if (!ask) return null
   const danger = ask.danger !== false
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 'calc(0px - var(--vb-gap, 0px))', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div aria-hidden="true" onClick={() => done(false)} style={{ position: 'absolute', inset: 0, background: 'var(--overlay)', animation: 'fm-fade .15s' }} />
       <div role="alertdialog" aria-modal="true" aria-label={ask.title} style={{ position: 'relative', width: '100%', maxWidth: 360, boxSizing: 'border-box', background: C.pop, borderRadius: 28, padding: '24px 20px 20px', boxShadow: 'var(--sh-sheet)', border: 'var(--pop-border)', color: C.text, animation: 'fm-fade .15s' }}>
         <div style={{ textAlign: 'center' }}>

@@ -331,7 +331,7 @@ export default function Movimientos() {
       )}
 
       {selected ? createPortal(
-        <nav aria-label="Acciones" style={{ animation: 'fm-up .18s ease-out', position: 'fixed', left: 16, right: 16, bottom: 'max(18px, calc(env(safe-area-inset-bottom) - 8px))', height: 74, boxSizing: 'border-box', padding: '0 8px', borderRadius: 24, background: C.pop, border: 'var(--pop-border)', boxShadow: 'var(--sh-nav)', display: 'flex', alignItems: 'center', zIndex: 45, maxWidth: 528, margin: '0 auto' }}>
+        <nav aria-label="Acciones" style={{ animation: 'fm-up .18s ease-out', position: 'fixed', left: 16, right: 16, bottom: 'calc(max(18px, env(safe-area-inset-bottom) - 8px) - var(--vb-gap, 0px))', height: 74, boxSizing: 'border-box', padding: '0 8px', borderRadius: 24, background: C.pop, border: 'var(--pop-border)', boxShadow: 'var(--sh-nav)', display: 'flex', alignItems: 'center', zIndex: 45, maxWidth: 528, margin: '0 auto' }}>
           <BarBtn icon="tag" color={C.accentText} onClick={() => setCatFor(selTxs)}>Categoría</BarBtn>
           <BarBtn icon="bank-card" onClick={() => setSheet('account')}>Cuenta</BarBtn>
           {selTxs.some(t => needsReview(t)) && <BarBtn icon="check-mark" color={C.accentText} onClick={() => confirmCats(selTxs)}>Confirmar</BarBtn>}
@@ -340,7 +340,7 @@ export default function Movimientos() {
           <BarBtn icon="delete" color={C.red} onClick={() => remove(selTxs.map(t => t.id))}>Borrar</BarBtn>
         </nav>, document.body,
       ) : (
-        <div style={{ position: 'fixed', right: 22, bottom: 108, zIndex: 41 }}><Fab onClick={() => openAdd()} /></div>
+        <div style={{ position: 'fixed', right: 22, bottom: 'calc(108px - var(--vb-gap, 0px))', zIndex: 41 }}><Fab onClick={() => openAdd()} /></div>
       )}
       {sheets}
     </div>

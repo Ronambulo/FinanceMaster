@@ -92,6 +92,11 @@ export function topGoal(goals: Goal[]): Goal | null {
   return [...active].sort((a, b) => b.progress_pct - a.progress_pct)[0] ?? null
 }
 
+/** Dinero apartado en los objetivos activos. */
+export function goalsReserved(goals: Goal[]): number {
+  return goals.filter(g => g.is_active).reduce((a, g) => a + Math.max(0, g.current_amount || 0), 0)
+}
+
 export function goalsSummary(goals: Goal[]): string {
   const top = topGoal(goals)
   if (!top) return 'Sin objetivos'

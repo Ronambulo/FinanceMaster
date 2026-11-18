@@ -167,6 +167,8 @@ class RecurringGroup(Base):
     next_expected_date = Column(Date, nullable=True)
     is_active = Column(Boolean, default=True)
     amount_is_manual = Column(Boolean, default=False)
+    # Sugerencia descartada: la detección no vuelve a proponerla.
+    is_dismissed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=_dt.utcnow)
 
     user = relationship("User", back_populates="recurring_groups")

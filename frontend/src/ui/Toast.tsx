@@ -24,7 +24,7 @@ export function ToastHost({ pc }: { pc?: boolean }) {
   if (!msg) return null
   return (
     <div role="status" style={{
-      position: 'fixed', left: pc ? 'auto' : 16, right: pc ? 32 : 16, bottom: pc ? 28 : 108, zIndex: 90,
+      position: 'fixed', left: pc ? 'auto' : 16, right: pc ? 32 : 16, bottom: pc ? 28 : 'calc(108px - var(--vb-gap, 0px))', zIndex: 90,
       width: pc ? 420 : undefined, maxWidth: pc ? undefined : 528, margin: pc ? undefined : '0 auto',
       minHeight: 56, boxSizing: 'border-box', borderRadius: 18, background: 'var(--c-f1f2f6)', color: 'var(--c-14161f)',
       display: 'flex', alignItems: 'center', gap: 10, padding: '8px 8px 8px 14px', boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
