@@ -9,13 +9,51 @@ Login flow (v2 web login):
   3. get_timeline() / get_portfolio() for data
 """
 import asyncio
+import hashlib
 import logging
 import functools
+import os
+import pathlib
+import shutil
 import threading
 from typing import Optional
 from datetime import datetime
 
 log = logging.getLogger(__name__)
+
+
+def _sessions_dir() -> pathlib.Path:
+    """Carpeta persistente para las cookies de TR (junto a la base de datos).
+
+    pytr las deja por defecto en ~/.pytr, que en Docker vive dentro del
+    contenedor y se pierde en cada reinicio o actualización: por eso había que
+    volver a confirmar el login cada vez."""
+    from ..database import DATABASE_URL
+    base = None
+    if DATABASE_URL.startswith("sqlite:///"):
+        path = DATABASE_URL[len("sqlite:///"):]
+        if path and path != ":memory:":
+            base = pathlib.Path(os.path.abspath(path)).parent
+    if base is None:
+        base = pathlib.Path(__file__).resolve().parent.parent / "data"
+    d = base / "tr_sessions"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _cookies_file(phone: str) -> pathlib.Path:
+    name = hashlib.sha256(phone.encode()).hexdigest()[:16]
+    path = _sessions_dir() / f"cookies.{name}.txt"
+    if not path.exists():
+        # Sesiones guardadas antes en ~/.pytr: se copian para no pedir login otra vez.
+        try:
+            from pytr.api import BASE_DIR
+            legacy = BASE_DIR / f"cookies.{phone}.txt"
+            if legacy.exists():
+                shutil.copy2(legacy, path)
+        except Exception:
+            pass
+    return path
 
 
 def _parse_tr_number(text: str) -> "float | None":
@@ -195,8 +233,7 @@ class TradeRepublicAPI:
         return self._ws_lock
 
     def _build_client(self):
-        from pytr.api import TradeRepublicApi, BASE_DIR
-        BASE_DIR.mkdir(parents=True, exist_ok=True)
+        from pytr.api import TradeRepublicApi
         # Trade Republic retiró el login web v1 (responde MISSING_REQUIRED_HEADER).
         # El v2 no necesita token WAF ni Playwright.
         return TradeRepublicApi(
@@ -204,8 +241,54 @@ class TradeRepublicAPI:
             pin=self.pin,
             locale="es",
             save_cookies=True,
+            cookies_file=str(_cookies_file(self.phone)),
             use_v2_login=True,
         )
+
+    def _save_session(self):
+        """pytr solo guarda las cookies al iniciar sesión; TR las renueva por el
+        camino y, si no se vuelven a guardar, las del fichero acaban caducando."""
+        try:
+            if self._client is not None:
+                self._client.save_websession()
+        except Exception as e:
+            log.debug("TR: no se pudo guardar la sesión: %s", e)
+
+    def resume_only(self) -> bool:
+        """Synchronous. Recupera la sesión guardada sin iniciar un login nuevo
+        (nunca manda una confirmación a la app)."""
+        try:
+            client = self._build_client()
+            if client.resume_websession():
+                self._client = client
+                self._connected = True
+                self._save_session()
+                return True
+        except Exception as e:
+            log.info("TR: no se pudo recuperar la sesión guardada: %s", e)
+        return False
+
+    def keep_alive(self) -> bool:
+        """Synchronous. Renueva la sesión con TR y guarda las cookies nuevas."""
+        client = self._client
+        if client is None or not self._connected:
+            return False
+        try:
+            client._session_expires_at = 0  # fuerza la renovación de la sesión
+            client.settings()
+            self._save_session()
+            return True
+        except Exception as e:
+            log.info("TR: la sesión no responde (%s); se intenta recuperar", e)
+        try:
+            if client.resume_websession():
+                self._save_session()
+                return True
+        except Exception:
+            pass
+        if client is self._client:
+            self._connected = False
+        return False
 
     def connect(self) -> dict:
         """
@@ -219,6 +302,7 @@ class TradeRepublicAPI:
 
             if self._client.resume_websession():
                 self._connected = True
+                self._save_session()
                 log.info("TR: resumed saved session")
                 return {"status": "connected"}
 
@@ -318,6 +402,7 @@ class TradeRepublicAPI:
                 None, self._client.resume_websession
             )
             if ok:
+                self._save_session()
                 log.info("TR: WebSocket reconectado correctamente")
             return bool(ok)
         except Exception as e:
@@ -572,3 +657,55 @@ def remove_client(user_id: int):
     c = _clients.pop(user_id, None)
     if c:
         c.disconnect()
+
+
+# ── Mantener la sesión viva ──────────────────────────────────────────────────
+# Ficheros de cookies que ya fallaron al recuperarse: no se reintentan hasta
+# que cambien (un login nuevo los reescribe).
+_restore_failed: dict[int, float] = {}
+
+
+def keep_sessions_alive():
+    """Tarea periódica (scheduler): renueva las sesiones abiertas y recupera las
+    guardadas tras un reinicio, para que abrir la app no pida login."""
+    for client in list(_clients.values()):
+        if client.is_connected():
+            client.keep_alive()
+
+    from ..database import SessionLocal
+    from .. import models
+    from ..routers.trade_republic import _decrypt
+
+    db = SessionLocal()
+    try:
+        conns = db.query(models.BankConnection).filter(
+            models.BankConnection.bank_name == "trade_republic",
+            models.BankConnection.encrypted_phone.isnot(None),
+        ).all()
+        creds = []
+        for conn in conns:
+            try:
+                creds.append((conn.user_id, _decrypt(conn.encrypted_phone), _decrypt(conn.encrypted_pin)))
+            except Exception:
+                continue
+    finally:
+        db.close()
+
+    for uid, phone, pin in creds:
+        current = _clients.get(uid)
+        if current and (current.is_connected() or current.is_awaiting_2fa()):
+            continue
+        path = _cookies_file(phone)
+        if not path.exists():
+            continue
+        mtime = path.stat().st_mtime
+        if _restore_failed.get(uid) == mtime:
+            continue
+        client = TradeRepublicAPI(phone=phone, pin=pin)
+        if client.resume_only():
+            _restore_failed.pop(uid, None)
+            if _clients.get(uid) is current:
+                _clients[uid] = client
+            log.info("TR: sesión recuperada en segundo plano (usuario %s)", uid)
+        else:
+            _restore_failed[uid] = mtime

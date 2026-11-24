@@ -142,6 +142,23 @@ def start():
         replace_existing=True,
         misfire_grace_time=3600,
     )
+    import os
+    from datetime import timedelta
+    from .trade_republic_api import keep_sessions_alive
+    extra = {}
+    if os.environ.get("FM_DISABLE_BACKGROUND") != "1":
+        # Al arrancar se recupera la sesión de TR sin esperar al primer intervalo.
+        extra["next_run_time"] = _dt.now() + timedelta(seconds=15)
+    scheduler.add_job(
+        keep_sessions_alive,
+        trigger=IntervalTrigger(minutes=10),
+        id="tr_keep_alive",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,
+        **extra,
+    )
     scheduler.start()
     log.info("APScheduler started")
 
